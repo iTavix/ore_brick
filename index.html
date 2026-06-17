@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#ffffff" />
+<title>Ore BrickBoy</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // Tailwind runtime config: single warm accent over a neutral palette.
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          accent: { DEFAULT: '#FF9500', hover: '#F08600', soft: '#FFF4E5' },
+          ink: { DEFAULT: '#1d1d1f', soft: '#6e6e73', faint: '#a1a1a6' }
+        },
+        borderRadius: { xl2: '1.25rem' }
+      }
+    }
+  };
+</script>
+<style>
+  :root { color-scheme: light; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body { background: #f5f5f7; color: #1d1d1f; }
+
+  /* Subtle, discreet transitions */
+  .transition-soft { transition: all .22s cubic-bezier(.4,0,.2,1); }
+
+  /* iOS-style segmented control */
+  .seg { background: #e9e9eb; border-radius: 12px; padding: 3px; }
+  .seg button { border-radius: 9px; transition: all .2s ease; }
+  .seg button[aria-selected="true"] {
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 .5px rgba(0,0,0,.04);
+    color: #1d1d1f;
+  }
+  .seg button[aria-selected="false"] { color: #6e6e73; }
+
+  /* Smooth expand/collapse */
+  .chev { transition: transform .22s ease; }
+  .chev.open { transform: rotate(90deg); }
+
+  /* Inputs */
+  .field {
+    width: 100%; background: #fff; border: 1px solid #e2e2e6; border-radius: 12px;
+    padding: 11px 13px; font-size: 16px; color: #1d1d1f; outline: none;
+    transition: border-color .18s ease, box-shadow .18s ease;
+  }
+  .field:focus { border-color: #FF9500; box-shadow: 0 0 0 4px rgba(255,149,0,.12); }
+  .field::placeholder { color: #b0b0b6; }
+
+  /* Modal */
+  .modal-backdrop { background: rgba(0,0,0,.32); backdrop-filter: saturate(140%) blur(8px); }
+  @keyframes pop { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+  .modal-card { animation: pop .22s cubic-bezier(.4,0,.2,1); }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .fade { animation: fade .18s ease; }
+
+  /* Toast */
+  @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  .toast { animation: toastIn .24s cubic-bezier(.4,0,.2,1); }
+
+  /* Hide number spinners for a cleaner look */
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+
+  /* ---------- Print: clean A4 payment note ---------- */
+  @media print {
+    @page { size: A4; margin: 18mm 16mm; }
+    body { background: #fff; }
+    .no-print { display: none !important; }
+    #app-shell { max-width: none !important; padding: 0 !important; }
+    #view-payment { display: block !important; }
+    .print-area { box-shadow: none !important; border: none !important; border-radius: 0 !important; padding: 0 !important; margin: 0 !important; }
+    .print-table th, .print-table td { padding: 6px 8px !important; }
+    a[href]::after { content: ""; }
+  }
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- ===================== TOP BAR / NAV ===================== -->
+  <header class="no-print sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-black/5">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+      <div class="flex items-center gap-2 shrink-0">
+        <div class="w-8 h-8 rounded-[10px] bg-accent flex items-center justify-center shadow-sm">
+          <span class="text-white text-lg leading-none">▦</span>
+        </div>
+        <div class="leading-tight">
+          <div class="font-semibold text-[15px] tracking-tight">Ore BrickBoy</div>
+          <div class="text-[11px] text-ink-faint -mt-0.5">Tracciamento ore freelance</div>
+        </div>
+      </div>
+      <div class="flex-1"></div>
+      <button id="sync-badge" class="hidden shrink-0 text-[12px] font-medium rounded-full px-2.5 py-1 transition-soft flex items-center gap-1.5" title="Stato sincronizzazione"></button>
+    </div>
+    <nav class="max-w-3xl mx-auto px-4 sm:px-6 pb-3">
+      <div class="seg grid grid-cols-4 gap-0 text-[13px] font-medium" role="tablist" id="nav">
+        <button role="tab" data-view="dashboard" class="py-2">Dashboard</button>
+        <button role="tab" data-view="payment" class="py-2">Nota</button>
+        <button role="tab" data-view="settings" class="py-2">Impostazioni</button>
+        <button role="tab" data-view="guide" class="py-2">Guida</button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- ===================== MAIN ===================== -->
+  <main id="app-shell" class="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-6">
+    <section id="view-dashboard" class="fade"></section>
+    <section id="view-payment" class="fade hidden"></section>
+    <section id="view-settings" class="fade hidden"></section>
+    <section id="view-guide" class="fade hidden"></section>
+  </main>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="no-print border-t border-black/5 bg-white/60">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 py-5 text-center text-[12px] text-ink-faint">
+      Realizzato con cura · <span class="font-medium text-ink-soft">iTavix</span>
+    </div>
+  </footer>
+
+  <!-- ===================== MODAL ROOT ===================== -->
+  <div id="modal-root"></div>
+  <!-- ===================== TOAST ROOT ===================== -->
+  <div id="toast-root" class="fixed left-1/2 bottom-6 z-50 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none"></div>
+  <!-- ============================================================
+       FIREBASE (sincronizzazione tra dispositivi) — opzionale
+       Compat SDK v12.11.0 via CDN. Se la config qui sotto resta
+       vuota, l'app funziona normalmente in locale (senza sync).
+       ============================================================ -->
+  <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+  <script>
+    /* ┌──────────────────────────────────────────────────────────┐
+       │  INCOLLA QUI LA TUA CONFIG FIREBASE                        │
+       │  (Console Firebase → Impostazioni progetto → Le tue app)   │
+       │  Lasciando i campi vuoti, la sincronizzazione resta off.   │
+       └──────────────────────────────────────────────────────────┘ */
+    window.FIREBASE_CONFIG = {
+      apiKey: "AIzaSyAKbFfeV4NCPyBqUri73FBCFC4WvtCyn2U",
+      authDomain: "brickboy-b008e.firebaseapp.com",
+      projectId: "brickboy-b008e",
+      storageBucket: "brickboy-b008e.firebasestorage.app",
+      messagingSenderId: "974319322525",
+      appId: "1:974319322525:web:cc322557263ba2f4105b74"
+    };
+  </script>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   Ore BrickBoy — single-file freelance hours tracker
+   Vanilla JS + IndexedDB. UI in Italian, code comments in English.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   Small helpers
+--------------------------------------------------------------------- */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+// Escape user-provided text before injecting into innerHTML.
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Robust id generator (works on file:// and older engines).
+function genId() {
+  try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (_) {}
+  try {
+    const b = new Uint8Array(16); crypto.getRandomValues(b);
+    return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  } catch (_) {}
+  return 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+}
+
+// Format a Number as Italian currency.
+function eur(n) {
+  return (Number(n) || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+}
+// Format hours with Italian decimals, no trailing zeros.
+function hrs(n) {
+  const v = Number(n) || 0;
+  return v.toLocaleString('it-IT', { maximumFractionDigits: 2 }) + (v === 1 ? ' h' : ' h');
+}
+// ISO (YYYY-MM-DD) -> dd/mm/yyyy. Returns '—' if invalid.
+function dateIt(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+// Today as ISO.
+function todayIso() {
+  const d = new Date();
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/* ---------------------------------------------------------------------
+   IndexedDB layer (promise-wrapped)
+--------------------------------------------------------------------- */
+const DB_NAME = 'ore-brickboy';
+const DB_VERSION = 1;
+let _db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('entries')) {
+        const s = db.createObjectStore('entries', { keyPath: 'id' });
+        s.createIndex('projectId', 'projectId', { unique: false });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function tx(store, mode) {
+  return _db.transaction(store, mode).objectStore(store);
+}
+function idbReq(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+const dbGet = (store, key) => idbReq(tx(store, 'readonly').get(key));
+const dbGetAll = (store) => idbReq(tx(store, 'readonly').getAll());
+const dbPut = (store, value) => idbReq(tx(store, 'readwrite').put(value));
+const dbDel = (store, key) => idbReq(tx(store, 'readwrite').delete(key));
+function dbClear(store) {
+  return new Promise((resolve, reject) => {
+    const t = _db.transaction(store, 'readwrite');
+    t.objectStore(store).clear();
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+  });
+}
+
+/* ---------------------------------------------------------------------
+   Seed (first run only)
+--------------------------------------------------------------------- */
+const DEFAULT_SETTINGS = {
+  id: 'app',
+  hourlyRate: 25,
+  extra: 0,
+  holderName: 'Claudio Tavella',
+  iban: 'IT47R0364601600526311864007',
+  bic: 'NTSBITM1XXX'
+};
+
+async function seedIfEmpty() {
+  const existing = await dbGetAll('projects');
+  const hasSettings = await dbGet('settings', 'app');
+  if (!hasSettings) await dbPut('settings', { ...DEFAULT_SETTINGS });
+  if (existing && existing.length) return; // already seeded
+
+  const p1 = { id: genId(), name: 'Arcade BrickBoy', createdAt: '2026-06-17' };
+  const p2 = { id: genId(), name: 'GameBoy BrickBoy', createdAt: '2026-05-22' };
+  const p3 = { id: genId(), name: 'Play station 1 BrickBoy', createdAt: '2026-03-30' };
+  for (const p of [p1, p2, p3]) await dbPut('projects', p);
+
+  const seedEntries = [
+    { id: genId(), projectId: p1.id, spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1 },
+    { id: genId(), projectId: p2.id, spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5 },
+    { id: genId(), projectId: p2.id, spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2 },
+    { id: genId(), projectId: p3.id, spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 0 }
+  ];
+  for (const e of seedEntries) await dbPut('entries', e);
+}
+
+/* ---------------------------------------------------------------------
+   In-memory state
+--------------------------------------------------------------------- */
+const state = {
+  settings: { ...DEFAULT_SETTINGS },
+  projects: [],
+  entries: [],
+  view: 'dashboard',
+  expanded: new Set()
+};
+
+async function loadState() {
+  const s = await dbGet('settings', 'app');
+  state.settings = s ? s : { ...DEFAULT_SETTINGS };
+  state.projects = (await dbGetAll('projects')) || [];
+  state.entries = (await dbGetAll('entries')) || [];
+  // Stable ordering: projects by creation, entries by date.
+  state.projects.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || String(a.name).localeCompare(b.name));
+  state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+/* ---------------------------------------------------------------------
+   Derived calculations
+--------------------------------------------------------------------- */
+function entriesOf(projectId) {
+  return state.entries.filter(e => e.projectId === projectId);
+}
+function projectHours(projectId) {
+  return entriesOf(projectId).reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
+}
+function totalHours() {
+  return state.entries.reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
+}
+function totalCompensation() {
+  const rate = Number(state.settings.hourlyRate) || 0;
+  const extra = Number(state.settings.extra) || 0;
+  return rate * totalHours() + extra;
+}
+
+/* ---------------------------------------------------------------------
+   Toast (discreet feedback)
+--------------------------------------------------------------------- */
+function toast(message, kind = 'ok') {
+  const root = $('#toast-root');
+  const el = document.createElement('div');
+  const color = kind === 'error' ? 'bg-[#1d1d1f]' : 'bg-[#1d1d1f]';
+  el.className = `toast pointer-events-auto ${color} text-white text-[13px] font-medium px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2`;
+  const dot = kind === 'error' ? '⚠️' : '✓';
+  el.innerHTML = `<span>${dot}</span><span>${esc(message)}</span>`;
+  root.appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity .25s ease, transform .25s ease';
+    el.style.opacity = '0'; el.style.transform = 'translateY(8px)';
+    setTimeout(() => el.remove(), 280);
+  }, 2600);
+}
+
+/* ---------------------------------------------------------------------
+   Modal system
+--------------------------------------------------------------------- */
+function closeModal() {
+  const root = $('#modal-root');
+  root.innerHTML = '';
+  document.body.style.overflow = '';
+}
+
+// opts: { title, bodyHTML, confirmText, cancelText, onConfirm(form)->true|false, danger, onMount(card) }
+function openModal(opts) {
+  const root = $('#modal-root');
+  document.body.style.overflow = 'hidden';
+  const danger = opts.danger;
+  root.innerHTML = `
+    <div class="fixed inset-0 z-40 modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4" id="m-backdrop">
+      <div class="modal-card bg-white w-full sm:max-w-md rounded-t-xl2 sm:rounded-xl2 shadow-2xl overflow-hidden">
+        <div class="px-5 pt-5 pb-1">
+          <h2 class="text-[17px] font-semibold tracking-tight">${esc(opts.title || '')}</h2>
+        </div>
+        <div class="px-5 py-3" id="m-body">${opts.bodyHTML || ''}</div>
+        <div class="px-5 py-4 flex gap-2 justify-end border-t border-black/5">
+          <button id="m-cancel" class="px-4 py-2 rounded-full text-[14px] font-medium text-ink-soft hover:bg-black/5 transition-soft">${esc(opts.cancelText || 'Annulla')}</button>
+          <button id="m-confirm" class="px-4 py-2 rounded-full text-[14px] font-semibold text-white transition-soft ${danger ? 'bg-[#ff3b30] hover:bg-[#e0352b]' : 'bg-accent hover:bg-accent-hover'}">${esc(opts.confirmText || 'Salva')}</button>
+        </div>
+      </div>
+    </div>`;
+  const backdrop = $('#m-backdrop');
+  backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) closeModal(); });
+  $('#m-cancel').addEventListener('click', closeModal);
+  const card = $('.modal-card', root);
+  if (typeof opts.onMount === 'function') opts.onMount(card);
+  const confirm = async () => {
+    const ok = opts.onConfirm ? await opts.onConfirm(card) : true;
+    if (ok !== false) closeModal();
+  };
+  $('#m-confirm').addEventListener('click', confirm);
+  // Enter to confirm when a single-line field is focused
+  card.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'number') { e.preventDefault(); confirm(); }
+    if (e.key === 'Escape') closeModal();
+  });
+  // Autofocus first field
+  const first = $('input, textarea', card);
+  if (first) setTimeout(() => first.focus(), 60);
+}
+
+function showError(card, msg) {
+  let box = $('#m-error', card);
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'm-error';
+    box.className = 'mt-3 text-[13px] text-[#ff3b30] bg-[#ff3b30]/8 rounded-lg px-3 py-2';
+    $('#m-body', card).appendChild(box);
+  }
+  box.textContent = msg;
+}
+
+/* ---------------------------------------------------------------------
+   View switching
+--------------------------------------------------------------------- */
+function setView(view) {
+  state.view = view;
+  ['dashboard', 'payment', 'settings', 'guide'].forEach(v => {
+    $('#view-' + v).classList.toggle('hidden', v !== view);
+  });
+  $$('#nav button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === view)));
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function render() {
+  if (state.view === 'dashboard') renderDashboard();
+  else if (state.view === 'payment') renderPayment();
+  else if (state.view === 'settings') renderSettings();
+  else if (state.view === 'guide') renderGuide();
+}
+
+/* ---------------------------------------------------------------------
+   DASHBOARD
+--------------------------------------------------------------------- */
+function renderDashboard() {
+  const root = $('#view-dashboard');
+  const tH = totalHours();
+  const rate = Number(state.settings.hourlyRate) || 0;
+  const extra = Number(state.settings.extra) || 0;
+  const total = totalCompensation();
+
+  const summary = `
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      ${summaryCard('Ore totali', hrs(tH), 'text-ink')}
+      ${summaryCard('Tariffa oraria', eur(rate) + '/h', 'text-ink')}
+      ${summaryCard('Compenso totale', eur(total), 'text-accent', extra ? `incl. extra ${eur(extra)}` : '')}
+    </div>`;
+
+  let projectsHTML;
+  if (!state.projects.length) {
+    projectsHTML = `
+      <div class="bg-white rounded-xl2 border border-black/5 px-6 py-12 text-center">
+        <div class="text-3xl mb-3">▦</div>
+        <p class="text-ink-soft text-[15px]">Nessun progetto.</p>
+        <p class="text-ink-faint text-[13px] mt-1">Creane uno per iniziare a tracciare le ore.</p>
+      </div>`;
+  } else {
+    projectsHTML = `<div class="space-y-3">${state.projects.map(projectCard).join('')}</div>`;
+  }
+
+  root.innerHTML = `
+    ${summary}
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Progetti</h2>
+      <button id="add-project" class="text-[14px] font-semibold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
+        <span class="text-[18px] leading-none">+</span> Nuovo progetto
+      </button>
+    </div>
+    ${projectsHTML}`;
+
+  // Bind
+  $('#add-project').addEventListener('click', addProject);
+  $$('[data-toggle]', root).forEach(el => el.addEventListener('click', () => {
+    const id = el.dataset.toggle;
+    if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
+    renderDashboard();
+  }));
+  $$('[data-add-entry]', root).forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); addEntry(el.dataset.addEntry); }));
+  $$('[data-rename]', root).forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); renameProject(el.dataset.rename); }));
+  $$('[data-del-project]', root).forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); deleteProject(el.dataset.delProject); }));
+  $$('[data-edit-entry]', root).forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); editEntry(el.dataset.editEntry); }));
+  $$('[data-del-entry]', root).forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); deleteEntry(el.dataset.delEntry); }));
+}
+
+function summaryCard(label, value, valueClass, sub) {
+  return `
+    <div class="bg-white rounded-xl2 border border-black/5 px-4 py-4 shadow-[0_1px_2px_rgba(0,0,0,.03)]">
+      <div class="text-[11px] font-medium uppercase tracking-wide text-ink-faint">${esc(label)}</div>
+      <div class="mt-1.5 text-[20px] font-semibold tracking-tight ${valueClass} leading-tight tabular-nums">${esc(value)}</div>
+      ${sub ? `<div class="text-[11px] text-ink-faint mt-0.5">${esc(sub)}</div>` : ''}
+    </div>`;
+}
+
+function projectCard(p) {
+  const open = state.expanded.has(p.id);
+  const items = entriesOf(p.id);
+  const pHours = projectHours(p.id);
+
+  const itemsHTML = items.length
+    ? items.map(e => `
+        <div class="group flex items-center gap-3 px-4 py-3 border-t border-black/5">
+          <div class="flex-1 min-w-0">
+            <div class="text-[14px] text-ink truncate">${esc(e.spec)}</div>
+            <div class="text-[12px] text-ink-faint mt-0.5">${esc(dateIt(e.date))}</div>
+          </div>
+          <div class="text-[14px] font-medium tabular-nums text-ink-soft shrink-0">${esc(hrs(e.hours))}</div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button data-edit-entry="${e.id}" title="Modifica" class="w-8 h-8 rounded-full hover:bg-black/5 transition-soft text-ink-faint hover:text-ink flex items-center justify-center">✎</button>
+            <button data-del-entry="${e.id}" title="Elimina" class="w-8 h-8 rounded-full hover:bg-[#ff3b30]/10 transition-soft text-ink-faint hover:text-[#ff3b30] flex items-center justify-center">🗑</button>
+          </div>
+        </div>`).join('')
+    : `<div class="px-4 py-5 border-t border-black/5 text-center text-[13px] text-ink-faint">Nessuna voce. Aggiungine una.</div>`;
+
+  return `
+    <div class="bg-white rounded-xl2 border border-black/5 overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,.03)]">
+      <div data-toggle="${p.id}" class="flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none hover:bg-black/[.015] transition-soft">
+        <span class="chev ${open ? 'open' : ''} text-ink-faint text-[13px]">▶</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-[15px] font-medium tracking-tight truncate">${esc(p.name)}</div>
+          <div class="text-[12px] text-ink-faint">${items.length} voci · ${esc(hrs(pHours))}</div>
+        </div>
+        <button data-rename="${p.id}" title="Rinomina" class="w-8 h-8 rounded-full hover:bg-black/5 transition-soft text-ink-faint hover:text-ink flex items-center justify-center">✎</button>
+        <button data-del-project="${p.id}" title="Elimina progetto" class="w-8 h-8 rounded-full hover:bg-[#ff3b30]/10 transition-soft text-ink-faint hover:text-[#ff3b30] flex items-center justify-center">🗑</button>
+      </div>
+      ${open ? `
+        <div>${itemsHTML}</div>
+        <div class="px-4 py-3 border-t border-black/5">
+          <button data-add-entry="${p.id}" class="text-[13px] font-semibold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
+            <span class="text-[16px] leading-none">+</span> Aggiungi voce
+          </button>
+        </div>` : ''}
+    </div>`;
+}
+
+/* ---------- Project CRUD ---------- */
+function addProject() {
+  openModal({
+    title: 'Nuovo progetto',
+    bodyHTML: `
+      <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Nome progetto</label>
+      <input id="f-name" class="field" placeholder="Es. Arcade BrickBoy" />`,
+    confirmText: 'Crea',
+    onConfirm: async (card) => {
+      const name = $('#f-name', card).value.trim();
+      if (!name) { showError(card, 'Inserisci un nome per il progetto.'); return false; }
+      const p = { id: genId(), name, createdAt: todayIso() };
+      await dbPut('projects', p);
+      state.projects.push(p);
+      state.expanded.add(p.id);
+      renderDashboard();
+      cloudPush();
+      toast('Progetto creato');
+    }
+  });
+}
+
+function renameProject(id) {
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  openModal({
+    title: 'Rinomina progetto',
+    bodyHTML: `
+      <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Nome progetto</label>
+      <input id="f-name" class="field" value="${esc(p.name)}" />`,
+    confirmText: 'Salva',
+    onConfirm: async (card) => {
+      const name = $('#f-name', card).value.trim();
+      if (!name) { showError(card, 'Il nome non può essere vuoto.'); return false; }
+      p.name = name;
+      await dbPut('projects', p);
+      renderDashboard();
+      cloudPush();
+      toast('Progetto rinominato');
+    }
+  });
+}
+
+function deleteProject(id) {
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  const count = entriesOf(id).length;
+  openModal({
+    title: 'Eliminare il progetto?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px] text-ink-soft">Stai per eliminare <span class="font-semibold text-ink">${esc(p.name)}</span>${count ? ` e le sue <span class="font-semibold text-ink">${count}</span> voci` : ''}. L'azione non è reversibile.</p>`,
+    confirmText: 'Elimina',
+    onConfirm: async () => {
+      for (const e of entriesOf(id)) await dbDel('entries', e.id);
+      await dbDel('projects', id);
+      state.entries = state.entries.filter(e => e.projectId !== id);
+      state.projects = state.projects.filter(x => x.id !== id);
+      state.expanded.delete(id);
+      renderDashboard();
+      cloudPush();
+      toast('Progetto eliminato');
+    }
+  });
+}
+
+/* ---------- Entry CRUD ---------- */
+function entryFormHTML(e) {
+  return `
+    <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Descrizione (Spec.)</label>
+    <input id="f-spec" class="field mb-3" placeholder="Es. Seconda iterazione" value="${e ? esc(e.spec) : ''}" />
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Data</label>
+        <input id="f-date" type="date" class="field" value="${e ? esc(e.date) : todayIso()}" />
+      </div>
+      <div>
+        <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Ore</label>
+        <input id="f-hours" type="number" min="0" step="0.25" inputmode="decimal" class="field" placeholder="0" value="${e ? esc(e.hours) : ''}" />
+      </div>
+    </div>`;
+}
+
+function validateEntry(card) {
+  const spec = $('#f-spec', card).value.trim();
+  const date = $('#f-date', card).value;
+  const hoursRaw = $('#f-hours', card).value;
+  if (!spec) { showError(card, 'La descrizione non può essere vuota.'); return null; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date).getTime())) { showError(card, 'Inserisci una data valida.'); return null; }
+  const hours = Number(hoursRaw);
+  if (hoursRaw === '' || isNaN(hours) || hours < 0) { showError(card, 'Le ore devono essere un numero ≥ 0.'); return null; }
+  return { spec, date, hours };
+}
+
+function addEntry(projectId) {
+  openModal({
+    title: 'Aggiungi voce',
+    bodyHTML: entryFormHTML(null),
+    confirmText: 'Aggiungi',
+    onConfirm: async (card) => {
+      const v = validateEntry(card);
+      if (!v) return false;
+      const e = { id: genId(), projectId, ...v };
+      await dbPut('entries', e);
+      state.entries.push(e);
+      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      state.expanded.add(projectId);
+      renderDashboard();
+      cloudPush();
+      toast('Voce aggiunta');
+    }
+  });
+}
+
+function editEntry(id) {
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  openModal({
+    title: 'Modifica voce',
+    bodyHTML: entryFormHTML(e),
+    confirmText: 'Salva',
+    onConfirm: async (card) => {
+      const v = validateEntry(card);
+      if (!v) return false;
+      Object.assign(e, v);
+      await dbPut('entries', e);
+      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      renderDashboard();
+      cloudPush();
+      toast('Voce aggiornata');
+    }
+  });
+}
+
+function deleteEntry(id) {
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  openModal({
+    title: 'Eliminare la voce?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px] text-ink-soft">Stai per eliminare <span class="font-semibold text-ink">${esc(e.spec)}</span> (${esc(hrs(e.hours))}).</p>`,
+    confirmText: 'Elimina',
+    onConfirm: async () => {
+      await dbDel('entries', id);
+      state.entries = state.entries.filter(x => x.id !== id);
+      renderDashboard();
+      cloudPush();
+      toast('Voce eliminata');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   PAYMENT NOTE (printable)
+--------------------------------------------------------------------- */
+function allEntriesFlat() {
+  // Flatten with project name, sorted by date.
+  const map = new Map(state.projects.map(p => [p.id, p.name]));
+  return state.entries
+    .map(e => ({ ...e, project: map.get(e.projectId) || '—' }))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.project.localeCompare(b.project));
+}
+
+function renderPayment() {
+  const root = $('#view-payment');
+  const s = state.settings;
+  const flat = allEntriesFlat();
+  const tH = totalHours();
+  const rate = Number(s.hourlyRate) || 0;
+  const extra = Number(s.extra) || 0;
+  const total = totalCompensation();
+
+  const rows = flat.length
+    ? flat.map(e => `
+        <tr class="border-b border-black/5">
+          <td class="py-2.5 pr-3 text-ink-soft whitespace-nowrap">${esc(dateIt(e.date))}</td>
+          <td class="py-2.5 pr-3 text-ink">${esc(e.project)}</td>
+          <td class="py-2.5 pr-3 text-ink-soft">${esc(e.spec)}</td>
+          <td class="py-2.5 text-right tabular-nums text-ink">${esc(hrs(e.hours))}</td>
+        </tr>`).join('')
+    : `<tr><td colspan="4" class="py-6 text-center text-ink-faint">Nessuna voce registrata.</td></tr>`;
+
+  root.innerHTML = `
+    <div class="no-print flex items-center justify-between mb-4">
+      <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Nota di pagamento</h2>
+      <button id="btn-print" class="px-4 py-2 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-semibold transition-soft flex items-center gap-1.5">
+        <span>⎙</span> Stampa / Salva PDF
+      </button>
+    </div>
+
+    <div class="print-area bg-white rounded-xl2 border border-black/5 shadow-[0_1px_3px_rgba(0,0,0,.05)] p-6 sm:p-8">
+      <!-- Header -->
+      <div class="flex items-start justify-between gap-4 pb-5 border-b border-black/10">
+        <div>
+          <div class="text-[20px] font-semibold tracking-tight">Nota di pagamento</div>
+          <div class="text-[13px] text-ink-soft mt-0.5">${esc(s.holderName || '—')}</div>
+        </div>
+        <div class="text-right text-[12px] text-ink-faint">
+          <div>Data emissione</div>
+          <div class="text-ink-soft font-medium">${esc(dateIt(todayIso()))}</div>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <table class="print-table w-full text-[13px] mt-5">
+        <thead>
+          <tr class="text-left text-[11px] uppercase tracking-wide text-ink-faint border-b border-black/10">
+            <th class="py-2 pr-3 font-semibold">Data</th>
+            <th class="py-2 pr-3 font-semibold">Progetto</th>
+            <th class="py-2 pr-3 font-semibold">Spec.</th>
+            <th class="py-2 font-semibold text-right">Ore</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <!-- Totals -->
+      <div class="mt-5 flex justify-end">
+        <div class="w-full sm:w-72 text-[13px] space-y-1.5">
+          <div class="flex justify-between text-ink-soft"><span>Ore totali</span><span class="tabular-nums">${esc(hrs(tH))}</span></div>
+          <div class="flex justify-between text-ink-soft"><span>Tariffa oraria</span><span class="tabular-nums">${esc(eur(rate))}/h</span></div>
+          ${extra ? `<div class="flex justify-between text-ink-soft"><span>Extra forfettario</span><span class="tabular-nums">${esc(eur(extra))}</span></div>` : ''}
+          <div class="flex justify-between pt-2 mt-1 border-t border-black/10 text-[15px] font-semibold">
+            <span>Compenso totale</span><span class="tabular-nums text-accent">${esc(eur(total))}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Payment -->
+      <div class="mt-6 pt-5 border-t border-black/10">
+        <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-2">Dati per il pagamento</div>
+        <div class="grid sm:grid-cols-2 gap-y-1.5 gap-x-6 text-[13px]">
+          <div class="flex justify-between sm:block">
+            <span class="text-ink-faint">Titolare</span>
+            <span class="text-ink font-medium sm:block">${esc(s.holderName || '—')}</span>
+          </div>
+          <div class="flex justify-between sm:block">
+            <span class="text-ink-faint">IBAN</span>
+            <span class="text-ink font-medium sm:block tabular-nums break-all">${esc(s.iban || '—')}</span>
+          </div>
+          <div class="flex justify-between sm:block">
+            <span class="text-ink-faint">BIC / SWIFT</span>
+            <span class="text-ink font-medium sm:block tabular-nums">${esc(s.bic || '—')}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 pt-4 border-t border-black/5 text-center text-[11px] text-ink-faint">iTavix</div>
+    </div>`;
+
+  $('#btn-print').addEventListener('click', () => window.print());
+}
+
+/* ---------------------------------------------------------------------
+   SETTINGS
+--------------------------------------------------------------------- */
+function renderSettings() {
+  const root = $('#view-settings');
+  const s = state.settings;
+  root.innerHTML = `
+    <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint mb-4">Impostazioni</h2>
+
+    ${accountPanelHTML()}
+
+    <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] space-y-4">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Tariffa oraria (€/h)</label>
+          <input id="s-rate" type="number" min="0" step="0.5" inputmode="decimal" class="field" value="${esc(s.hourlyRate)}" />
+        </div>
+        <div>
+          <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Extra forfettario (€)</label>
+          <input id="s-extra" type="number" min="0" step="0.5" inputmode="decimal" class="field" value="${esc(s.extra)}" />
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] space-y-4 mt-4">
+      <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold">Dati di pagamento</div>
+      <div>
+        <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Titolare del conto</label>
+        <input id="s-holder" class="field" value="${esc(s.holderName)}" placeholder="Nome e cognome" />
+      </div>
+      <div>
+        <label class="block text-[13px] font-medium text-ink-soft mb-1.5">IBAN</label>
+        <input id="s-iban" class="field tabular-nums" value="${esc(s.iban)}" placeholder="IT.." />
+      </div>
+      <div>
+        <label class="block text-[13px] font-medium text-ink-soft mb-1.5">BIC / SWIFT</label>
+        <input id="s-bic" class="field tabular-nums" value="${esc(s.bic)}" placeholder="XXXXXXXX" />
+      </div>
+    </div>
+
+    <div class="flex justify-end mt-4">
+      <button id="s-save" class="px-5 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-semibold transition-soft">Salva impostazioni</button>
+    </div>
+
+    <!-- Backup -->
+    <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mt-6">
+      <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-3">Dati & backup</div>
+      <div class="flex flex-wrap gap-2">
+        <button id="exp-csv" class="px-4 py-2 rounded-full border border-black/10 hover:bg-black/[.03] text-[13px] font-medium transition-soft">Esporta CSV</button>
+        <button id="exp-json" class="px-4 py-2 rounded-full border border-black/10 hover:bg-black/[.03] text-[13px] font-medium transition-soft">Esporta JSON</button>
+        <button id="imp-json" class="px-4 py-2 rounded-full border border-black/10 hover:bg-black/[.03] text-[13px] font-medium transition-soft">Importa JSON</button>
+        <input id="imp-file" type="file" accept="application/json,.json" class="hidden" />
+      </div>
+      <p class="text-[12px] text-ink-faint mt-3">L'importazione JSON sovrascrive tutti i dati attuali dopo conferma.</p>
+    </div>`;
+
+  $('#s-save').addEventListener('click', saveSettings);
+  $('#exp-csv').addEventListener('click', exportCSV);
+  $('#exp-json').addEventListener('click', exportJSON);
+  $('#imp-json').addEventListener('click', () => $('#imp-file').click());
+  $('#imp-file').addEventListener('change', importJSON);
+  bindAccountPanel();
+}
+
+/* ---------- Account & sync panel ---------- */
+function accountPanelHTML() {
+  // Not configured: explain how to enable sync.
+  if (!sync.enabled) {
+    return `
+      <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
+        <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-2">Sincronizzazione</div>
+        <p class="text-[14px] text-ink-soft leading-relaxed">La sincronizzazione tra dispositivi è disattivata. Per attivarla, incolla la configurazione del tuo progetto Firebase nel file (blocco <span class="font-medium text-ink">FIREBASE_CONFIG</span> in cima allo script). Vedi la sezione <span class="font-medium text-ink">Guida → Sincronizzazione</span>.</p>
+      </div>`;
+  }
+  // Signed in: show account + status + sign out.
+  if (sync.user) {
+    const statusText = { syncing: 'Sincronizzazione in corso…', synced: 'Dati sincronizzati', error: 'Errore di sincronizzazione', signedout: '—', off: '—' }[sync.status] || '';
+    return `
+      <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
+        <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-3">Account & sincronizzazione</div>
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-[15px] font-medium truncate">${esc(sync.user.email || 'Account')}</div>
+            <div class="text-[12px] text-ink-faint mt-0.5">${esc(statusText)}</div>
+          </div>
+          <button id="a-signout" class="shrink-0 px-4 py-2 rounded-full border border-black/10 hover:bg-black/[.03] text-[13px] font-medium transition-soft">Esci</button>
+        </div>
+        <p class="text-[12px] text-ink-faint mt-3">I dati sono privati del tuo account e si aggiornano in tempo reale su tutti i dispositivi in cui accedi.</p>
+      </div>`;
+  }
+  // Configured but signed out: login / signup form.
+  return `
+    <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
+      <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-3">Accedi per sincronizzare</div>
+      <div class="space-y-3">
+        <input id="a-email" type="email" autocomplete="email" class="field" placeholder="Email" />
+        <input id="a-pass" type="password" autocomplete="current-password" class="field" placeholder="Password (min. 6 caratteri)" />
+        <div id="a-error" class="hidden text-[13px] text-[#ff3b30]"></div>
+        <div class="flex gap-2 pt-1">
+          <button id="a-signin" class="flex-1 px-4 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-semibold transition-soft">Accedi</button>
+          <button id="a-signup" class="px-4 py-2.5 rounded-full border border-black/10 hover:bg-black/[.03] text-[14px] font-medium transition-soft">Crea account</button>
+        </div>
+      </div>
+      <p class="text-[12px] text-ink-faint mt-3">Al primo accesso su un dispositivo i dati del cloud diventano la copia di riferimento.</p>
+    </div>`;
+}
+
+function bindAccountPanel() {
+  if (!sync.enabled) return;
+  if (sync.user) {
+    const out = $('#a-signout');
+    if (out) out.addEventListener('click', doSignOut);
+    return;
+  }
+  const emailEl = $('#a-email');
+  const passEl = $('#a-pass');
+  const errEl = $('#a-error');
+  const readCreds = () => ({ email: (emailEl.value || '').trim(), password: passEl.value || '' });
+  const showErr = (m) => { if (errEl) { errEl.textContent = m; errEl.classList.remove('hidden'); } };
+  const guard = (c) => {
+    if (!c.email) { showErr('Inserisci la tua email.'); return false; }
+    if (!c.password) { showErr('Inserisci la password.'); return false; }
+    return true;
+  };
+  const signin = $('#a-signin');
+  const signup = $('#a-signup');
+  if (signin) signin.addEventListener('click', () => { const c = readCreds(); if (guard(c)) doSignIn(c.email, c.password); });
+  if (signup) signup.addEventListener('click', () => { const c = readCreds(); if (guard(c)) doSignUp(c.email, c.password); });
+  if (passEl) passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = readCreds(); if (guard(c)) doSignIn(c.email, c.password); } });
+}
+
+async function saveSettings() {
+  const rate = Number($('#s-rate').value);
+  const extra = Number($('#s-extra').value);
+  if (isNaN(rate) || rate < 0) { toast('Tariffa oraria non valida', 'error'); return; }
+  if (isNaN(extra) || extra < 0) { toast('Extra non valido', 'error'); return; }
+  state.settings = {
+    id: 'app',
+    hourlyRate: rate,
+    extra: extra,
+    holderName: $('#s-holder').value.trim(),
+    iban: $('#s-iban').value.trim(),
+    bic: $('#s-bic').value.trim()
+  };
+  await dbPut('settings', state.settings);
+  cloudPush();
+  toast('Impostazioni salvate');
+}
+
+/* ---------------------------------------------------------------------
+   EXPORT / IMPORT
+--------------------------------------------------------------------- */
+function download(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  // Quote when the field contains the delimiter, quotes or newlines.
+  if (/[";\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function exportCSV() {
+  const sep = ';'; // Italian Excel default delimiter
+  const flat = allEntriesFlat();
+  const lines = [];
+  lines.push(['Progetto', 'Spec.', 'Data', 'Ore'].map(csvCell).join(sep));
+  for (const e of flat) {
+    lines.push([e.project, e.spec, dateIt(e.date), String(e.hours).replace('.', ',')].map(csvCell).join(sep));
+  }
+  // Total rows
+  lines.push('');
+  lines.push([csvCell('Ore totali'), '', '', csvCell(String(totalHours()).replace('.', ','))].join(sep));
+  lines.push([csvCell('Tariffa oraria (€/h)'), '', '', csvCell(String(state.settings.hourlyRate).replace('.', ','))].join(sep));
+  lines.push([csvCell('Extra (€)'), '', '', csvCell(String(state.settings.extra).replace('.', ','))].join(sep));
+  lines.push([csvCell('Compenso totale (€)'), '', '', csvCell(String(totalCompensation()).replace('.', ','))].join(sep));
+  // BOM for correct UTF-8 in Excel.
+  download(`ore-brickboy_${todayIso()}.csv`, '\uFEFF' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+  toast('CSV esportato');
+}
+
+function exportJSON() {
+  const dump = {
+    app: 'ore-brickboy',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    settings: state.settings,
+    projects: state.projects,
+    entries: state.entries
+  };
+  download(`ore-brickboy_backup_${todayIso()}.json`, JSON.stringify(dump, null, 2), 'application/json');
+  toast('Backup JSON esportato');
+}
+
+// Validate the structure of an imported backup. Returns { ok, data?, error? }.
+function validateBackup(obj) {
+  if (!obj || typeof obj !== 'object') return { ok: false, error: 'File non valido: contenuto non riconosciuto.' };
+  if (!Array.isArray(obj.projects) || !Array.isArray(obj.entries)) {
+    return { ok: false, error: 'File non valido: mancano "projects" o "entries".' };
+  }
+  if (!obj.settings || typeof obj.settings !== 'object') {
+    return { ok: false, error: 'File non valido: manca la sezione "settings".' };
+  }
+  for (const p of obj.projects) {
+    if (!p || typeof p.id !== 'string' || typeof p.name !== 'string') {
+      return { ok: false, error: 'File non valido: struttura dei progetti errata.' };
+    }
+  }
+  for (const e of obj.entries) {
+    if (!e || typeof e.id !== 'string' || typeof e.projectId !== 'string' ||
+        typeof e.spec !== 'string' || typeof e.date !== 'string' || typeof e.hours !== 'number') {
+      return { ok: false, error: 'File non valido: struttura delle voci errata.' };
+    }
+  }
+  const s = obj.settings;
+  const settings = {
+    id: 'app',
+    hourlyRate: Number(s.hourlyRate) || 0,
+    extra: Number(s.extra) || 0,
+    holderName: typeof s.holderName === 'string' ? s.holderName : '',
+    iban: typeof s.iban === 'string' ? s.iban : '',
+    bic: typeof s.bic === 'string' ? s.bic : ''
+  };
+  return { ok: true, data: { settings, projects: obj.projects, entries: obj.entries } };
+}
+
+function importJSON(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = ''; // allow re-selecting the same file later
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try { parsed = JSON.parse(reader.result); }
+    catch (_) { toast('File JSON non leggibile', 'error'); return; }
+    const res = validateBackup(parsed);
+    if (!res.ok) { toast(res.error, 'error'); return; }
+    const d = res.data;
+    openModal({
+      title: 'Importare il backup?',
+      danger: true,
+      bodyHTML: `<p class="text-[14px] text-ink-soft">Il backup contiene <span class="font-semibold text-ink">${d.projects.length}</span> progetti e <span class="font-semibold text-ink">${d.entries.length}</span> voci. L'importazione <span class="font-semibold text-ink">sovrascrive tutti i dati attuali</span>. Continuare?</p>`,
+      confirmText: 'Sovrascrivi',
+      onConfirm: async () => {
+        try {
+          await dbClear('projects');
+          await dbClear('entries');
+          await dbPut('settings', d.settings);
+          for (const p of d.projects) await dbPut('projects', p);
+          for (const e of d.entries) await dbPut('entries', e);
+          await loadState();
+          state.expanded.clear();
+          render();
+          cloudPush();
+          toast('Backup importato');
+        } catch (err) {
+          toast('Errore durante l\'importazione', 'error');
+        }
+      }
+    });
+  };
+  reader.onerror = () => toast('Impossibile leggere il file', 'error');
+  reader.readAsText(file);
+}
+
+/* ---------------------------------------------------------------------
+   GUIDE
+--------------------------------------------------------------------- */
+function guideSection(title, bodyHTML) {
+  return `
+    <details class="bg-white rounded-xl2 border border-black/5 overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,.03)] group">
+      <summary class="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between hover:bg-black/[.015] transition-soft">
+        <span class="text-[15px] font-medium tracking-tight">${esc(title)}</span>
+        <span class="text-ink-faint text-[13px] transition-transform group-open:rotate-90">▶</span>
+      </summary>
+      <div class="px-5 pb-5 pt-1 text-[14px] text-ink-soft leading-relaxed space-y-2">${bodyHTML}</div>
+    </details>`;
+}
+
+function renderGuide() {
+  const root = $('#view-guide');
+  root.innerHTML = `
+    <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint mb-2">Guida</h2>
+    <p class="text-[14px] text-ink-soft mb-4 leading-relaxed">Tutto ciò che puoi fare con Ore BrickBoy, in breve.</p>
+    <div class="space-y-3">
+      ${guideSection('Come funziona il tracciamento', `
+        <p>L'app organizza il lavoro in <strong class="text-ink">progetti</strong>. Ogni progetto contiene una lista di <strong class="text-ink">voci</strong>, e ogni voce ha tre campi:</p>
+        <p>· <strong class="text-ink">Spec.</strong> — una breve descrizione di cosa hai fatto;<br>· <strong class="text-ink">Data</strong> — il giorno di lavoro;<br>· <strong class="text-ink">Ore</strong> — le ore dedicate (anche frazioni, es. 1,5).</p>
+        <p>La Dashboard somma automaticamente le ore di ogni progetto e il totale generale.</p>`)}
+
+      ${guideSection('Come si calcola il compenso', `
+        <p>Il compenso totale segue la formula:</p>
+        <p class="font-medium text-ink bg-accent-soft rounded-lg px-3 py-2 inline-block">tariffa oraria × ore totali + extra</p>
+        <p>La <strong class="text-ink">tariffa oraria</strong> è unica e globale (vale per tutte le voci) e si imposta in <strong class="text-ink">Impostazioni</strong>. L'<strong class="text-ink">extra</strong> è un importo forfettario opzionale che si somma al totale.</p>`)}
+
+      ${guideSection('Creare, modificare ed eliminare', `
+        <p>Dalla <strong class="text-ink">Dashboard</strong>:</p>
+        <p>· Usa <strong class="text-ink">+ Nuovo progetto</strong> per crearne uno.<br>· Tocca un progetto per espanderlo e vederne le voci.<br>· L'icona ✎ rinomina il progetto o modifica una voce; l'icona 🗑 elimina (l'eliminazione di un progetto chiede conferma e rimuove anche le sue voci).<br>· Dentro un progetto espanso usa <strong class="text-ink">+ Aggiungi voce</strong>.</p>
+        <p>I totali si ricalcolano in tempo reale a ogni modifica.</p>`)}
+
+      ${guideSection('Impostazioni', `
+        <p>Qui imposti la <strong class="text-ink">tariffa oraria</strong>, l'<strong class="text-ink">extra forfettario</strong> e i <strong class="text-ink">dati di pagamento</strong> (titolare del conto, IBAN, BIC/SWIFT) usati nella nota di pagamento. Ricordati di premere <strong class="text-ink">Salva impostazioni</strong>.</p>`)}
+
+      ${guideSection('Nota di pagamento e stampa', `
+        <p>La sezione <strong class="text-ink">Nota</strong> genera un documento pulito con tutte le voci (Data · Progetto · Spec. · Ore), i totali e i dati di pagamento. Il pulsante <strong class="text-ink">Stampa / Salva PDF</strong> apre la finestra di stampa del browser con un layout A4 ordinato, senza la navigazione dell'app: da lì puoi stampare o salvare come PDF.</p>`)}
+
+      ${guideSection('Export, import e backup', `
+        <p>In <strong class="text-ink">Impostazioni → Dati & backup</strong>:</p>
+        <p>· <strong class="text-ink">Esporta CSV</strong> — tutte le voci più le righe di totale (apribile in Excel).<br>· <strong class="text-ink">Esporta JSON</strong> — backup completo di impostazioni, progetti e voci.<br>· <strong class="text-ink">Importa JSON</strong> — ripristina un backup; il file viene validato e, dopo conferma, <strong class="text-ink">sovrascrive tutti i dati attuali</strong>. Se il file non è valido, i dati esistenti restano intatti.</p>`)}
+
+      ${guideSection('Dove vengono salvati i dati', `
+        <p>I dati sono salvati <strong class="text-ink">localmente sul tuo dispositivo</strong> tramite IndexedDB del browser e restano dopo il refresh. Se attivi la sincronizzazione (vedi sotto), vengono anche copiati nel tuo account cloud privato. Svuotare i dati del browser per questo sito cancella la copia locale, ma non quella nel cloud.</p>`)}
+
+      ${guideSection('Sincronizzazione tra dispositivi', `
+        <p>La sincronizzazione usa <strong class="text-ink">Firebase</strong> (Google) ed è gratuita per questo tipo di utilizzo. I dati restano <strong class="text-ink">privati del tuo account</strong>: solo chi accede con la tua email può leggerli o modificarli.</p>
+        <p>Attivazione (una tantum):</p>
+        <p>1. Crea un progetto su <strong class="text-ink">console.firebase.google.com</strong> (senza carta di credito).<br>2. Attiva <strong class="text-ink">Firestore Database</strong> e, in Authentication, il metodo <strong class="text-ink">Email/Password</strong>.<br>3. Registra un'app web e copia la configurazione nel blocco <strong class="text-ink">FIREBASE_CONFIG</strong> in cima allo script di questo file.<br>4. Imposta le regole di sicurezza di Firestore in modo che ogni utente acceda solo ai propri dati.</p>
+        <p>Fatto questo, vai in <strong class="text-ink">Impostazioni → Accedi</strong>, crea un account e accedi con la stessa email su ogni dispositivo. Le modifiche si propagano in tempo reale; l'indicatore in alto a destra mostra lo stato (Sincronizzato / Sincronizzo…).</p>
+        <p>Nota: al primo accesso su un dispositivo, la copia presente nel cloud diventa quella di riferimento e sostituisce i dati locali di quel dispositivo.</p>`)}
+    </div>`;
+}
+
+/* ---------------------------------------------------------------------
+   CLOUD SYNC — Firebase Auth (email/password) + Firestore
+   Local-first: IndexedDB stays the working store; Firestore mirrors it
+   per authenticated user. Whole-state document, last-write-wins.
+--------------------------------------------------------------------- */
+const sync = {
+  enabled: false,     // true when a valid Firebase config is present
+  ready: false,       // SDK initialised
+  auth: null,
+  db: null,
+  user: null,
+  unsub: null,        // snapshot unsubscribe
+  applyingRemote: false,
+  pushTimer: null,
+  status: 'off'       // 'off' | 'signedout' | 'syncing' | 'synced' | 'error'
+};
+
+function firebaseConfigured() {
+  const c = window.FIREBASE_CONFIG || {};
+  return typeof firebase !== 'undefined' && !!c.apiKey && !!c.projectId;
+}
+
+function userDocRef() {
+  if (!sync.user) return null;
+  return sync.db.collection('users').doc(sync.user.uid);
+}
+
+function setSyncStatus(status) {
+  sync.status = status;
+  updateSyncBadge();
+  // Refresh the account panel if the settings view is open.
+  if (state.view === 'settings') renderSettings();
+}
+
+function updateSyncBadge() {
+  const el = $('#sync-badge');
+  if (!el) return;
+  if (!sync.enabled) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const map = {
+    signedout: { t: 'Non connesso', c: 'bg-black/5 text-ink-soft', dot: '○' },
+    syncing:   { t: 'Sincronizzo…', c: 'bg-accent-soft text-accent', dot: '⟳' },
+    synced:    { t: 'Sincronizzato', c: 'bg-[#34c759]/12 text-[#1f9d4d]', dot: '●' },
+    error:     { t: 'Errore sync', c: 'bg-[#ff3b30]/10 text-[#ff3b30]', dot: '⚠' },
+    off:       { t: '', c: '', dot: '' }
+  };
+  const m = map[sync.status] || map.signedout;
+  el.className = `shrink-0 text-[12px] font-medium rounded-full px-2.5 py-1 transition-soft flex items-center gap-1.5 ${m.c}`;
+  el.innerHTML = `<span>${m.dot}</span><span>${esc(m.t)}</span>`;
+  el.onclick = () => setView('settings');
+}
+
+function initSync() {
+  if (!firebaseConfigured()) { sync.enabled = false; updateSyncBadge(); return; }
+  try {
+    firebase.initializeApp(window.FIREBASE_CONFIG);
+    sync.auth = firebase.auth();
+    sync.db = firebase.firestore();
+    sync.enabled = true;
+    sync.ready = true;
+    // Best-effort offline cache for Firestore (queues writes when offline).
+    try { sync.db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
+    sync.auth.onAuthStateChanged(onAuthChanged);
+    setSyncStatus('signedout');
+  } catch (err) {
+    sync.enabled = false;
+    console.error('Firebase init failed', err);
+    updateSyncBadge();
+  }
+}
+
+function onAuthChanged(user) {
+  sync.user = user || null;
+  if (user) {
+    startCloudListener();
+  } else {
+    stopCloudListener();
+    setSyncStatus('signedout');
+  }
+  if (state.view === 'settings') renderSettings();
+}
+
+function startCloudListener() {
+  const ref = userDocRef();
+  if (!ref) return;
+  setSyncStatus('syncing');
+  stopCloudListener();
+  sync.unsub = ref.onSnapshot(
+    async (snap) => {
+      // Skip echoes generated by our own local writes.
+      if (snap.metadata && snap.metadata.hasPendingWrites) return;
+      if (!snap.exists) {
+        // First login for this account: seed the cloud with local data.
+        await pushNow();
+        setSyncStatus('synced');
+        return;
+      }
+      await applyRemote(snap.data());
+      setSyncStatus('synced');
+    },
+    (err) => {
+      console.error('Snapshot error', err);
+      setSyncStatus('error');
+      toast('Errore di sincronizzazione', 'error');
+    }
+  );
+}
+
+function stopCloudListener() {
+  if (sync.unsub) { sync.unsub(); sync.unsub = null; }
+}
+
+// Overwrite local store with the cloud copy, then re-render.
+async function applyRemote(data) {
+  if (!data) return;
+  sync.applyingRemote = true;
+  try {
+    const settings = data.settings && typeof data.settings === 'object' ? data.settings : { ...DEFAULT_SETTINGS };
+    settings.id = 'app';
+    const projects = Array.isArray(data.projects) ? data.projects : [];
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    await dbClear('projects');
+    await dbClear('entries');
+    await dbPut('settings', settings);
+    for (const p of projects) await dbPut('projects', p);
+    for (const e of entries) await dbPut('entries', e);
+    await loadState();
+    render();
+  } catch (err) {
+    console.error('applyRemote failed', err);
+  } finally {
+    sync.applyingRemote = false;
+  }
+}
+
+// Push current local state to the cloud (debounced wrapper below).
+async function pushNow() {
+  const ref = userDocRef();
+  if (!ref) return;
+  setSyncStatus('syncing');
+  try {
+    await ref.set({
+      settings: state.settings,
+      projects: state.projects,
+      entries: state.entries,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    setSyncStatus('synced');
+  } catch (err) {
+    console.error('push failed', err);
+    setSyncStatus('error');
+    toast('Salvataggio cloud non riuscito', 'error');
+  }
+}
+
+// Call after every local mutation. No-op when signed out or applying remote.
+function cloudPush() {
+  if (!sync.enabled || !sync.user || sync.applyingRemote) return;
+  setSyncStatus('syncing');
+  clearTimeout(sync.pushTimer);
+  sync.pushTimer = setTimeout(pushNow, 400);
+}
+
+/* ---------- Auth actions ---------- */
+function authError(code) {
+  const map = {
+    'auth/invalid-email': 'Email non valida.',
+    'auth/missing-password': 'Inserisci la password.',
+    'auth/weak-password': 'La password deve avere almeno 6 caratteri.',
+    'auth/email-already-in-use': 'Esiste già un account con questa email.',
+    'auth/invalid-credential': 'Email o password non corretti.',
+    'auth/wrong-password': 'Email o password non corretti.',
+    'auth/user-not-found': 'Nessun account con questa email.',
+    'auth/too-many-requests': 'Troppi tentativi. Riprova più tardi.',
+    'auth/network-request-failed': 'Errore di rete. Controlla la connessione.'
+  };
+  return map[code] || 'Operazione non riuscita.';
+}
+
+async function doSignIn(email, password) {
+  try { await sync.auth.signInWithEmailAndPassword(email, password); toast('Accesso effettuato'); }
+  catch (err) { toast(authError(err.code), 'error'); }
+}
+async function doSignUp(email, password) {
+  try { await sync.auth.createUserWithEmailAndPassword(email, password); toast('Account creato'); }
+  catch (err) { toast(authError(err.code), 'error'); }
+}
+async function doSignOut() {
+  try { await sync.auth.signOut(); toast('Disconnesso'); }
+  catch (err) { toast('Errore durante la disconnessione', 'error'); }
+}
+
+/* ---------------------------------------------------------------------
+   Boot
+--------------------------------------------------------------------- */
+async function boot() {
+  try {
+    _db = await openDB();
+    await seedIfEmpty();
+    await loadState();
+    $$('#nav button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+    setView('dashboard');
+    initSync();
+  } catch (err) {
+    document.querySelector('main').innerHTML =
+      `<div class="bg-white rounded-xl2 border border-black/5 p-6 text-center text-[14px] text-ink-soft">
+         Impossibile inizializzare l'archivio locale. Verifica che il browser consenta IndexedDB e che non sei in modalità di navigazione privata troppo restrittiva.
+       </div>`;
+    console.error(err);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', boot);
+</script>
+</body>
+</html>
