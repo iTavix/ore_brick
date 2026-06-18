@@ -206,6 +206,24 @@ function todayIso() {
   const p = (x) => String(x).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
+// Mask an IBAN keeping only the first 4 and last 4 chars visible.
+// Groups the result in blocks of 4 for readability. Returns '' if empty.
+function maskIban(iban) {
+  const v = String(iban == null ? '' : iban).replace(/\s+/g, '');
+  if (!v) return '';
+  let out;
+  if (v.length <= 8) {
+    out = '•'.repeat(v.length);
+  } else {
+    out = v.slice(0, 4) + '•'.repeat(v.length - 8) + v.slice(-4);
+  }
+  return out.replace(/(.{4})/g, '$1 ').trim();
+}
+// Group a plain IBAN in blocks of 4 for readable display.
+function groupIban(iban) {
+  const v = String(iban == null ? '' : iban).replace(/\s+/g, '');
+  return v ? v.replace(/(.{4})/g, '$1 ').trim() : '';
+}
 
 /* ---------------------------------------------------------------------
    IndexedDB layer (promise-wrapped)
@@ -760,7 +778,13 @@ function renderPayment() {
           </div>
           <div class="flex justify-between sm:block">
             <span class="text-ink-faint">IBAN</span>
-            <span class="text-ink font-medium sm:block tabular-nums break-all">${esc(s.iban || '—')}</span>
+            <span class="sm:block">
+              <!-- On screen: masked by default, toggled by the button below.
+                   On print: the full IBAN is always shown so the note stays usable. -->
+              <span id="iban-screen" class="text-ink font-medium tabular-nums break-all no-print">${esc(s.iban ? maskIban(s.iban) : '—')}</span>
+              <span class="hidden print:inline text-ink font-medium tabular-nums break-all">${esc(s.iban ? groupIban(s.iban) : '—')}</span>
+              ${s.iban ? `<button id="iban-toggle" type="button" aria-pressed="false" class="no-print ml-2 align-middle text-[12px] font-medium text-accent hover:text-accent-hover transition-soft">Mostra</button>` : ''}
+            </span>
           </div>
           <div class="flex justify-between sm:block">
             <span class="text-ink-faint">BIC / SWIFT</span>
@@ -773,6 +797,19 @@ function renderPayment() {
     </div>`;
 
   $('#btn-print').addEventListener('click', () => window.print());
+
+  // IBAN reveal/hide toggle (screen only). Stays masked by default for privacy.
+  const ibanToggle = $('#iban-toggle');
+  if (ibanToggle) {
+    const screenEl = $('#iban-screen');
+    let shown = false;
+    ibanToggle.addEventListener('click', () => {
+      shown = !shown;
+      screenEl.textContent = shown ? groupIban(s.iban) : maskIban(s.iban);
+      ibanToggle.textContent = shown ? 'Nascondi' : 'Mostra';
+      ibanToggle.setAttribute('aria-pressed', String(shown));
+    });
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -807,7 +844,10 @@ function renderSettings() {
       </div>
       <div>
         <label class="block text-[13px] font-medium text-ink-soft mb-1.5">IBAN</label>
-        <input id="s-iban" class="field tabular-nums" value="${esc(s.iban)}" placeholder="IT.." />
+        <div class="relative">
+          <input id="s-iban" type="password" autocomplete="off" class="field tabular-nums pr-24" value="${esc(s.iban)}" placeholder="IT.." />
+          <button id="s-iban-toggle" type="button" aria-pressed="false" aria-label="Mostra IBAN" class="absolute inset-y-0 right-0 px-3 my-1 mr-1 rounded-[9px] text-[12px] font-medium text-accent hover:bg-accent-soft transition-soft">Mostra</button>
+        </div>
       </div>
       <div>
         <label class="block text-[13px] font-medium text-ink-soft mb-1.5">BIC / SWIFT</label>
@@ -832,6 +872,20 @@ function renderSettings() {
     </div>`;
 
   $('#s-save').addEventListener('click', saveSettings);
+
+  // Toggle the IBAN field between hidden (password) and visible (text).
+  const ibanInput = $('#s-iban');
+  const ibanBtn = $('#s-iban-toggle');
+  if (ibanInput && ibanBtn) {
+    ibanBtn.addEventListener('click', () => {
+      const show = ibanInput.type === 'password';
+      ibanInput.type = show ? 'text' : 'password';
+      ibanBtn.textContent = show ? 'Nascondi' : 'Mostra';
+      ibanBtn.setAttribute('aria-pressed', String(show));
+      ibanBtn.setAttribute('aria-label', show ? 'Nascondi IBAN' : 'Mostra IBAN');
+    });
+  }
+
   $('#exp-csv').addEventListener('click', exportCSV);
   $('#exp-json').addEventListener('click', exportJSON);
   $('#imp-json').addEventListener('click', () => $('#imp-file').click());
