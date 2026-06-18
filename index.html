@@ -673,19 +673,26 @@ function renderDashboard() {
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center">
         <div class="text-3xl mb-3">▦</div>
         <p class="text-ink-soft dark:text-ink-faint text-[15px]">Nessun progetto.</p>
-        <p class="text-ink-faint dark:text-zinc-600 text-[13px] mt-1">Creane uno per iniziare a tracciare le ore o avviare il timer.</p>
+        <p class="text-ink-faint dark:text-zinc-600 text-[13px] mt-1">${canEdit() ? 'Creane uno per iniziare a tracciare le ore o avviare il timer.' : 'Non ci sono ancora progetti da visualizzare.'}</p>
       </div>`;
   } else {
     projectsHTML = `<div class="space-y-3">${state.projects.map(projectCard).join('')}</div>`;
   }
 
+  const editable = canEdit();
+  const readOnlyBanner = isClient() ? `
+    <div class="mb-5 flex items-center gap-2.5 rounded-xl2 border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-[13px] text-blue-700 dark:text-blue-300">
+      <span>👁️</span><span>Stai visualizzando come <strong>Cliente</strong> (sola lettura). I dati non sono modificabili.</span>
+    </div>` : '';
+
   root.innerHTML = `
+    ${readOnlyBanner}
     ${summary}
     <div class="flex items-center justify-between mb-3 mt-6">
       <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint dark:text-zinc-500">Progetti</h2>
-      <button id="add-project" class="text-[14px] font-semibold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
+      ${editable ? `<button id="add-project" class="text-[14px] font-semibold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
         <span class="text-[18px] leading-none">+</span> Nuovo progetto
-      </button>
+      </button>` : ''}
     </div>
     ${projectsHTML}`;
 
@@ -770,6 +777,7 @@ function projectCard(p) {
   const pHours = projectHours(p.id);
   const pRate = p.hourlyRate != null && p.hourlyRate !== '' ? Number(p.hourlyRate) : Number(state.settings.hourlyRate);
   const pComp = pHours * pRate;
+  const editable = canEdit();
 
   const itemsHTML = items.length
     ? items.map(e => `
@@ -779,12 +787,12 @@ function projectCard(p) {
             <div class="text-[12px] text-ink-faint dark:text-zinc-500 mt-0.5">${esc(dateIt(e.date))}</div>
           </div>
           <div class="text-[14px] font-medium tabular-nums text-ink-soft dark:text-zinc-400 shrink-0">${esc(hrs(e.hours))}</div>
-          <div class="flex items-center gap-1 shrink-0">
+          ${editable ? `<div class="flex items-center gap-1 shrink-0">
             <button data-edit-entry="${e.id}" title="Modifica" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">✎</button>
             <button data-del-entry="${e.id}" title="Elimina" class="w-8 h-8 rounded-full hover:bg-[#ff3b30]/10 transition-soft text-ink-faint hover:text-[#ff3b30] flex items-center justify-center">🗑</button>
-          </div>
+          </div>` : ''}
         </div>`).join('')
-    : `<div class="px-4 py-5 border-t border-black/5 dark:border-white/5 text-center text-[13px] text-ink-faint">Nessuna voce. Aggiungine una oppure avvia il timer.</div>`;
+    : `<div class="px-4 py-5 border-t border-black/5 dark:border-white/5 text-center text-[13px] text-ink-faint">${editable ? 'Nessuna voce. Aggiungine una oppure avvia il timer.' : 'Nessuna voce registrata.'}</div>`;
 
   return `
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,.03)]">
@@ -803,20 +811,20 @@ function projectCard(p) {
             ${p.clientName ? `<span class="bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-semibold">${esc(p.clientName)}</span>` : ''}
           </div>
         </div>
-        <div class="flex items-center gap-1">
+        ${editable ? `<div class="flex items-center gap-1">
           <!-- Live tracker trigger -->
           <button data-start-project-timer="${p.id}" title="Avvia Timer" class="w-8 h-8 rounded-full bg-accent/10 hover:bg-accent/20 text-accent transition-soft flex items-center justify-center font-bold">⏱</button>
           <button data-rename="${p.id}" title="Modifica progetto" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">✎</button>
           <button data-del-project="${p.id}" title="Elimina progetto" class="w-8 h-8 rounded-full hover:bg-[#ff3b30]/10 transition-soft text-ink-faint hover:text-[#ff3b30] flex items-center justify-center">🗑</button>
-        </div>
+        </div>` : ''}
       </div>
       ${open ? `
         <div>${itemsHTML}</div>
-        <div class="px-4 py-3 border-t border-black/5 dark:border-white/5 flex items-center gap-3 bg-gray-50/50 dark:bg-zinc-900/10">
+        ${editable ? `<div class="px-4 py-3 border-t border-black/5 dark:border-white/5 flex items-center gap-3 bg-gray-50/50 dark:bg-zinc-900/10">
           <button data-add-entry="${p.id}" class="text-[13px] font-semibold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
             <span class="text-[16px] leading-none">+</span> Aggiungi voce
           </button>
-        </div>` : ''}
+        </div>` : ''}` : ''}
     </div>`;
 }
 
@@ -859,6 +867,7 @@ function buildStopwatchWidgetHTML() {
 }
 
 async function startProjectTimer(projectId) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
   if (state.activeTimer) {
     toast('C\'è già un timer attivo sul progetto. Salva o scarta quello esistente.', 'error');
     return;
@@ -1020,6 +1029,7 @@ setInterval(() => {
    PROJECT & ENTRY CRUD
 --------------------------------------------------------------------- */
 function addProject() {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
   openModal({
     title: 'Nuovo progetto',
     bodyHTML: `
@@ -1063,6 +1073,7 @@ function addProject() {
 }
 
 function renameProject(id) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
   const p = state.projects.find(x => x.id === id);
   if (!p) return;
   openModal({
@@ -1100,6 +1111,7 @@ function renameProject(id) {
 }
 
 function deleteProject(id) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
   const p = state.projects.find(x => x.id === id);
   if (!p) return;
   const count = entriesOf(id).length;
@@ -1149,6 +1161,7 @@ function validateEntry(card) {
 }
 
 function addEntry(projectId) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
   openModal({
     title: 'Aggiungi voce',
     bodyHTML: entryFormHTML(null),
@@ -1169,6 +1182,7 @@ function addEntry(projectId) {
 }
 
 function editEntry(id) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
   const e = state.entries.find(x => x.id === id);
   if (!e) return;
   openModal({
@@ -1189,6 +1203,7 @@ function editEntry(id) {
 }
 
 function deleteEntry(id) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
   const e = state.entries.find(x => x.id === id);
   if (!e) return;
   openModal({
@@ -1328,9 +1343,17 @@ function renderPayment() {
           <div class="flex justify-between sm:block">
             <span class="text-ink-faint">IBAN</span>
             <span class="sm:block">
-              <span id="iban-screen" class="text-ink dark:text-zinc-200 font-medium tabular-nums break-all no-print">${esc(s.iban ? maskIban(s.iban) : '—')}</span>
-              <span class="hidden print:inline text-ink dark:text-zinc-200 font-medium tabular-nums break-all">${esc(s.iban ? groupIban(s.iban) : '—')}</span>
-              ${s.iban ? `<button id="iban-toggle" type="button" aria-pressed="false" class="no-print ml-2 align-middle text-[12px] font-semibold text-accent hover:text-accent-hover transition-soft">Mostra</button>` : ''}
+              ${!s.iban ? `<span class="text-ink dark:text-zinc-200 font-medium">—</span>` :
+                canSeeIban()
+                ? `<span id="iban-screen" class="text-ink dark:text-zinc-200 font-medium tabular-nums break-all no-print">${esc(maskIban(s.iban))}</span>
+                   <span class="hidden print:inline text-ink dark:text-zinc-200 font-medium tabular-nums break-all">${esc(groupIban(s.iban))}</span>
+                   <button id="iban-toggle" type="button" aria-pressed="false" class="no-print ml-2 align-middle text-[12px] font-semibold text-accent hover:text-accent-hover transition-soft">Mostra</button>`
+                : `<span class="no-print inline-flex items-center gap-2 text-ink-soft dark:text-zinc-400 font-medium">
+                     <span>🔒 Riservato</span>
+                     <button id="iban-login" type="button" class="text-[12px] font-semibold text-accent hover:text-accent-hover transition-soft">Accedi per visualizzare</button>
+                   </span>
+                   <span class="hidden print:inline text-ink-soft dark:text-zinc-400 font-medium">Riservato — accesso richiesto</span>`
+              }
             </span>
           </div>
           <div class="flex justify-between sm:block">
@@ -1356,6 +1379,14 @@ function renderPayment() {
       ibanToggle.setAttribute('aria-pressed', String(shown));
     });
   }
+
+  const ibanLogin = $('#iban-login');
+  if (ibanLogin) {
+    ibanLogin.addEventListener('click', () => {
+      toast('Accedi con il tuo account per visualizzare l\u2019IBAN', 'warning');
+      setView('settings');
+    });
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -1365,7 +1396,98 @@ function renderSettings() {
   const root = $('#view-settings');
   if (!root) return;
   const s = state.settings;
-  
+  const client = isClient();
+  const manage = canManagePayment();          // proprietario loggato o modalità locale
+  const guestLocked = sync.enabled && !sync.user; // Firebase attivo ma non autenticato
+
+  // ---- Vista in SOLA LETTURA per gli account Cliente ----
+  if (client) {
+    root.innerHTML = `
+      <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint dark:text-zinc-500 mb-4">Impostazioni Applicazione</h2>
+      ${accountPanelHTML()}
+
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] space-y-4">
+        <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold">Dati di pagamento (sola lettura)</div>
+        <div>
+          <div class="text-[12px] text-ink-faint dark:text-zinc-500">Beneficiario</div>
+          <div class="text-[14px] font-medium text-ink dark:text-zinc-100">${esc(s.holderName || '—')}</div>
+        </div>
+        <div>
+          <div class="text-[12px] text-ink-faint dark:text-zinc-500">IBAN</div>
+          <div class="flex items-center gap-2">
+            <span id="s-iban-screen" class="text-[14px] font-medium text-ink dark:text-zinc-100 tabular-nums break-all">${esc(s.iban ? maskIban(s.iban) : '—')}</span>
+            ${s.iban ? `<button id="s-iban-reveal" type="button" aria-pressed="false" class="text-[12px] font-semibold text-accent hover:text-accent-hover transition-soft">Mostra</button>` : ''}
+          </div>
+        </div>
+        <div>
+          <div class="text-[12px] text-ink-faint dark:text-zinc-500">BIC / SWIFT</div>
+          <div class="text-[14px] font-medium text-ink dark:text-zinc-100 tabular-nums">${esc(s.bic || '—')}</div>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mt-4">
+        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Aspetto visivo applicazione</label>
+        <select id="s-theme-ro" class="field">
+          <option value="auto" ${s.theme === 'auto' ? 'selected' : ''}>Segui sistema (Auto)</option>
+          <option value="light" ${s.theme === 'light' ? 'selected' : ''}>Tema Chiaro</option>
+          <option value="dark" ${s.theme === 'dark' ? 'selected' : ''}>Tema Scuro</option>
+        </select>
+      </div>`;
+
+    // Reveal IBAN (consentito ai clienti autenticati)
+    const rev = $('#s-iban-reveal');
+    const scr = $('#s-iban-screen');
+    if (rev && scr) {
+      let shown = false;
+      rev.addEventListener('click', () => {
+        shown = !shown;
+        scr.textContent = shown ? groupIban(s.iban) : maskIban(s.iban);
+        rev.textContent = shown ? 'Nascondi' : 'Mostra';
+        rev.setAttribute('aria-pressed', String(shown));
+      });
+    }
+    // Tema locale (non sincronizzato per i clienti)
+    const themeRo = $('#s-theme-ro');
+    if (themeRo) themeRo.addEventListener('change', () => {
+      state.settings.theme = themeRo.value;
+      dbPut('settings', state.settings);
+      syncTheme(themeRo.value);
+    });
+    bindAccountPanel();
+    return;
+  }
+
+  // ---- Pannello dati di pagamento (proprietario vs ospite bloccato) ----
+  const paymentPanel = manage ? `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] space-y-4 mt-4">
+      <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold">Dati professionali per la Nota</div>
+      <div>
+        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Titolare del conto (Mittente)</label>
+        <input id="s-holder" class="field" value="${esc(s.holderName)}" placeholder="Nome, cognome, P.IVA ecc." />
+      </div>
+      <div>
+        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">IBAN</label>
+        <div class="relative">
+          <input id="s-iban" type="password" autocomplete="off" class="field tabular-nums pr-24" value="${esc(s.iban)}" placeholder="IT.." />
+          <button id="s-iban-toggle" type="button" aria-pressed="false" aria-label="Mostra IBAN" class="absolute inset-y-0 right-0 px-3 my-1 mr-1 rounded-[9px] text-[12px] font-semibold text-accent hover:bg-accent-soft transition-soft">Mostra</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">BIC / SWIFT</label>
+        <input id="s-bic" class="field tabular-nums" value="${esc(s.bic)}" placeholder="XXXXXXXX" />
+      </div>
+    </div>` : `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mt-4">
+      <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold mb-2">Dati professionali per la Nota</div>
+      <div class="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+        <span class="text-lg leading-none">🔒</span>
+        <div>
+          <div class="text-[13px] font-semibold text-ink dark:text-white">Dati di pagamento protetti</div>
+          <p class="text-[12px] text-ink-soft dark:text-zinc-400 mt-0.5 leading-relaxed">Accedi con un account <strong>Proprietario</strong> per visualizzare e modificare titolare, IBAN e BIC. L'IBAN non è visibile finché non hai effettuato l'accesso.</p>
+        </div>
+      </div>
+    </div>`;
+
   root.innerHTML = `
     <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint dark:text-zinc-500 mb-4">Impostazioni Applicazione</h2>
 
@@ -1389,25 +1511,7 @@ function renderSettings() {
       </div>
     </div>
 
-    <!-- Payment & Personal Info Panel -->
-    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] space-y-4 mt-4">
-      <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold">Dati professionali per la Nota</div>
-      <div>
-        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Titolare del conto (Mittente)</label>
-        <input id="s-holder" class="field" value="${esc(s.holderName)}" placeholder="Nome, cognome, P.IVA ecc." />
-      </div>
-      <div>
-        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">IBAN</label>
-        <div class="relative">
-          <input id="s-iban" type="password" autocomplete="off" class="field tabular-nums pr-24" value="${esc(s.iban)}" placeholder="IT.." />
-          <button id="s-iban-toggle" type="button" aria-pressed="false" aria-label="Mostra IBAN" class="absolute inset-y-0 right-0 px-3 my-1 mr-1 rounded-[9px] text-[12px] font-semibold text-accent hover:bg-accent-soft transition-soft">Mostra</button>
-        </div>
-      </div>
-      <div>
-        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">BIC / SWIFT</label>
-        <input id="s-bic" class="field tabular-nums" value="${esc(s.bic)}" placeholder="XXXXXXXX" />
-      </div>
-    </div>
+    ${paymentPanel}
 
     <!-- Theme Customization Option -->
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mt-4">
@@ -1465,23 +1569,28 @@ function renderSettings() {
 }
 
 async function saveSettings() {
-  const rate = Number($('#s-rate').value);
-  const extra = Number($('#s-extra').value);
-  const tax = Number($('#s-tax').value);
-  const theme = $('#s-theme').value;
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
+  const rateEl = $('#s-rate'), extraEl = $('#s-extra'), taxEl = $('#s-tax'), themeEl = $('#s-theme');
+  const rate = Number(rateEl.value);
+  const extra = Number(extraEl.value);
+  const tax = Number(taxEl.value);
+  const theme = themeEl.value;
 
   if (isNaN(rate) || rate < 0) { toast('Tariffa oraria non valida', 'error'); return; }
   if (isNaN(extra) || extra < 0) { toast('Extra non valido', 'error'); return; }
   if (isNaN(tax) || tax < 0 || tax > 100) { toast('Aliquota tasse non valida', 'error'); return; }
+
+  // I campi di pagamento esistono solo per il proprietario: altrimenti si conservano i valori attuali
+  const holderEl = $('#s-holder'), ibanEl = $('#s-iban'), bicEl = $('#s-bic');
 
   state.settings = {
     id: 'app',
     hourlyRate: rate,
     extra: extra,
     taxRate: tax,
-    holderName: $('#s-holder').value.trim(),
-    iban: $('#s-iban').value.trim(),
-    bic: $('#s-bic').value.trim(),
+    holderName: holderEl ? holderEl.value.trim() : (state.settings.holderName || ''),
+    iban: ibanEl ? ibanEl.value.trim() : (state.settings.iban || ''),
+    bic: bicEl ? bicEl.value.trim() : (state.settings.bic || ''),
     theme: theme
   };
   
@@ -1551,6 +1660,7 @@ function validateBackup(obj) {
 }
 
 function importJSON(ev) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
   const file = ev.target.files && ev.target.files[0];
   ev.target.value = '';
   if (!file) return;
@@ -1607,15 +1717,75 @@ function renderGuide() {
   if (!root) return;
   root.innerHTML = `
     <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint dark:text-zinc-500 mb-2">Guida d'Uso Integrata</h2>
-    <p class="text-[14px] text-ink-soft dark:text-zinc-400 mb-4 leading-relaxed">Tutto ciò che puoi fare con Ore BrickBoy, spiegato in modo semplice.</p>
+    <p class="text-[14px] text-ink-soft dark:text-zinc-400 mb-4 leading-relaxed">Tutto ciò che puoi fare con Ore BrickBoy, spiegato in modo semplice. Tocca una sezione per espanderla.</p>
     <div class="space-y-3">
-      ${guideSection('⏱ Monitoraggio in tempo reale (Stopwatch)', `
-        <p>Puoi attivare un timer premendo l'icona <strong class="text-accent">⏱</strong> in corrispondenza del progetto desiderato.</p>
-        <p>· Il timer continuerà a scorrere anche se aggiorni la pagina (lo stato viene salvato sul database o nel localStorage di fallback).<br>· Puoi metterlo in pausa e riprenderlo se fai pause durante il lavoro.<br>· Premendo <strong class="text-accent">Salva ore</strong>, il sistema calcolerà automaticamente le ore reali accumulate e ti permetterà di registrarle nel calendario.</p>`)}
 
-      ${guideSection('🏦 Tariffe per progetto e Dettagli del cliente', `
-        <p>Non tutti i progetti hanno la stessa tariffa oraria. Ore BrickBoy ti consente di configurare:</p>
-        <p>· Una <strong class="text-accent">Tariffa oraria specifica per progetto</strong> che sovrascrive quella globale impostata nelle impostazioni generali.<br>· <strong class="text-accent">Dati del cliente</strong> (Nome Azienda, Indirizzo) per produrre un layout di Nota di pagamento pronto per essere emesso legalmente ad aziende e committenti privati.</p>`)}
+      ${guideSection('🚀 Panoramica e primi passi', `
+        <p>Ore BrickBoy è un'app per <strong class="text-accent">tracciare le ore di lavoro freelance</strong> e generare automaticamente una <strong class="text-accent">Nota di pagamento</strong> pronta da consegnare al cliente.</p>
+        <p>L'app è organizzata in quattro schede: <strong>Dashboard</strong> (progetti, ore e timer), <strong>Nota</strong> (documento di pagamento e stampa/PDF), <strong>Impostazioni</strong> (account, tariffe, dati di pagamento, backup) e <strong>Guida</strong> (questa pagina).</p>
+        <p>Funziona <strong class="text-accent">offline</strong>: i dati vengono salvati nel database locale del browser (IndexedDB) e, se necessario, in una memoria di riserva. Se attivi un account, i dati si sincronizzano anche nel cloud.</p>`)}
+
+      ${guideSection('👤 Account: Proprietario e Cliente', `
+        <p>In Impostazioni puoi <strong class="text-accent">creare un account</strong> scegliendone il tipo:</p>
+        <p>· <strong class="text-accent">Proprietario</strong> — è il professionista. Ha il controllo completo: crea e modifica progetti, registra ore, imposta tariffe, gestisce i dati di pagamento (IBAN compreso) e attiva la sincronizzazione cloud.<br>
+        · <strong class="text-accent">Cliente</strong> — è chi riceve la nota. Accede in <strong>sola lettura</strong>: può consultare progetti, ore e Nota di pagamento e visualizzare l'IBAN per effettuare il bonifico, ma non può modificare nulla.</p>
+        <p>Il tipo di account si sceglie al momento della <strong>registrazione</strong> tramite il selettore "Tipo di account". Al successivo accesso il ruolo viene riconosciuto automaticamente.</p>
+        <p>Dopo la registrazione viene inviata un'<strong class="text-accent">email di verifica</strong>; puoi reinviarla dal pannello account. Lo stato (verificata/non verificata) è mostrato sotto la tua email.</p>`)}
+
+      ${guideSection('🔒 Privacy dell\'IBAN', `
+        <p>L'IBAN è un dato sensibile e per questo è <strong class="text-accent">visibile solo a chi ha effettuato l'accesso</strong>.</p>
+        <p>· Senza accesso (con sincronizzazione attiva), nella Nota l'IBAN appare come <strong>🔒 Riservato</strong> con un invito ad accedere, e non viene incluso nemmeno nella stampa.<br>
+        · Una volta effettuato l'accesso (Proprietario o Cliente), puoi rivelare l'IBAN con il pulsante <strong class="text-accent">Mostra</strong>; di default resta mascherato.<br>
+        · In modalità puramente locale (senza Firebase, es. doppio clic sul file), l'IBAN è visibile perché sei l'unico utente sul tuo dispositivo.</p>`)}
+
+      ${guideSection('📊 Dashboard, indicatori e grafico', `
+        <p>In alto trovi tre indicatori sintetici: <strong>Ore totali</strong> accumulate, <strong>Tariffa base</strong> oraria e <strong class="text-accent">Compenso stimato</strong> (comprensivo di eventuale extra forfettario).</p>
+        <p>Il grafico <strong>Ripartizione compensi</strong> mostra a colpo d'occhio quanto incide ogni progetto sul totale. Passa il puntatore su una barra per vedere ore e importo.</p>`)}
+
+      ${guideSection('🗂 Progetti, tariffe e dati cliente', `
+        <p>Con <strong class="text-accent">+ Nuovo progetto</strong> crei una commessa. Per ogni progetto puoi definire:</p>
+        <p>· una <strong class="text-accent">tariffa oraria specifica</strong> che sovrascrive quella globale (lasciala vuota per usare quella generale);<br>
+        · i <strong class="text-accent">dati del cliente</strong> (nome/azienda e indirizzo), usati per intestare la Nota di pagamento.</p>
+        <p>Tocca un progetto per espanderlo e vedere le sue voci; le icone ✎ e 🗑 permettono di modificarlo o eliminarlo. <em>(Questi controlli non sono disponibili per gli account Cliente.)</em></p>`)}
+
+      ${guideSection('📝 Voci di lavoro (ore)', `
+        <p>All'interno di un progetto, <strong class="text-accent">Aggiungi voce</strong> registra una riga di lavoro con descrizione, data e numero di ore (anche decimali, es. 1,5).</p>
+        <p>Ogni voce può essere modificata o eliminata. Le ore di tutte le voci alimentano automaticamente i totali, il grafico e la Nota di pagamento.</p>`)}
+
+      ${guideSection('⏱ Monitoraggio in tempo reale (Stopwatch)', `
+        <p>Premi l'icona <strong class="text-accent">⏱</strong> accanto a un progetto per avviare un cronometro con una descrizione opzionale dell'attività.</p>
+        <p>· Il timer continua a scorrere anche se aggiorni o chiudi la pagina (lo stato è salvato).<br>
+        · Puoi metterlo in <strong class="text-accent">pausa</strong> e riprenderlo.<br>
+        · Con <strong class="text-accent">Salva ore</strong> l'app calcola le ore effettive e ti propone di registrarle come voce (puoi correggere data e ore prima di confermare).<br>
+        · Il tempo trascorso è mostrato anche nella barra in alto e nel titolo della scheda del browser.</p>`)}
+
+      ${guideSection('🧾 Nota di pagamento e Stampa/PDF', `
+        <p>La scheda <strong>Nota</strong> genera un documento professionale con mittente, destinatario (rilevato dai dati cliente, oppure "Multi-cliente"), tabella delle ore per progetto, totali, eventuale rivalsa/tassa e dati per il bonifico.</p>
+        <p>Il pulsante <strong class="text-accent">Stampa / Salva PDF</strong> apre la stampa del sistema: scegli "Salva come PDF" per ottenere il file. Nel layout di stampa l'IBAN compare per esteso solo se hai effettuato l'accesso.</p>`)}
+
+      ${guideSection('💶 Tariffe globali, extra e tasse', `
+        <p>In Impostazioni configuri i parametri economici:</p>
+        <p>· <strong class="text-accent">Tariffa oraria</strong> globale (usata dai progetti senza tariffa propria).<br>
+        · <strong class="text-accent">Extra forfettario</strong> aggiunto al compenso totale.<br>
+        · <strong class="text-accent">Rivalsa / Tassa (%)</strong> applicata nella Nota per calcolare il totale finale.</p>`)}
+
+      ${guideSection('☁️ Sincronizzazione cloud', `
+        <p>Con un account attivo, progetti, voci e impostazioni si sincronizzano automaticamente sul cloud (Firebase). Ritrovi gli stessi dati su ogni dispositivo dopo l'accesso.</p>
+        <p>L'indicatore di stato in alto mostra <strong>Sincronizzazione in corso</strong>, <strong class="text-accent">Sincronizzato</strong> o eventuali errori. La sincronizzazione è disattivata se Firebase non è configurato: in quel caso l'app resta pienamente utilizzabile in locale.</p>`)}
+
+      ${guideSection('💾 Backup, importazione ed esportazione', `
+        <p>Nella sezione "Backup e sicurezza locale" puoi:</p>
+        <p>· <strong class="text-accent">Esporta CSV</strong> — elenco delle voci e dei totali, apribile in Excel/Fogli.<br>
+        · <strong class="text-accent">Esporta JSON</strong> — backup completo (impostazioni, progetti, voci).<br>
+        · <strong class="text-accent">Importa JSON</strong> — ripristina un backup; <em>sovrascrive</em> tutti i dati attuali previa conferma.</p>
+        <p>Queste operazioni sono riservate al Proprietario.</p>`)}
+
+      ${guideSection('🎨 Tema e aspetto', `
+        <p>Puoi passare da tema chiaro a scuro con l'icona 🌙/☀️ in alto, oppure scegliere in Impostazioni tra <strong>Auto</strong> (segue il sistema), <strong>Chiaro</strong> e <strong>Scuro</strong>.</p>`)}
+
+      ${guideSection('🛟 Affidabilità e modalità offline', `
+        <p>Se il database del browser non è disponibile, l'app passa automaticamente a un salvataggio di riserva e, se necessario, a una modalità d'emergenza in memoria, così non perdi l'operatività. Un avviso ti informa quando sei in salvataggio locale.</p>`)}
+
     </div>`;
 }
 
@@ -1628,11 +1798,43 @@ const sync = {
   auth: null,
   db: null,
   user: null,
+  role: null,        // 'owner' | 'client' | null (ruolo dell'account autenticato)
+  pendingRole: null, // ruolo scelto al momento della registrazione
   unsub: null,
   applyingRemote: false,
   pushTimer: null,
   status: 'off'
 };
+
+/* ---------------------------------------------------------------------
+   PERMISSIONS & ROLE HELPERS
+   Logica di accesso centralizzata:
+   - Se Firebase NON è attivo (offline / file://) l'app gira in modalità
+     "proprietario locale": accesso completo e IBAN visibile sul proprio
+     dispositivo (non esiste un sistema di account da proteggere).
+   - Se Firebase È attivo, l'IBAN è riservato a chi ha effettuato l'accesso
+     e gli account "Cliente" hanno accesso in sola lettura.
+--------------------------------------------------------------------- */
+function isAuthed() {
+  return !!(sync.enabled && sync.user);
+}
+function currentRole() {
+  if (!sync.enabled) return 'owner';      // modalità locale = proprietario
+  if (!sync.user) return 'guest';         // Firebase attivo ma non loggato
+  return sync.role === 'client' ? 'client' : 'owner'; // default retro-compatibile: owner
+}
+function isClient()  { return currentRole() === 'client'; }
+function isGuest()   { return currentRole() === 'guest'; }
+/* I Clienti sono in sola lettura. Proprietari, ospiti locali e modalità
+   offline possono modificare i dati (l'ospite modifica solo la copia locale). */
+function canEdit()   { return !isClient(); }
+/* L'IBAN è visibile in modalità locale oppure dopo l'accesso. */
+function canSeeIban() { return !sync.enabled || isAuthed(); }
+/* Solo il Proprietario (o la modalità locale) può modificare i dati di pagamento. */
+function canManagePayment() { return canSeeIban() && !isClient(); }
+function roleLabel(r) {
+  return r === 'client' ? 'Cliente' : (r === 'guest' ? 'Ospite' : 'Proprietario');
+}
 
 function firebaseConfigured() {
   const c = window.FIREBASE_CONFIG || {};
@@ -1690,12 +1892,17 @@ function initSync() {
 function onAuthChanged(user) {
   sync.user = user || null;
   if (user) {
+    // Mantiene il ruolo scelto in fase di registrazione finché lo snapshot non lo conferma
+    if (sync.pendingRole) { sync.role = sync.pendingRole; }
     startCloudListener();
   } else {
+    sync.role = null;
+    sync.pendingRole = null;
     stopCloudListener();
     setSyncStatus('signedout');
   }
-  if (state.view === 'settings') renderSettings();
+  // Re-render dell'intera vista corrente: i permessi (IBAN, sola lettura) cambiano
+  render();
 }
 
 function startCloudListener() {
@@ -1730,6 +1937,12 @@ async function applyRemote(data) {
   if (!data) return;
   sync.applyingRemote = true;
   try {
+    // Sincronizza il ruolo dell'account dal documento remoto (retro-compatibile)
+    if (data.accountRole === 'client' || data.accountRole === 'owner') {
+      sync.role = data.accountRole;
+    } else if (!sync.role) {
+      sync.role = 'owner';
+    }
     const settings = data.settings && typeof data.settings === 'object' ? data.settings : { ...DEFAULT_SETTINGS };
     settings.id = 'app';
     const projects = Array.isArray(data.projects) ? data.projects : [];
@@ -1754,6 +1967,7 @@ async function pushNow() {
   setSyncStatus('syncing');
   try {
     await ref.set({
+      accountRole: sync.role || 'owner',
       settings: state.settings,
       projects: state.projects,
       entries: state.entries,
@@ -1785,22 +1999,58 @@ function authError(code) {
     'auth/wrong-password': 'Email o password non corretti.',
     'auth/user-not-found': 'Nessun account con questa email.',
     'auth/too-many-requests': 'Troppi tentativi. Riprova più tardi.',
-    'auth/network-request-failed': 'Errore di rete. Controlla la connessione.'
+    'auth/network-request-failed': 'Errore di rete. Controlla la connessione.',
+    'auth/operation-not-allowed': 'Metodo Email/Password non abilitato: attivalo in Firebase → Authentication → Sign-in method.',
+    'auth/configuration-not-found': 'Metodo Email/Password non abilitato in Firebase → Authentication → Sign-in method.',
+    'auth/unauthorized-domain': 'Dominio non autorizzato: aggiungilo in Firebase → Authentication → Settings → Authorized domains.',
+    'auth/api-key-not-valid': 'Chiave API Firebase non valida o con restrizioni troppo rigide (Google Cloud Console).',
+    'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'Chiave API Firebase non valida o con restrizioni troppo rigide (Google Cloud Console).',
+    'auth/invalid-api-key': 'Chiave API Firebase non valida o con restrizioni troppo rigide (Google Cloud Console).',
+    'auth/requests-from-referer-are-blocked': 'Richieste bloccate dalle restrizioni della chiave API. Autorizza questo dominio o l\u2019Identity Toolkit API in Google Cloud Console.',
+    'auth/admin-restricted-operation': 'Operazione bloccata dalle impostazioni del progetto Firebase.'
   };
-  return map[code] || 'Operazione non riuscita.';
+  // Mostra il codice reale quando non è mappato, così la diagnosi è possibile
+  return map[code] || ('Operazione non riuscita' + (code ? ' (' + code + ')' : '') + '.');
 }
 
 async function doSignIn(email, password) {
-  try { await sync.auth.signInWithEmailAndPassword(email, password); toast('Accesso effettuato'); }
-  catch (err) { toast(authError(err.code), 'error'); }
+  try {
+    sync.pendingRole = null; // al login il ruolo arriva dal documento remoto
+    await sync.auth.signInWithEmailAndPassword(email, password);
+    toast('Accesso effettuato');
+  }
+  catch (err) { console.error('Sign-in error', err); showAuthError(authError(err.code)); toast(authError(err.code), 'error'); }
 }
-async function doSignUp(email, password) {
-  try { await sync.auth.createUserWithEmailAndPassword(email, password); toast('Account creato'); }
-  catch (err) { toast(authError(err.code), 'error'); }
+async function doSignUp(email, password, role) {
+  try {
+    // Imposta il ruolo PRIMA della creazione, così il primo salvataggio cloud lo registra
+    sync.pendingRole = (role === 'client') ? 'client' : 'owner';
+    sync.role = sync.pendingRole;
+    await sync.auth.createUserWithEmailAndPassword(email, password);
+    // Invia automaticamente l'email di verifica (best effort, non bloccante)
+    try { if (sync.auth.currentUser) await sync.auth.currentUser.sendEmailVerification(); } catch (_) {}
+    toast('Account ' + roleLabel(sync.pendingRole) + ' creato');
+  }
+  catch (err) { console.error('Sign-up error', err); sync.pendingRole = null; showAuthError(authError(err.code)); toast(authError(err.code), 'error'); }
 }
 async function doSignOut() {
   try { await sync.auth.signOut(); toast('Disconnesso'); }
   catch (err) { toast('Errore durante la disconnessione', 'error'); }
+}
+async function doSendVerification() {
+  if (!sync.user) return;
+  try {
+    await sync.user.sendEmailVerification();
+    toast('Email di verifica inviata');
+  } catch (err) {
+    toast(authError(err.code), 'error');
+  }
+}
+
+/* Mostra l'errore in modo persistente nel pannello account (se presente) */
+function showAuthError(message) {
+  const box = $('#a-error');
+  if (box) { box.textContent = message; box.classList.remove('hidden'); }
 }
 
 function accountPanelHTML() {
@@ -1808,29 +2058,56 @@ function accountPanelHTML() {
     return `
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
         <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold mb-2">Sincronizzazione Cloud</div>
-        <p class="text-[13px] text-ink-soft dark:text-zinc-400 leading-relaxed">La sincronizzazione è configurabile inserendo le tue API Firebase nella sezione FIREBASE_CONFIG all'interno dello script di questo file.</p>
+        <p class="text-[13px] text-ink-soft dark:text-zinc-400 leading-relaxed">La sincronizzazione e gli account si attivano configurando le tue API Firebase nella sezione <code class="text-accent">FIREBASE_CONFIG</code> di questo file. In modalità locale operi come <strong class="text-ink dark:text-white">Proprietario</strong> e l'IBAN è visibile solo su questo dispositivo.</p>
       </div>`;
   }
   if (sync.user) {
     const statusText = { syncing: 'Sincronizzazione in corso…', synced: 'Dati sincronizzati', error: 'Errore di sincronizzazione', signedout: '—', off: '—' }[sync.status] || '';
+    const role = currentRole();
+    const roleBadge = role === 'client'
+      ? `<span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">Cliente</span>`
+      : `<span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-accent/15 text-accent">Proprietario</span>`;
+    const verified = !!sync.user.emailVerified;
+    const verifyRow = verified
+      ? `<div class="mt-3 flex items-center gap-1.5 text-[12px] text-emerald-600 dark:text-emerald-400"><span>✓</span> Email verificata</div>`
+      : `<div class="mt-3 flex items-center justify-between gap-2 text-[12px] text-ink-soft dark:text-zinc-400">
+           <span class="flex items-center gap-1.5"><span class="text-amber-500">⚠</span> Email non verificata</span>
+           <button id="a-verify" class="px-3 py-1.5 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[12px] font-medium transition-soft">Invia verifica</button>
+         </div>`;
+    const roleNote = role === 'client'
+      ? `<p class="mt-3 text-[12px] text-ink-faint dark:text-zinc-500 leading-relaxed">Account in <strong>sola lettura</strong>: puoi consultare i progetti, la Nota di pagamento e l'IBAN, ma non modificare i dati.</p>`
+      : '';
     return `
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
         <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold mb-3">Account Connesso</div>
         <div class="flex items-center justify-between gap-3">
           <div class="min-w-0">
-            <div class="text-[14px] font-semibold truncate text-ink dark:text-white">${esc(sync.user.email || 'Account')}</div>
+            <div class="flex items-center gap-2">
+              <span class="text-[14px] font-semibold truncate text-ink dark:text-white">${esc(sync.user.email || 'Account')}</span>
+              ${roleBadge}
+            </div>
             <div class="text-[12px] text-ink-soft dark:text-zinc-400 mt-0.5">${esc(statusText)}</div>
           </div>
           <button id="a-signout" class="shrink-0 px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-medium transition-soft">Esci</button>
         </div>
+        ${verifyRow}
+        ${roleNote}
       </div>`;
   }
   return `
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
-      <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold mb-3">Accedi per sincronizzare</div>
+      <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold mb-3">Accedi o crea un account</div>
       <div class="space-y-3">
         <input id="a-email" type="email" autocomplete="email" class="field" placeholder="Email" />
         <input id="a-pass" type="password" autocomplete="current-password" class="field" placeholder="Password (min. 6 caratteri)" />
+        <div>
+          <div class="text-[12px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Tipo di account <span class="text-ink-faint">(solo per la registrazione)</span></div>
+          <div class="seg w-full text-[13px] font-medium" role="tablist" id="a-role">
+            <button type="button" data-role="owner" role="tab" aria-selected="true" class="flex-1 py-2">Proprietario</button>
+            <button type="button" data-role="client" role="tab" aria-selected="false" class="flex-1 py-2">Cliente</button>
+          </div>
+          <p class="text-[11px] text-ink-faint dark:text-zinc-500 mt-1.5 leading-relaxed" id="a-role-hint">Proprietario: controllo completo di progetti, ore, tariffe e IBAN.</p>
+        </div>
         <div id="a-error" class="hidden text-[13px] text-[#ff3b30]"></div>
         <div class="flex gap-2 pt-1">
           <button id="a-signin" class="flex-1 px-4 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-semibold transition-soft">Accedi</button>
@@ -1845,23 +2122,47 @@ function bindAccountPanel() {
   if (sync.user) {
     const out = $('#a-signout');
     if (out) out.addEventListener('click', doSignOut);
+    const ver = $('#a-verify');
+    if (ver) ver.addEventListener('click', doSendVerification);
     return;
   }
   const emailEl = $('#a-email');
   const passEl = $('#a-pass');
   const errEl = $('#a-error');
+  const roleSeg = $('#a-role');
+  const roleHint = $('#a-role-hint');
+  let chosenRole = 'owner';
+
+  if (roleSeg) {
+    $$('button[data-role]', roleSeg).forEach(btn => {
+      btn.addEventListener('click', () => {
+        chosenRole = btn.dataset.role;
+        $$('button[data-role]', roleSeg).forEach(b => b.setAttribute('aria-selected', String(b === btn)));
+        if (roleHint) {
+          roleHint.textContent = chosenRole === 'client'
+            ? 'Cliente: accesso in sola lettura per consultare la Nota di pagamento e l\u2019IBAN.'
+            : 'Proprietario: controllo completo di progetti, ore, tariffe e IBAN.';
+        }
+      });
+    });
+  }
+
   const readCreds = () => ({ email: (emailEl.value || '').trim(), password: passEl.value || '' });
   const showErr = (m) => { if (errEl) { errEl.textContent = m; errEl.classList.remove('hidden'); } };
-  const guard = (c) => {
+  const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  const guard = (c, isSignup) => {
     if (!c.email) { showErr('Inserisci la tua email.'); return false; }
+    if (!validEmail(c.email)) { showErr('Formato email non valido.'); return false; }
     if (!c.password) { showErr('Inserisci la password.'); return false; }
+    if (isSignup && c.password.length < 6) { showErr('La password deve avere almeno 6 caratteri.'); return false; }
+    if (errEl) errEl.classList.add('hidden');
     return true;
   };
   const signin = $('#a-signin');
   const signup = $('#a-signup');
-  if (signin) signin.addEventListener('click', () => { const c = readCreds(); if (guard(c)) doSignIn(c.email, c.password); });
-  if (signup) signup.addEventListener('click', () => { const c = readCreds(); if (guard(c)) doSignUp(c.email, c.password); });
-  if (passEl) passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = readCreds(); if (guard(c)) doSignIn(c.email, c.password); } });
+  if (signin) signin.addEventListener('click', () => { const c = readCreds(); if (guard(c, false)) doSignIn(c.email, c.password); });
+  if (signup) signup.addEventListener('click', () => { const c = readCreds(); if (guard(c, true)) doSignUp(c.email, c.password, chosenRole); });
+  if (passEl) passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = readCreds(); if (guard(c, false)) doSignIn(c.email, c.password); } });
 }
 
 /* ---------------------------------------------------------------------
