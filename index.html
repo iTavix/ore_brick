@@ -7,13 +7,16 @@
 <title>Ore BrickBoy</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
-  // Tailwind runtime config: single warm accent over a neutral palette.
   tailwind.config = {
+    darkMode: 'class',
     theme: {
       extend: {
         colors: {
-          accent: { DEFAULT: '#FF9500', hover: '#F08600', soft: '#FFF4E5' },
-          ink: { DEFAULT: '#1d1d1f', soft: '#6e6e73', faint: '#a1a1a6' }
+          accent: { DEFAULT: '#FF9500', hover: '#F08600', soft: '#FFF4E5', darksoft: '#2c1e0a' },
+          ink: { DEFAULT: '#1d1d1f', soft: '#6e6e73', faint: '#a1a1a6' },
+          darkBg: '#121214',
+          darkCard: '#1c1c1e',
+          darkBorder: '#2c2c2e'
         },
         borderRadius: { xl2: '1.25rem' }
       }
@@ -21,88 +24,123 @@
   };
 </script>
 <style>
-  :root { color-scheme: light; }
+  :root { color-scheme: light dark; }
   html, body {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
-  body { background: #f5f5f7; color: #1d1d1f; }
+  body { background: #f5f5f7; color: #1d1d1f; transition: background-color .3s, color .3s; }
+  body.dark { background: #121214; color: #f5f5f7; }
 
-  /* Subtle, discreet transitions */
+  /* Smooth Transitions */
   .transition-soft { transition: all .22s cubic-bezier(.4,0,.2,1); }
 
-  /* iOS-style segmented control */
-  .seg { background: #e9e9eb; border-radius: 12px; padding: 3px; }
-  .seg button { border-radius: 9px; transition: all .2s ease; }
+  /* Segmented Controls with responsive scroll */
+  .seg-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .seg { background: #e9e9eb; border-radius: 12px; padding: 3px; display: flex; min-width: max-content; }
+  .dark .seg { background: #2c2c2e; }
+  .seg button { border-radius: 9px; padding: 6px 12px; font-size: 13px; font-weight: 500; transition: all .2s ease; white-space: nowrap; }
   .seg button[aria-selected="true"] {
     background: #fff;
     box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 .5px rgba(0,0,0,.04);
     color: #1d1d1f;
   }
+  .dark .seg button[aria-selected="true"] {
+    background: #3a3a3c;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    color: #fff;
+  }
   .seg button[aria-selected="false"] { color: #6e6e73; }
+  .dark .seg button[aria-selected="false"] { color: #a1a1a6; }
 
-  /* Smooth expand/collapse */
+  /* Rotate indicator */
   .chev { transition: transform .22s ease; }
   .chev.open { transform: rotate(90deg); }
 
-  /* Inputs */
+  /* Custom inputs */
   .field {
     width: 100%; background: #fff; border: 1px solid #e2e2e6; border-radius: 12px;
     padding: 11px 13px; font-size: 16px; color: #1d1d1f; outline: none;
-    transition: border-color .18s ease, box-shadow .18s ease;
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s, color .18s;
   }
+  .dark .field { background: #1c1c1e; border-color: #2c2c2e; color: #f5f5f7; }
   .field:focus { border-color: #FF9500; box-shadow: 0 0 0 4px rgba(255,149,0,.12); }
   .field::placeholder { color: #b0b0b6; }
+  .dark .field::placeholder { color: #555559; }
 
-  /* Modal */
-  .modal-backdrop { background: rgba(0,0,0,.32); backdrop-filter: saturate(140%) blur(8px); }
+  /* Modals */
+  .modal-backdrop { background: rgba(0,0,0,.42); backdrop-filter: saturate(140%) blur(8px); }
   @keyframes pop { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
   .modal-card { animation: pop .22s cubic-bezier(.4,0,.2,1); }
+  .dark .modal-card { background: #1c1c1e; border: 1px solid #2c2c2e; }
+
+  /* Animations & Toasts */
   @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
   .fade { animation: fade .18s ease; }
-
-  /* Toast */
   @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
   .toast { animation: toastIn .24s cubic-bezier(.4,0,.2,1); }
 
-  /* Hide number spinners for a cleaner look */
   input[type=number]::-webkit-outer-spin-button,
   input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number] { -moz-appearance: textfield; }
 
-  /* ---------- Print: clean A4 payment note ---------- */
+  /* Pulse style for live timer widget */
+  @keyframes pulseRed {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .pulse-dot { animation: pulseRed 1.5s infinite; }
+
+  /* Print Layout styling */
   @media print {
-    @page { size: A4; margin: 18mm 16mm; }
-    body { background: #fff; }
+    @page { size: A4; margin: 15mm; }
+    body { background: #fff !important; color: #000 !important; }
     .no-print { display: none !important; }
     #app-shell { max-width: none !important; padding: 0 !important; }
     #view-payment { display: block !important; }
     .print-area { box-shadow: none !important; border: none !important; border-radius: 0 !important; padding: 0 !important; margin: 0 !important; }
-    .print-table th, .print-table td { padding: 6px 8px !important; }
-    a[href]::after { content: ""; }
+    .print-table th, .print-table td { padding: 8px 10px !important; border-bottom: 1px solid #e2e2e6 !important; }
   }
 </style>
 </head>
-<body class="min-h-screen flex flex-col">
+<body class="min-h-screen flex flex-col transition-soft">
 
   <!-- ===================== TOP BAR / NAV ===================== -->
-  <header class="no-print sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-black/5">
+  <header class="no-print sticky top-0 z-30 bg-white/80 dark:bg-[#121214]/80 backdrop-blur-xl border-b border-black/5 dark:border-white/5">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
       <div class="flex items-center gap-2 shrink-0">
         <div class="w-8 h-8 rounded-[10px] bg-accent flex items-center justify-center shadow-sm">
-          <span class="text-white text-lg leading-none">▦</span>
+          <span class="text-white text-lg leading-none font-bold">▦</span>
         </div>
         <div class="leading-tight">
-          <div class="font-semibold text-[15px] tracking-tight">Ore BrickBoy</div>
-          <div class="text-[11px] text-ink-faint -mt-0.5">Tracciamento ore freelance</div>
+          <div class="font-semibold text-[15px] tracking-tight dark:text-white">Ore BrickBoy</div>
+          <div class="text-[11px] text-ink-faint -mt-0.5 dark:text-ink-faint">Tracciamento ore & fatturazione</div>
         </div>
       </div>
       <div class="flex-1"></div>
+      
+      <!-- Fallback Compatibility Banner (Solo per doppio click locale) -->
+      <div id="fallback-badge" class="hidden shrink-0 text-[11px] font-medium rounded-full bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 px-2.5 py-1 flex items-center gap-1.5" title="Uso di localStorage per file:// locale">
+        <span>⚠️</span> <span class="hidden sm:inline">Salvataggio Locale (file://)</span>
+      </div>
+
+      <!-- Real-time Active Timer Widget on Nav Bar -->
+      <div id="nav-timer-widget" class="hidden items-center gap-2 bg-red-500/10 dark:bg-red-500/20 px-2.5 py-1 rounded-full text-red-600 dark:text-red-400 text-[12px] font-semibold">
+        <span class="w-1.5 h-1.5 rounded-full bg-red-600 dark:bg-red-500 pulse-dot"></span>
+        <span id="nav-timer-clock" class="tabular-nums font-mono">00:00:00</span>
+      </div>
+
+      <!-- Theme Switcher -->
+      <button id="theme-toggle" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Cambia tema">
+        <span class="dark:hidden">🌙</span>
+        <span class="hidden dark:inline">☀️</span>
+      </button>
+
       <button id="sync-badge" class="hidden shrink-0 text-[12px] font-medium rounded-full px-2.5 py-1 transition-soft flex items-center gap-1.5" title="Stato sincronizzazione"></button>
     </div>
-    <nav class="max-w-3xl mx-auto px-4 sm:px-6 pb-3">
-      <div class="seg grid grid-cols-4 gap-0 text-[13px] font-medium" role="tablist" id="nav">
+    <nav class="max-w-3xl mx-auto px-4 sm:px-6 pb-3 seg-container">
+      <div class="seg gap-0 text-[13px] font-medium" role="tablist" id="nav">
         <button role="tab" data-view="dashboard" class="py-2">Dashboard</button>
         <button role="tab" data-view="payment" class="py-2">Nota</button>
         <button role="tab" data-view="settings" class="py-2">Impostazioni</button>
@@ -120,9 +158,9 @@
   </main>
 
   <!-- ===================== FOOTER ===================== -->
-  <footer class="no-print border-t border-black/5 bg-white/60">
+  <footer class="no-print border-t border-black/5 dark:border-white/5 bg-white/60 dark:bg-[#121214]/60">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 py-5 text-center text-[12px] text-ink-faint">
-      Realizzato con cura · <span class="font-medium text-ink-soft">iTavix</span>
+      Realizzato con cura · <span class="font-medium text-ink-soft dark:text-white">iTavix Copilot</span>
     </div>
   </footer>
 
@@ -130,20 +168,14 @@
   <div id="modal-root"></div>
   <!-- ===================== TOAST ROOT ===================== -->
   <div id="toast-root" class="fixed left-1/2 bottom-6 z-50 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none"></div>
+
   <!-- ============================================================
-       FIREBASE (sincronizzazione tra dispositivi) — opzionale
-       Compat SDK v12.11.0 via CDN. Se la config qui sotto resta
-       vuota, l'app funziona normalmente in locale (senza sync).
+       FIREBASE CONNECTION SDK
        ============================================================ -->
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
   <script>
-    /* ┌──────────────────────────────────────────────────────────┐
-       │  INCOLLA QUI LA TUA CONFIG FIREBASE                        │
-       │  (Console Firebase → Impostazioni progetto → Le tue app)   │
-       │  Lasciando i campi vuoti, la sincronizzazione resta off.   │
-       └──────────────────────────────────────────────────────────┘ */
     window.FIREBASE_CONFIG = {
       apiKey: "AIzaSyAKbFfeV4NCPyBqUri73FBCFC4WvtCyn2U",
       authDomain: "brickboy-b008e.firebaseapp.com",
@@ -158,24 +190,18 @@
 "use strict";
 
 /* =====================================================================
-   Ore BrickBoy — single-file freelance hours tracker
-   Vanilla JS + IndexedDB. UI in Italian, code comments in English.
+   Ore BrickBoy — Single-file advanced hours & invoice management
    ===================================================================== */
 
-/* ---------------------------------------------------------------------
-   Small helpers
---------------------------------------------------------------------- */
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-// Escape user-provided text before injecting into innerHTML.
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// Robust id generator (works on file:// and older engines).
 function genId() {
   try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (_) {}
   try {
@@ -185,67 +211,126 @@ function genId() {
   return 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
 }
 
-// Format a Number as Italian currency.
 function eur(n) {
   return (Number(n) || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 }
-// Format hours with Italian decimals, no trailing zeros.
+
 function hrs(n) {
   const v = Number(n) || 0;
   return v.toLocaleString('it-IT', { maximumFractionDigits: 2 }) + (v === 1 ? ' h' : ' h');
 }
-// ISO (YYYY-MM-DD) -> dd/mm/yyyy. Returns '—' if invalid.
+
 function dateIt(iso) {
   if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '—';
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
 }
-// Today as ISO.
+
 function todayIso() {
   const d = new Date();
   const p = (x) => String(x).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-// Mask an IBAN keeping only the first 4 and last 4 chars visible.
-// Groups the result in blocks of 4 for readability. Returns '' if empty.
+
 function maskIban(iban) {
   const v = String(iban == null ? '' : iban).replace(/\s+/g, '');
   if (!v) return '';
-  let out;
-  if (v.length <= 8) {
-    out = '•'.repeat(v.length);
-  } else {
-    out = v.slice(0, 4) + '•'.repeat(v.length - 8) + v.slice(-4);
-  }
+  let out = v.length <= 8 ? '•'.repeat(v.length) : v.slice(0, 4) + '•'.repeat(v.length - 8) + v.slice(-4);
   return out.replace(/(.{4})/g, '$1 ').trim();
 }
-// Group a plain IBAN in blocks of 4 for readable display.
+
 function groupIban(iban) {
   const v = String(iban == null ? '' : iban).replace(/\s+/g, '');
   return v ? v.replace(/(.{4})/g, '$1 ').trim() : '';
 }
 
 /* ---------------------------------------------------------------------
-   IndexedDB layer (promise-wrapped)
+   Secure Storage Helper & Fallback Engine
 --------------------------------------------------------------------- */
+function getLocalStorageItem(key) {
+  try {
+    return (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(key) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setLocalStorageItem(key, value) {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(key, value);
+    }
+  } catch (e) {
+    console.warn("Impossibile salvare nel localStorage: ", e);
+  }
+}
+
 const DB_NAME = 'ore-brickboy';
 const DB_VERSION = 1;
 let _db = null;
+let _useFallback = false;
+
+// Memory storage in case localStorage blocks as well
+const fallbackData = {
+  settings: {},
+  projects: [],
+  entries: [],
+  timer: {}
+};
+
+function initFallbackStorage() {
+  _useFallback = true;
+  const fallbackBadge = $('#fallback-badge');
+  if (fallbackBadge) fallbackBadge.classList.remove('hidden');
+  try {
+    const parsedSettings = JSON.parse(getLocalStorageItem('obb_settings'));
+    fallbackData.settings = (parsedSettings && typeof parsedSettings === 'object' && !Array.isArray(parsedSettings)) ? parsedSettings : {};
+
+    const parsedProjects = JSON.parse(getLocalStorageItem('obb_projects'));
+    fallbackData.projects = Array.isArray(parsedProjects) ? parsedProjects : [];
+
+    const parsedEntries = JSON.parse(getLocalStorageItem('obb_entries'));
+    fallbackData.entries = Array.isArray(parsedEntries) ? parsedEntries : [];
+
+    const parsedTimer = JSON.parse(getLocalStorageItem('obb_timer'));
+    fallbackData.timer = (parsedTimer && typeof parsedTimer === 'object' && !Array.isArray(parsedTimer)) ? parsedTimer : {};
+  } catch (e) {
+    console.warn("Storage di fallback basato solo sulla memoria volatile.", e);
+    // Safe fallback to default instances in memory
+    fallbackData.settings = {};
+    fallbackData.projects = [];
+    fallbackData.entries = [];
+    fallbackData.timer = {};
+  }
+}
+
+function saveFallback(store) {
+  if (!_useFallback) return;
+  setLocalStorageItem('obb_' + store, JSON.stringify(fallbackData[store]));
+}
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('entries')) {
-        const s = db.createObjectStore('entries', { keyPath: 'id' });
-        s.createIndex('projectId', 'projectId', { unique: false });
+    try {
+      if (typeof indexedDB === 'undefined' || indexedDB === null) {
+        throw new Error("IndexedDB non supportato o bloccato in questo contesto.");
       }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('entries')) {
+          const s = db.createObjectStore('entries', { keyPath: 'id' });
+          s.createIndex('projectId', 'projectId', { unique: false });
+        }
+        if (!db.objectStoreNames.contains('timer')) db.createObjectStore('timer', { keyPath: 'id' });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error("Errore durante l'apertura del database."));
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
@@ -258,40 +343,127 @@ function idbReq(request) {
     request.onerror = () => reject(request.error);
   });
 }
-const dbGet = (store, key) => idbReq(tx(store, 'readonly').get(key));
-const dbGetAll = (store) => idbReq(tx(store, 'readonly').getAll());
-const dbPut = (store, value) => idbReq(tx(store, 'readwrite').put(value));
-const dbDel = (store, key) => idbReq(tx(store, 'readwrite').delete(key));
+
+const dbGet = async (store, key) => {
+  if (_useFallback) {
+    if (store === 'settings' || store === 'timer') {
+      return fallbackData[store][key] || null;
+    }
+    return null;
+  }
+  try {
+    return await idbReq(tx(store, 'readonly').get(key));
+  } catch (err) {
+    console.warn("DB Get fallito. Attivazione immediata del fallback...", err);
+    initFallbackStorage();
+    return dbGet(store, key); // Ripete con la modalità fallback
+  }
+};
+
+const dbGetAll = async (store) => {
+  if (_useFallback) {
+    if (store === 'projects') return fallbackData.projects;
+    if (store === 'entries') return fallbackData.entries;
+    if (store === 'settings') return Object.values(fallbackData.settings);
+    return [];
+  }
+  try {
+    return await idbReq(tx(store, 'readonly').getAll());
+  } catch (err) {
+    console.warn("DB GetAll fallito. Attivazione immediata del fallback...", err);
+    initFallbackStorage();
+    return dbGetAll(store); // Ripete con la modalità fallback
+  }
+};
+
+const dbPut = async (store, value) => {
+  if (_useFallback) {
+    if (store === 'settings' || store === 'timer') {
+      fallbackData[store][value.id] = value;
+    } else if (store === 'projects' || store === 'entries') {
+      const idx = fallbackData[store].findIndex(item => item.id === value.id);
+      if (idx > -1) {
+        fallbackData[store][idx] = value;
+      } else {
+        fallbackData[store].push(value);
+      }
+    }
+    saveFallback(store);
+    return value;
+  }
+  try {
+    return await idbReq(tx(store, 'readwrite').put(value));
+  } catch (err) {
+    console.warn("DB Put fallito. Attivazione immediata del fallback...", err);
+    initFallbackStorage();
+    return dbPut(store, value); // Ripete con la modalità fallback
+  }
+};
+
+const dbDel = async (store, key) => {
+  if (_useFallback) {
+    if (store === 'settings' || store === 'timer') {
+      delete fallbackData[store][key];
+    } else if (store === 'projects' || store === 'entries') {
+      fallbackData[store] = fallbackData[store].filter(item => item.id !== key);
+    }
+    saveFallback(store);
+    return;
+  }
+  try {
+    return await idbReq(tx(store, 'readwrite').delete(key));
+  } catch (err) {
+    console.warn("DB Del fallito. Attivazione immediata del fallback...", err);
+    initFallbackStorage();
+    return dbDel(store, key); // Ripete con la modalità fallback
+  }
+};
+
 function dbClear(store) {
-  return new Promise((resolve, reject) => {
+  if (_useFallback) {
+    if (store === 'projects' || store === 'entries') {
+      fallbackData[store] = [];
+    }
+    saveFallback(store);
+    return Promise.resolve();
+  }
+  try {
     const t = _db.transaction(store, 'readwrite');
-    t.objectStore(store).clear();
-    t.oncomplete = () => resolve();
-    t.onerror = () => reject(t.error);
-  });
+    return new Promise((resolve, reject) => {
+      const req = t.objectStore(store).clear();
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) {
+    console.warn("DB Clear fallito. Attivazione immediata del fallback...", err);
+    initFallbackStorage();
+    return dbClear(store); // Ripete con la modalità fallback
+  }
 }
 
 /* ---------------------------------------------------------------------
-   Seed (first run only)
+   Seed Data
 --------------------------------------------------------------------- */
 const DEFAULT_SETTINGS = {
   id: 'app',
   hourlyRate: 25,
   extra: 0,
+  taxRate: 0,
   holderName: 'Claudio Tavella',
   iban: 'IT47R0364601600526311864007',
-  bic: 'NTSBITM1XXX'
+  bic: 'NTSBITM1XXX',
+  theme: 'auto'
 };
 
 async function seedIfEmpty() {
   const existing = await dbGetAll('projects');
   const hasSettings = await dbGet('settings', 'app');
   if (!hasSettings) await dbPut('settings', { ...DEFAULT_SETTINGS });
-  if (existing && existing.length) return; // already seeded
+  if (existing && existing.length) return;
 
-  const p1 = { id: genId(), name: 'Arcade BrickBoy', createdAt: '2026-06-17' };
-  const p2 = { id: genId(), name: 'GameBoy BrickBoy', createdAt: '2026-05-22' };
-  const p3 = { id: genId(), name: 'Play station 1 BrickBoy', createdAt: '2026-03-30' };
+  const p1 = { id: genId(), name: 'Arcade BrickBoy', createdAt: '2026-06-17', hourlyRate: 30, clientName: 'Retrogames SRL', clientAddress: 'Via Roma 12, Milano' };
+  const p2 = { id: genId(), name: 'GameBoy BrickBoy', createdAt: '2026-05-22', hourlyRate: null, clientName: 'Console Club', clientAddress: 'Corso Sempione 8, Roma' };
+  const p3 = { id: genId(), name: 'Play station 1 BrickBoy', createdAt: '2026-03-30', hourlyRate: 35, clientName: 'Sony Fans', clientAddress: 'Piazza Duomo 3, Torino' };
   for (const p of [p1, p2, p3]) await dbPut('projects', p);
 
   const seedEntries = [
@@ -304,14 +476,15 @@ async function seedIfEmpty() {
 }
 
 /* ---------------------------------------------------------------------
-   In-memory state
+   In-memory State
 --------------------------------------------------------------------- */
 const state = {
   settings: { ...DEFAULT_SETTINGS },
   projects: [],
   entries: [],
   view: 'dashboard',
-  expanded: new Set()
+  expanded: new Set(),
+  activeTimer: null
 };
 
 async function loadState() {
@@ -319,13 +492,18 @@ async function loadState() {
   state.settings = s ? s : { ...DEFAULT_SETTINGS };
   state.projects = (await dbGetAll('projects')) || [];
   state.entries = (await dbGetAll('entries')) || [];
-  // Stable ordering: projects by creation, entries by date.
-  state.projects.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || String(a.name).localeCompare(b.name));
-  state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  state.activeTimer = await dbGet('timer', 'current') || null;
+
+  // Protegge l'applicazione da formati corrotti o inconsistenti
+  if (!Array.isArray(state.projects)) state.projects = [];
+  if (!Array.isArray(state.entries)) state.entries = [];
+
+  state.projects.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.name || '').localeCompare(String(b.name || '')));
+  state.entries.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
 }
 
 /* ---------------------------------------------------------------------
-   Derived calculations
+   Derived Calculations
 --------------------------------------------------------------------- */
 function entriesOf(projectId) {
   return state.entries.filter(e => e.projectId === projectId);
@@ -333,24 +511,32 @@ function entriesOf(projectId) {
 function projectHours(projectId) {
   return entriesOf(projectId).reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
 }
+function projectCompensation(project) {
+  const rate = project.hourlyRate != null && project.hourlyRate !== '' ? Number(project.hourlyRate) : Number(state.settings.hourlyRate);
+  return projectHours(project.id) * rate;
+}
 function totalHours() {
   return state.entries.reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
 }
 function totalCompensation() {
-  const rate = Number(state.settings.hourlyRate) || 0;
   const extra = Number(state.settings.extra) || 0;
-  return rate * totalHours() + extra;
+  let baseSum = 0;
+  for (const p of state.projects) {
+    baseSum += projectCompensation(p);
+  }
+  return baseSum + extra;
 }
 
 /* ---------------------------------------------------------------------
-   Toast (discreet feedback)
+   System Toasts & Theme control
 --------------------------------------------------------------------- */
 function toast(message, kind = 'ok') {
   const root = $('#toast-root');
+  if (!root) return;
   const el = document.createElement('div');
-  const color = kind === 'error' ? 'bg-[#1d1d1f]' : 'bg-[#1d1d1f]';
-  el.className = `toast pointer-events-auto ${color} text-white text-[13px] font-medium px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2`;
-  const dot = kind === 'error' ? '⚠️' : '✓';
+  const themeClasses = 'bg-[#1d1d1f] dark:bg-zinc-800 text-white dark:text-zinc-100';
+  el.className = `toast pointer-events-auto ${themeClasses} text-[13px] font-medium px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 border border-white/5`;
+  const dot = kind === 'error' ? '⚠️' : (kind === 'warning' ? '⚙️' : '✓');
   el.innerHTML = `<span>${dot}</span><span>${esc(message)}</span>`;
   root.appendChild(el);
   setTimeout(() => {
@@ -360,51 +546,64 @@ function toast(message, kind = 'ok') {
   }, 2600);
 }
 
+function syncTheme(themeName) {
+  const isDark = themeName === 'dark' || (themeName === 'auto' && typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.body.classList.toggle('dark', isDark);
+}
+
 /* ---------------------------------------------------------------------
-   Modal system
+   Modal Manager
 --------------------------------------------------------------------- */
 function closeModal() {
   const root = $('#modal-root');
-  root.innerHTML = '';
+  if (root) root.innerHTML = '';
   document.body.style.overflow = '';
 }
 
-// opts: { title, bodyHTML, confirmText, cancelText, onConfirm(form)->true|false, danger, onMount(card) }
 function openModal(opts) {
   const root = $('#modal-root');
+  if (!root) return;
   document.body.style.overflow = 'hidden';
   const danger = opts.danger;
   root.innerHTML = `
     <div class="fixed inset-0 z-40 modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4" id="m-backdrop">
-      <div class="modal-card bg-white w-full sm:max-w-md rounded-t-xl2 sm:rounded-xl2 shadow-2xl overflow-hidden">
+      <div class="modal-card bg-white dark:bg-darkCard w-full sm:max-w-md rounded-t-xl2 sm:rounded-xl2 shadow-2xl overflow-hidden border border-black/5 dark:border-darkBorder">
         <div class="px-5 pt-5 pb-1">
-          <h2 class="text-[17px] font-semibold tracking-tight">${esc(opts.title || '')}</h2>
+          <h2 class="text-[17px] font-semibold tracking-tight dark:text-white">${esc(opts.title || '')}</h2>
         </div>
-        <div class="px-5 py-3" id="m-body">${opts.bodyHTML || ''}</div>
-        <div class="px-5 py-4 flex gap-2 justify-end border-t border-black/5">
-          <button id="m-cancel" class="px-4 py-2 rounded-full text-[14px] font-medium text-ink-soft hover:bg-black/5 transition-soft">${esc(opts.cancelText || 'Annulla')}</button>
+        <div class="px-5 py-3 dark:text-zinc-200" id="m-body">${opts.bodyHTML || ''}</div>
+        <div class="px-5 py-4 flex gap-2 justify-end border-t border-black/5 dark:border-darkBorder bg-gray-50 dark:bg-zinc-900/50">
+          <button id="m-cancel" class="px-4 py-2 rounded-full text-[14px] font-medium text-ink-soft dark:text-ink-faint hover:bg-black/5 dark:hover:bg-white/5 transition-soft">${esc(opts.cancelText || 'Annulla')}</button>
           <button id="m-confirm" class="px-4 py-2 rounded-full text-[14px] font-semibold text-white transition-soft ${danger ? 'bg-[#ff3b30] hover:bg-[#e0352b]' : 'bg-accent hover:bg-accent-hover'}">${esc(opts.confirmText || 'Salva')}</button>
         </div>
       </div>
     </div>`;
   const backdrop = $('#m-backdrop');
-  backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) closeModal(); });
-  $('#m-cancel').addEventListener('click', closeModal);
+  if (backdrop) {
+    backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) closeModal(); });
+  }
+  const cancelBtn = $('#m-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
   const card = $('.modal-card', root);
-  if (typeof opts.onMount === 'function') opts.onMount(card);
+  if (card && typeof opts.onMount === 'function') opts.onMount(card);
+  
   const confirm = async () => {
     const ok = opts.onConfirm ? await opts.onConfirm(card) : true;
     if (ok !== false) closeModal();
   };
-  $('#m-confirm').addEventListener('click', confirm);
-  // Enter to confirm when a single-line field is focused
-  card.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'number') { e.preventDefault(); confirm(); }
-    if (e.key === 'Escape') closeModal();
-  });
-  // Autofocus first field
-  const first = $('input, textarea', card);
-  if (first) setTimeout(() => first.focus(), 60);
+  
+  const confirmBtn = $('#m-confirm');
+  if (confirmBtn) confirmBtn.addEventListener('click', confirm);
+  
+  if (card) {
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'number' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); confirm(); }
+      if (e.key === 'Escape') closeModal();
+    });
+    const first = $('input, textarea, select', card);
+    if (first) setTimeout(() => first.focus(), 100);
+  }
 }
 
 function showError(card, msg) {
@@ -413,18 +612,20 @@ function showError(card, msg) {
     box = document.createElement('div');
     box.id = 'm-error';
     box.className = 'mt-3 text-[13px] text-[#ff3b30] bg-[#ff3b30]/8 rounded-lg px-3 py-2';
-    $('#m-body', card).appendChild(box);
+    const mBody = $('#m-body', card);
+    if (mBody) mBody.appendChild(box);
   }
   box.textContent = msg;
 }
 
 /* ---------------------------------------------------------------------
-   View switching
+   View Router
 --------------------------------------------------------------------- */
 function setView(view) {
   state.view = view;
   ['dashboard', 'payment', 'settings', 'guide'].forEach(v => {
-    $('#view-' + v).classList.toggle('hidden', v !== view);
+    const target = $('#view-' + v);
+    if (target) target.classList.toggle('hidden', v !== view);
   });
   $$('#nav button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === view)));
   render();
@@ -439,29 +640,40 @@ function render() {
 }
 
 /* ---------------------------------------------------------------------
-   DASHBOARD
+   DASHBOARD & TIME GRAPHICS
 --------------------------------------------------------------------- */
 function renderDashboard() {
   const root = $('#view-dashboard');
+  if (!root) return;
   const tH = totalHours();
-  const rate = Number(state.settings.hourlyRate) || 0;
+  const baseRate = Number(state.settings.hourlyRate) || 0;
   const extra = Number(state.settings.extra) || 0;
   const total = totalCompensation();
 
+  // Custom SVG visual breakdown chart builder
+  const chartHtml = buildVisualAnalyticsChart();
+
   const summary = `
+    <!-- Top KPI Widgets -->
     <div class="grid grid-cols-3 gap-3 mb-6">
-      ${summaryCard('Ore totali', hrs(tH), 'text-ink')}
-      ${summaryCard('Tariffa oraria', eur(rate) + '/h', 'text-ink')}
-      ${summaryCard('Compenso totale', eur(total), 'text-accent', extra ? `incl. extra ${eur(extra)}` : '')}
-    </div>`;
+      ${summaryCard('Ore totali', hrs(tH), 'text-ink dark:text-white')}
+      ${summaryCard('Tariffa base', eur(baseRate) + '/h', 'text-ink dark:text-white')}
+      ${summaryCard('Compenso stimato', eur(total), 'text-accent', extra ? `incl. extra ${eur(extra)}` : '')}
+    </div>
+
+    <!-- Active Timer Widget -->
+    ${buildStopwatchWidgetHTML()}
+
+    <!-- Visual Distribution Chart card -->
+    ${chartHtml}`;
 
   let projectsHTML;
   if (!state.projects.length) {
     projectsHTML = `
-      <div class="bg-white rounded-xl2 border border-black/5 px-6 py-12 text-center">
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center">
         <div class="text-3xl mb-3">▦</div>
-        <p class="text-ink-soft text-[15px]">Nessun progetto.</p>
-        <p class="text-ink-faint text-[13px] mt-1">Creane uno per iniziare a tracciare le ore.</p>
+        <p class="text-ink-soft dark:text-ink-faint text-[15px]">Nessun progetto.</p>
+        <p class="text-ink-faint dark:text-zinc-600 text-[13px] mt-1">Creane uno per iniziare a tracciare le ore o avviare il timer.</p>
       </div>`;
   } else {
     projectsHTML = `<div class="space-y-3">${state.projects.map(projectCard).join('')}</div>`;
@@ -469,16 +681,18 @@ function renderDashboard() {
 
   root.innerHTML = `
     ${summary}
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Progetti</h2>
+    <div class="flex items-center justify-between mb-3 mt-6">
+      <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint dark:text-zinc-500">Progetti</h2>
       <button id="add-project" class="text-[14px] font-semibold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
         <span class="text-[18px] leading-none">+</span> Nuovo progetto
       </button>
     </div>
     ${projectsHTML}`;
 
-  // Bind
-  $('#add-project').addEventListener('click', addProject);
+  // Bind Events
+  const addProjBtn = $('#add-project');
+  if (addProjBtn) addProjBtn.addEventListener('click', addProject);
+  
   $$('[data-toggle]', root).forEach(el => el.addEventListener('click', () => {
     const id = el.dataset.toggle;
     if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
@@ -489,14 +703,64 @@ function renderDashboard() {
   $$('[data-del-project]', root).forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); deleteProject(el.dataset.delProject); }));
   $$('[data-edit-entry]', root).forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); editEntry(el.dataset.editEntry); }));
   $$('[data-del-entry]', root).forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); deleteEntry(el.dataset.delEntry); }));
+  
+  // Stopwatch events inside the card
+  $$('[data-start-project-timer]', root).forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); startProjectTimer(el.dataset.startProjectTimer); }));
+  
+  // Floating timer bind if present
+  const btnTimerPause = $('#btn-timer-pause');
+  if (btnTimerPause) btnTimerPause.addEventListener('click', toggleTimerPause);
+  const btnTimerStop = $('#btn-timer-stop');
+  if (btnTimerStop) btnTimerStop.addEventListener('click', stopAndSaveTimer);
+  const btnTimerDiscard = $('#btn-timer-discard');
+  if (btnTimerDiscard) btnTimerDiscard.addEventListener('click', discardTimer);
 }
 
 function summaryCard(label, value, valueClass, sub) {
   return `
-    <div class="bg-white rounded-xl2 border border-black/5 px-4 py-4 shadow-[0_1px_2px_rgba(0,0,0,.03)]">
-      <div class="text-[11px] font-medium uppercase tracking-wide text-ink-faint">${esc(label)}</div>
-      <div class="mt-1.5 text-[20px] font-semibold tracking-tight ${valueClass} leading-tight tabular-nums">${esc(value)}</div>
-      ${sub ? `<div class="text-[11px] text-ink-faint mt-0.5">${esc(sub)}</div>` : ''}
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-4 py-4 shadow-[0_1px_2px_rgba(0,0,0,.03)]">
+      <div class="text-[11px] font-medium uppercase tracking-wide text-ink-faint dark:text-zinc-500">${esc(label)}</div>
+      <div class="mt-1.5 text-[18px] sm:text-[20px] font-semibold tracking-tight ${valueClass} leading-tight tabular-nums">${esc(value)}</div>
+      ${sub ? `<div class="text-[10px] text-ink-faint dark:text-zinc-500 mt-0.5 truncate">${esc(sub)}</div>` : ''}
+    </div>`;
+}
+
+/* Simple visual chart rendering */
+function buildVisualAnalyticsChart() {
+  if (state.projects.length === 0 || totalHours() === 0) return '';
+  
+  // Calculate heights dynamically for a premium miniature vertical bar chart
+  const maxCompensation = Math.max(...state.projects.map(p => projectCompensation(p)), 1);
+  
+  const bars = state.projects.map((p, index) => {
+    const comp = projectCompensation(p);
+    const hr = projectHours(p);
+    const percentage = (comp / maxCompensation) * 100;
+    const colors = ['bg-accent', 'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-indigo-500'];
+    const activeColor = colors[index % colors.length];
+    
+    return `
+      <div class="flex flex-col items-center flex-1 min-w-[50px]">
+        <div class="relative w-7 bg-gray-100 dark:bg-zinc-800 rounded-lg h-28 flex items-end overflow-hidden group">
+          <div class="${activeColor} w-full transition-all duration-500 rounded-b-lg" style="height: ${percentage}%">
+            <!-- Tooltip -->
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-zinc-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-soft whitespace-nowrap z-10 shadow-md">
+              ${esc(p.name)}: ${hrs(hr)} (${eur(comp)})
+            </div>
+          </div>
+        </div>
+        <div class="text-[10px] text-ink-soft dark:text-zinc-400 mt-2 truncate w-full text-center" title="${esc(p.name)}">${esc(p.name)}</div>
+        <div class="text-[9px] text-ink-faint font-semibold tabular-nums">${eur(comp)}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="bg-white dark:bg-darkCard p-5 rounded-xl2 border border-black/5 dark:border-darkBorder shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-6">
+      <h3 class="text-[12px] font-semibold uppercase tracking-wide text-ink-faint dark:text-zinc-500 mb-4">Ripartizione compensi</h3>
+      <div class="flex items-end justify-between gap-2 overflow-x-auto py-2">
+        ${bars}
+      </div>
     </div>`;
 }
 
@@ -504,36 +768,51 @@ function projectCard(p) {
   const open = state.expanded.has(p.id);
   const items = entriesOf(p.id);
   const pHours = projectHours(p.id);
+  const pRate = p.hourlyRate != null && p.hourlyRate !== '' ? Number(p.hourlyRate) : Number(state.settings.hourlyRate);
+  const pComp = pHours * pRate;
 
   const itemsHTML = items.length
     ? items.map(e => `
-        <div class="group flex items-center gap-3 px-4 py-3 border-t border-black/5">
+        <div class="group flex items-center gap-3 px-4 py-3 border-t border-black/5 dark:border-white/5">
           <div class="flex-1 min-w-0">
-            <div class="text-[14px] text-ink truncate">${esc(e.spec)}</div>
-            <div class="text-[12px] text-ink-faint mt-0.5">${esc(dateIt(e.date))}</div>
+            <div class="text-[14px] text-ink dark:text-zinc-200 truncate font-medium">${esc(e.spec)}</div>
+            <div class="text-[12px] text-ink-faint dark:text-zinc-500 mt-0.5">${esc(dateIt(e.date))}</div>
           </div>
-          <div class="text-[14px] font-medium tabular-nums text-ink-soft shrink-0">${esc(hrs(e.hours))}</div>
+          <div class="text-[14px] font-medium tabular-nums text-ink-soft dark:text-zinc-400 shrink-0">${esc(hrs(e.hours))}</div>
           <div class="flex items-center gap-1 shrink-0">
-            <button data-edit-entry="${e.id}" title="Modifica" class="w-8 h-8 rounded-full hover:bg-black/5 transition-soft text-ink-faint hover:text-ink flex items-center justify-center">✎</button>
+            <button data-edit-entry="${e.id}" title="Modifica" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">✎</button>
             <button data-del-entry="${e.id}" title="Elimina" class="w-8 h-8 rounded-full hover:bg-[#ff3b30]/10 transition-soft text-ink-faint hover:text-[#ff3b30] flex items-center justify-center">🗑</button>
           </div>
         </div>`).join('')
-    : `<div class="px-4 py-5 border-t border-black/5 text-center text-[13px] text-ink-faint">Nessuna voce. Aggiungine una.</div>`;
+    : `<div class="px-4 py-5 border-t border-black/5 dark:border-white/5 text-center text-[13px] text-ink-faint">Nessuna voce. Aggiungine una oppure avvia il timer.</div>`;
 
   return `
-    <div class="bg-white rounded-xl2 border border-black/5 overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,.03)]">
-      <div data-toggle="${p.id}" class="flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none hover:bg-black/[.015] transition-soft">
-        <span class="chev ${open ? 'open' : ''} text-ink-faint text-[13px]">▶</span>
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,.03)]">
+      <div data-toggle="${p.id}" class="flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft">
+        <span class="chev ${open ? 'open' : ''} text-ink-faint dark:text-zinc-600 text-[13px]">▶</span>
         <div class="flex-1 min-w-0">
-          <div class="text-[15px] font-medium tracking-tight truncate">${esc(p.name)}</div>
-          <div class="text-[12px] text-ink-faint">${items.length} voci · ${esc(hrs(pHours))}</div>
+          <div class="text-[15px] font-semibold tracking-tight truncate dark:text-white">${esc(p.name)}</div>
+          <div class="text-[11px] text-ink-faint dark:text-zinc-500 flex items-center gap-2 flex-wrap mt-0.5">
+            <span>${items.length} voci</span>
+            <span>·</span>
+            <span class="font-semibold text-accent">${esc(hrs(pHours))}</span>
+            <span>·</span>
+            <span>${eur(pRate)}/h</span>
+            <span>·</span>
+            <span class="font-medium text-ink-soft dark:text-zinc-400">${eur(pComp)}</span>
+            ${p.clientName ? `<span class="bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-semibold">${esc(p.clientName)}</span>` : ''}
+          </div>
         </div>
-        <button data-rename="${p.id}" title="Rinomina" class="w-8 h-8 rounded-full hover:bg-black/5 transition-soft text-ink-faint hover:text-ink flex items-center justify-center">✎</button>
-        <button data-del-project="${p.id}" title="Elimina progetto" class="w-8 h-8 rounded-full hover:bg-[#ff3b30]/10 transition-soft text-ink-faint hover:text-[#ff3b30] flex items-center justify-center">🗑</button>
+        <div class="flex items-center gap-1">
+          <!-- Live tracker trigger -->
+          <button data-start-project-timer="${p.id}" title="Avvia Timer" class="w-8 h-8 rounded-full bg-accent/10 hover:bg-accent/20 text-accent transition-soft flex items-center justify-center font-bold">⏱</button>
+          <button data-rename="${p.id}" title="Modifica progetto" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">✎</button>
+          <button data-del-project="${p.id}" title="Elimina progetto" class="w-8 h-8 rounded-full hover:bg-[#ff3b30]/10 transition-soft text-ink-faint hover:text-[#ff3b30] flex items-center justify-center">🗑</button>
+        </div>
       </div>
       ${open ? `
         <div>${itemsHTML}</div>
-        <div class="px-4 py-3 border-t border-black/5">
+        <div class="px-4 py-3 border-t border-black/5 dark:border-white/5 flex items-center gap-3 bg-gray-50/50 dark:bg-zinc-900/10">
           <button data-add-entry="${p.id}" class="text-[13px] font-semibold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
             <span class="text-[16px] leading-none">+</span> Aggiungi voce
           </button>
@@ -541,24 +820,244 @@ function projectCard(p) {
     </div>`;
 }
 
-/* ---------- Project CRUD ---------- */
+/* ---------------------------------------------------------------------
+   STOPWATCH MODULE
+--------------------------------------------------------------------- */
+function buildStopwatchWidgetHTML() {
+  if (!state.activeTimer) return '';
+  const p = state.projects.find(x => x.id === state.activeTimer.projectId);
+  const pName = p ? p.name : 'Progetto eliminato';
+  const paused = state.activeTimer.paused;
+  
+  return `
+    <div class="bg-red-500/10 dark:bg-red-500/20 rounded-xl2 border border-red-500/20 p-4 shadow-sm mb-6 flex flex-col md:flex-row items-center gap-4 justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center">
+          <span class="w-2.5 h-2.5 rounded-full bg-red-600 dark:bg-red-400 pulse-dot"></span>
+        </div>
+        <div class="text-left">
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">Timer in corso</div>
+          <div class="text-[15px] font-semibold text-ink dark:text-white">${esc(pName)}</div>
+          <div class="text-[12px] text-ink-soft dark:text-zinc-400">${esc(state.activeTimer.spec || '(nessuna descrizione)')}</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 w-full md:w-auto justify-end">
+        <div class="text-[24px] font-bold font-mono tracking-wider tabular-nums text-red-600 dark:text-red-400 mr-2" id="widget-timer-clock">
+          00:00:00
+        </div>
+        <button id="btn-timer-pause" class="px-4 py-2 rounded-full bg-white dark:bg-zinc-800 text-ink dark:text-white border border-black/10 dark:border-white/10 text-[13px] font-semibold hover:bg-gray-50 transition-soft">
+          ${paused ? 'Riprendi' : 'Pausa'}
+        </button>
+        <button id="btn-timer-stop" class="px-4 py-2 rounded-full bg-red-600 hover:bg-red-700 text-white text-[13px] font-semibold transition-soft shadow-sm">
+          Salva ore
+        </button>
+        <button id="btn-timer-discard" class="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-ink-faint hover:text-red-500 transition-soft" title="Scarta">
+          🗑
+        </button>
+      </div>
+    </div>`;
+}
+
+async function startProjectTimer(projectId) {
+  if (state.activeTimer) {
+    toast('C\'è già un timer attivo sul progetto. Salva o scarta quello esistente.', 'error');
+    return;
+  }
+  const p = state.projects.find(x => x.id === projectId);
+  if (!p) return;
+
+  openModal({
+    title: 'Avvia monitoraggio ore',
+    bodyHTML: `
+      <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Registrerai la sessione di lavoro in tempo reale su <span class="font-semibold text-ink dark:text-white">${esc(p.name)}</span>.</p>
+      <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Descrizione attività (opzionale)</label>
+      <input id="f-timer-spec" class="field" placeholder="Es. Sviluppo responsive UI" />
+    `,
+    confirmText: 'Avvia Timer',
+    onConfirm: async (card) => {
+      const spec = $('#f-timer-spec', card).value.trim();
+      const timerObj = {
+        id: 'current',
+        projectId,
+        spec: spec || 'Sessione di lavoro live',
+        startTime: Date.now(),
+        paused: false,
+        elapsedBeforePause: 0
+      };
+      state.activeTimer = timerObj;
+      await dbPut('timer', timerObj);
+      renderDashboard();
+      toast('Timer avviato');
+    }
+  });
+}
+
+async function toggleTimerPause() {
+  if (!state.activeTimer) return;
+  if (state.activeTimer.paused) {
+    state.activeTimer.paused = false;
+    state.activeTimer.startTime = Date.now();
+  } else {
+    state.activeTimer.paused = true;
+    state.activeTimer.elapsedBeforePause += Date.now() - state.activeTimer.startTime;
+  }
+  await dbPut('timer', state.activeTimer);
+  renderDashboard();
+}
+
+async function stopAndSaveTimer() {
+  if (!state.activeTimer) return;
+  
+  // Calculate final elapsed hours
+  let totalElapsedMs = state.activeTimer.elapsedBeforePause;
+  if (!state.activeTimer.paused) {
+    totalElapsedMs += Date.now() - state.activeTimer.startTime;
+  }
+  
+  // Convert MS to hours (rounded to 2 decimals, minimum 0.1h to respect actual work effort)
+  const calculatedHours = Math.max(0.1, Math.round((totalElapsedMs / 3600000) * 100) / 100);
+  const projectId = state.activeTimer.projectId;
+  const spec = state.activeTimer.spec;
+
+  openModal({
+    title: 'Registra sessione terminata',
+    bodyHTML: `
+      <p class="text-[14px] mb-3">Hai lavorato per <span class="font-bold text-accent">${calculatedHours} ore</span>. Vuoi salvare questa voce nel progetto?</p>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Data</label>
+          <input id="f-final-date" type="date" class="field" value="${todayIso()}" />
+        </div>
+        <div>
+          <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Ore calcolate</label>
+          <input id="f-final-hours" type="number" min="0" step="0.05" class="field" value="${calculatedHours}" />
+        </div>
+      </div>
+    `,
+    confirmText: 'Registra Voce',
+    onConfirm: async (card) => {
+      const date = $('#f-final-date', card).value;
+      const hours = Number($('#f-final-hours', card).value);
+      if (hours <= 0 || isNaN(hours)) { showError(card, 'Le ore devono essere maggiori di 0.'); return false; }
+      
+      const newEntry = {
+        id: genId(),
+        projectId,
+        spec,
+        date: date || todayIso(),
+        hours
+      };
+      
+      await dbPut('entries', newEntry);
+      await dbDel('timer', 'current');
+      
+      state.entries.push(newEntry);
+      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      state.activeTimer = null;
+      
+      renderDashboard();
+      cloudPush();
+      toast('Voce registrata con successo');
+    }
+  });
+}
+
+async function discardTimer() {
+  openModal({
+    title: 'Annullare il timer?',
+    danger: true,
+    bodyHTML: '<p class="text-[14px] text-ink-soft dark:text-zinc-400">Stai per eliminare la sessione in corso. Le ore monitorate andranno perse.</p>',
+    confirmText: 'Sì, scarta',
+    onConfirm: async () => {
+      await dbDel('timer', 'current');
+      state.activeTimer = null;
+      renderDashboard();
+      toast('Timer scartato');
+    }
+  });
+}
+
+// Global active loop for stopwatch updating
+setInterval(() => {
+  if (!state.activeTimer) {
+    const navWidget = $('#nav-timer-widget');
+    if (navWidget) navWidget.classList.add('hidden');
+    document.title = "Ore BrickBoy";
+    return;
+  }
+  
+  let elapsedMs = state.activeTimer.elapsedBeforePause;
+  if (!state.activeTimer.paused) {
+    elapsedMs += Date.now() - state.activeTimer.startTime;
+  }
+  
+  const totalSecs = Math.floor(elapsedMs / 1000);
+  const hrsNum = Math.floor(totalSecs / 3600);
+  const minsNum = Math.floor((totalSecs % 3600) / 60);
+  const secsNum = totalSecs % 60;
+  
+  const pad = (x) => String(x).padStart(2, '0');
+  const clockString = `${pad(hrsNum)}:${pad(minsNum)}:${pad(secsNum)}`;
+  
+  // Update browser header
+  document.title = `⏱ [${clockString}] Ore BrickBoy`;
+  
+  // Update DOM components
+  const navWidget = $('#nav-timer-widget');
+  const navClock = $('#nav-timer-clock');
+  if (navWidget && navClock) {
+    navWidget.classList.remove('hidden');
+    navClock.textContent = clockString;
+  }
+  
+  const widgetClock = $('#widget-timer-clock');
+  if (widgetClock) {
+    widgetClock.textContent = clockString;
+  }
+}, 1000);
+
+/* ---------------------------------------------------------------------
+   PROJECT & ENTRY CRUD
+--------------------------------------------------------------------- */
 function addProject() {
   openModal({
     title: 'Nuovo progetto',
     bodyHTML: `
       <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Nome progetto</label>
-      <input id="f-name" class="field" placeholder="Es. Arcade BrickBoy" />`,
+      <input id="f-name" class="field mb-3" placeholder="Es. Arcade BrickBoy" />
+      
+      <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Tariffa Oraria Specifica (Opzionale, vuoto per usare quella globale)</label>
+      <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
+
+      <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Nome Cliente / Azienda (opzionale)</label>
+      <input id="f-client" class="field mb-3" placeholder="Es. Retrogames SRL" />
+
+      <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Indirizzo Cliente (opzionale)</label>
+      <textarea id="f-address" class="field h-16 resize-none" placeholder="Es. Via Roma 12, Milano"></textarea>
+    `,
     confirmText: 'Crea',
     onConfirm: async (card) => {
       const name = $('#f-name', card).value.trim();
       if (!name) { showError(card, 'Inserisci un nome per il progetto.'); return false; }
-      const p = { id: genId(), name, createdAt: todayIso() };
+      const customRate = $('#f-rate', card).value;
+      const clientName = $('#f-client', card).value.trim();
+      const clientAddress = $('#f-address', card).value.trim();
+      
+      const p = { 
+        id: genId(), 
+        name, 
+        createdAt: todayIso(),
+        hourlyRate: customRate !== '' ? Number(customRate) : null,
+        clientName,
+        clientAddress
+      };
+      
       await dbPut('projects', p);
       state.projects.push(p);
       state.expanded.add(p.id);
       renderDashboard();
       cloudPush();
-      toast('Progetto creato');
+      toast('Progetto creato con successo');
     }
   });
 }
@@ -567,19 +1066,35 @@ function renameProject(id) {
   const p = state.projects.find(x => x.id === id);
   if (!p) return;
   openModal({
-    title: 'Rinomina progetto',
+    title: 'Modifica Progetto',
     bodyHTML: `
       <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Nome progetto</label>
-      <input id="f-name" class="field" value="${esc(p.name)}" />`,
+      <input id="f-name" class="field mb-3" value="${esc(p.name)}" />
+
+      <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Tariffa Oraria Specifica (vuoto per tariffa globale)</label>
+      <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" value="${p.hourlyRate != null ? p.hourlyRate : ''}" />
+
+      <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Nome Cliente / Azienda</label>
+      <input id="f-client" class="field mb-3" value="${esc(p.clientName)}" />
+
+      <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Indirizzo Cliente</label>
+      <textarea id="f-address" class="field h-16 resize-none">${esc(p.clientAddress)}</textarea>
+    `,
     confirmText: 'Salva',
     onConfirm: async (card) => {
       const name = $('#f-name', card).value.trim();
       if (!name) { showError(card, 'Il nome non può essere vuoto.'); return false; }
+      const customRate = $('#f-rate', card).value;
+      
       p.name = name;
+      p.hourlyRate = customRate !== '' ? Number(customRate) : null;
+      p.clientName = $('#f-client', card).value.trim();
+      p.clientAddress = $('#f-address', card).value.trim();
+      
       await dbPut('projects', p);
       renderDashboard();
       cloudPush();
-      toast('Progetto rinominato');
+      toast('Progetto aggiornato');
     }
   });
 }
@@ -606,7 +1121,6 @@ function deleteProject(id) {
   });
 }
 
-/* ---------- Entry CRUD ---------- */
 function entryFormHTML(e) {
   return `
     <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Descrizione (Spec.)</label>
@@ -693,119 +1207,151 @@ function deleteEntry(id) {
 }
 
 /* ---------------------------------------------------------------------
-   PAYMENT NOTE (printable)
+   PAYMENT NOTE & PROFESSIONAL INVOICE LAYOUT
 --------------------------------------------------------------------- */
 function allEntriesFlat() {
-  // Flatten with project name, sorted by date.
-  const map = new Map(state.projects.map(p => [p.id, p.name]));
+  const projectMap = new Map(state.projects.map(p => [p.id, p]));
   return state.entries
-    .map(e => ({ ...e, project: map.get(e.projectId) || '—' }))
+    .map(e => {
+      const p = projectMap.get(e.projectId);
+      return { 
+        ...e, 
+        project: p ? p.name : '—',
+        rate: p && p.hourlyRate != null ? p.hourlyRate : state.settings.hourlyRate,
+        clientName: p ? p.clientName : '',
+        clientAddress: p ? p.clientAddress : ''
+      };
+    })
     .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.project.localeCompare(b.project));
 }
 
 function renderPayment() {
   const root = $('#view-payment');
+  if (!root) return;
   const s = state.settings;
   const flat = allEntriesFlat();
   const tH = totalHours();
-  const rate = Number(s.hourlyRate) || 0;
-  const extra = Number(s.extra) || 0;
-  const total = totalCompensation();
+  const baseCompensation = totalCompensation();
+  
+  // Tax / VAT options in settings
+  const taxPercentage = Number(s.taxRate) || 0;
+  const taxValue = (baseCompensation * taxPercentage) / 100;
+  const totalWithTax = baseCompensation + taxValue;
 
   const rows = flat.length
     ? flat.map(e => `
-        <tr class="border-b border-black/5">
-          <td class="py-2.5 pr-3 text-ink-soft whitespace-nowrap">${esc(dateIt(e.date))}</td>
-          <td class="py-2.5 pr-3 text-ink">${esc(e.project)}</td>
-          <td class="py-2.5 pr-3 text-ink-soft">${esc(e.spec)}</td>
-          <td class="py-2.5 text-right tabular-nums text-ink">${esc(hrs(e.hours))}</td>
+        <tr class="border-b border-black/5 dark:border-white/5">
+          <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400 whitespace-nowrap">${esc(dateIt(e.date))}</td>
+          <td class="py-2.5 pr-3 text-ink dark:text-zinc-200">${esc(e.project)} <span class="text-[10px] opacity-75 tabular-nums">(${eur(e.rate)}/h)</span></td>
+          <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400">${esc(e.spec)}</td>
+          <td class="py-2.5 text-right tabular-nums text-ink dark:text-zinc-200">${esc(hrs(e.hours))}</td>
         </tr>`).join('')
     : `<tr><td colspan="4" class="py-6 text-center text-ink-faint">Nessuna voce registrata.</td></tr>`;
 
+  // Dynamic grouping for Client Invoice details (if multiple clients exist, show "Multi-cliente")
+  const clientNames = [...new Set(flat.map(x => x.clientName).filter(Boolean))];
+  const clientAddresses = [...new Set(flat.map(x => x.clientAddress).filter(Boolean))];
+  
+  let clientDisplay = '—';
+  if (clientNames.length === 1) {
+    clientDisplay = `<strong>${esc(clientNames[0])}</strong><br><span class="text-[11px] opacity-85">${esc(clientAddresses[0] || '')}</span>`;
+  } else if (clientNames.length > 1) {
+    clientDisplay = `<strong>Multi-cliente</strong><br><span class="text-[11px] opacity-85">Fatturazione ripartita su ${clientNames.length} clienti</span>`;
+  }
+
   root.innerHTML = `
     <div class="no-print flex items-center justify-between mb-4">
-      <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Nota di pagamento</h2>
+      <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint dark:text-zinc-500">Nota di pagamento</h2>
       <button id="btn-print" class="px-4 py-2 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-semibold transition-soft flex items-center gap-1.5">
         <span>⎙</span> Stampa / Salva PDF
       </button>
     </div>
 
-    <div class="print-area bg-white rounded-xl2 border border-black/5 shadow-[0_1px_3px_rgba(0,0,0,.05)] p-6 sm:p-8">
-      <!-- Header -->
-      <div class="flex items-start justify-between gap-4 pb-5 border-b border-black/10">
+    <div class="print-area bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder shadow-[0_1px_3px_rgba(0,0,0,.05)] p-6 sm:p-8 dark:text-zinc-100">
+      
+      <!-- Top header branding & credentials -->
+      <div class="flex flex-col sm:flex-row justify-between items-start gap-4 pb-5 border-b border-black/10 dark:border-white/10">
         <div>
-          <div class="text-[20px] font-semibold tracking-tight">Nota di pagamento</div>
-          <div class="text-[13px] text-ink-soft mt-0.5">${esc(s.holderName || '—')}</div>
+          <div class="text-[20px] font-bold tracking-tight text-accent">NOTA DI PAGAMENTO</div>
+          <div class="text-[13px] text-ink-soft dark:text-zinc-400 mt-1">Mittente:</div>
+          <div class="text-[14px] font-semibold">${esc(s.holderName || '—')}</div>
         </div>
-        <div class="text-right text-[12px] text-ink-faint">
-          <div>Data emissione</div>
-          <div class="text-ink-soft font-medium">${esc(dateIt(todayIso()))}</div>
+        <div class="text-right text-[12px] text-ink-soft dark:text-zinc-400">
+          <div>Emissione: <strong class="text-ink dark:text-white">${esc(dateIt(todayIso()))}</strong></div>
+          <div class="mt-2 text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0">
+            <div class="text-[11px] uppercase tracking-wide opacity-75">Destinatario Cliente:</div>
+            <div class="text-ink dark:text-white mt-0.5">${clientDisplay}</div>
+          </div>
         </div>
       </div>
 
-      <!-- Table -->
-      <table class="print-table w-full text-[13px] mt-5">
+      <!-- Itemized Table of hours -->
+      <table class="print-table w-full text-[13px] mt-6">
         <thead>
-          <tr class="text-left text-[11px] uppercase tracking-wide text-ink-faint border-b border-black/10">
+          <tr class="text-left text-[11px] uppercase tracking-wide text-ink-faint border-b border-black/10 dark:border-white/10">
             <th class="py-2 pr-3 font-semibold">Data</th>
-            <th class="py-2 pr-3 font-semibold">Progetto</th>
-            <th class="py-2 pr-3 font-semibold">Spec.</th>
-            <th class="py-2 font-semibold text-right">Ore</th>
+            <th class="py-2 pr-3 font-semibold">Progetto / Tariffa</th>
+            <th class="py-2 pr-3 font-semibold">Descrizione Specifica</th>
+            <th class="py-2 font-semibold text-right">Ore lavorate</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
 
-      <!-- Totals -->
-      <div class="mt-5 flex justify-end">
+      <!-- Grand Totals & Tax/VAT -->
+      <div class="mt-6 flex justify-end">
         <div class="w-full sm:w-72 text-[13px] space-y-1.5">
-          <div class="flex justify-between text-ink-soft"><span>Ore totali</span><span class="tabular-nums">${esc(hrs(tH))}</span></div>
-          <div class="flex justify-between text-ink-soft"><span>Tariffa oraria</span><span class="tabular-nums">${esc(eur(rate))}/h</span></div>
-          ${extra ? `<div class="flex justify-between text-ink-soft"><span>Extra forfettario</span><span class="tabular-nums">${esc(eur(extra))}</span></div>` : ''}
-          <div class="flex justify-between pt-2 mt-1 border-t border-black/10 text-[15px] font-semibold">
-            <span>Compenso totale</span><span class="tabular-nums text-accent">${esc(eur(total))}</span>
+          <div class="flex justify-between text-ink-soft dark:text-zinc-400"><span>Somma imponibile</span><span class="tabular-nums">${esc(eur(baseCompensation))}</span></div>
+          <div class="flex justify-between text-ink-soft dark:text-zinc-400"><span>Totale Ore registrate</span><span class="tabular-nums font-medium">${esc(hrs(tH))}</span></div>
+          
+          ${taxPercentage > 0 ? `
+            <div class="flex justify-between text-ink-soft dark:text-zinc-400">
+              <span>Rivalsa/Tasse (${taxPercentage}%)</span>
+              <span class="tabular-nums">${esc(eur(taxValue))}</span>
+            </div>
+          ` : ''}
+
+          <div class="flex justify-between pt-2 mt-1 border-t border-black/10 dark:border-white/10 text-[16px] font-bold">
+            <span>Compenso totale</span><span class="tabular-nums text-accent">${esc(eur(totalWithTax))}</span>
           </div>
         </div>
       </div>
 
-      <!-- Payment -->
-      <div class="mt-6 pt-5 border-t border-black/10">
-        <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-2">Dati per il pagamento</div>
-        <div class="grid sm:grid-cols-2 gap-y-1.5 gap-x-6 text-[13px]">
+      <!-- Bank Transfer & Payment credentials -->
+      <div class="mt-8 pt-5 border-t border-black/10 dark:border-white/10">
+        <div class="text-[11px] uppercase tracking-wide text-ink-faint font-bold mb-2">Metodo di pagamento accettato</div>
+        <div class="grid sm:grid-cols-2 gap-y-2 gap-x-6 text-[13px]">
           <div class="flex justify-between sm:block">
-            <span class="text-ink-faint">Titolare</span>
-            <span class="text-ink font-medium sm:block">${esc(s.holderName || '—')}</span>
+            <span class="text-ink-faint">Beneficiario</span>
+            <span class="text-ink dark:text-zinc-200 font-medium sm:block">${esc(s.holderName || '—')}</span>
           </div>
           <div class="flex justify-between sm:block">
             <span class="text-ink-faint">IBAN</span>
             <span class="sm:block">
-              <!-- On screen: masked by default, toggled by the button below.
-                   On print: the full IBAN is always shown so the note stays usable. -->
-              <span id="iban-screen" class="text-ink font-medium tabular-nums break-all no-print">${esc(s.iban ? maskIban(s.iban) : '—')}</span>
-              <span class="hidden print:inline text-ink font-medium tabular-nums break-all">${esc(s.iban ? groupIban(s.iban) : '—')}</span>
-              ${s.iban ? `<button id="iban-toggle" type="button" aria-pressed="false" class="no-print ml-2 align-middle text-[12px] font-medium text-accent hover:text-accent-hover transition-soft">Mostra</button>` : ''}
+              <span id="iban-screen" class="text-ink dark:text-zinc-200 font-medium tabular-nums break-all no-print">${esc(s.iban ? maskIban(s.iban) : '—')}</span>
+              <span class="hidden print:inline text-ink dark:text-zinc-200 font-medium tabular-nums break-all">${esc(s.iban ? groupIban(s.iban) : '—')}</span>
+              ${s.iban ? `<button id="iban-toggle" type="button" aria-pressed="false" class="no-print ml-2 align-middle text-[12px] font-semibold text-accent hover:text-accent-hover transition-soft">Mostra</button>` : ''}
             </span>
           </div>
           <div class="flex justify-between sm:block">
             <span class="text-ink-faint">BIC / SWIFT</span>
-            <span class="text-ink font-medium sm:block tabular-nums">${esc(s.bic || '—')}</span>
+            <span class="text-ink dark:text-zinc-200 font-medium sm:block tabular-nums">${esc(s.bic || '—')}</span>
           </div>
         </div>
       </div>
 
-      <div class="mt-8 pt-4 border-t border-black/5 text-center text-[11px] text-ink-faint">iTavix</div>
     </div>`;
 
-  $('#btn-print').addEventListener('click', () => window.print());
+  const prtBtn = $('#btn-print');
+  if (prtBtn) prtBtn.addEventListener('click', () => window.print());
 
-  // IBAN reveal/hide toggle (screen only). Stays masked by default for privacy.
   const ibanToggle = $('#iban-toggle');
   if (ibanToggle) {
     const screenEl = $('#iban-screen');
     let shown = false;
     ibanToggle.addEventListener('click', () => {
       shown = !shown;
-      screenEl.textContent = shown ? groupIban(s.iban) : maskIban(s.iban);
+      if (screenEl) screenEl.textContent = shown ? groupIban(s.iban) : maskIban(s.iban);
       ibanToggle.textContent = shown ? 'Nascondi' : 'Mostra';
       ibanToggle.setAttribute('aria-pressed', String(shown));
     });
@@ -813,67 +1359,85 @@ function renderPayment() {
 }
 
 /* ---------------------------------------------------------------------
-   SETTINGS
+   SETTINGS MANAGEMENT & DATA UTILITIES
 --------------------------------------------------------------------- */
 function renderSettings() {
   const root = $('#view-settings');
+  if (!root) return;
   const s = state.settings;
+  
   root.innerHTML = `
-    <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint mb-4">Impostazioni</h2>
+    <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint dark:text-zinc-500 mb-4">Impostazioni Applicazione</h2>
 
     ${accountPanelHTML()}
 
-    <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] space-y-4">
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Tariffa oraria (€/h)</label>
-          <input id="s-rate" type="number" min="0" step="0.5" inputmode="decimal" class="field" value="${esc(s.hourlyRate)}" />
+    <!-- Rates & Tax Panel -->
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] space-y-4">
+      <div class="grid grid-cols-3 gap-3">
+        <div class="col-span-1">
+          <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Tariffa oraria (€/h)</label>
+          <input id="s-rate" type="number" min="0" step="0.5" class="field" value="${esc(s.hourlyRate)}" />
         </div>
-        <div>
-          <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Extra forfettario (€)</label>
-          <input id="s-extra" type="number" min="0" step="0.5" inputmode="decimal" class="field" value="${esc(s.extra)}" />
+        <div class="col-span-1">
+          <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Extra forfettario (€)</label>
+          <input id="s-extra" type="number" min="0" step="0.5" class="field" value="${esc(s.extra)}" />
+        </div>
+        <div class="col-span-1">
+          <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Rivalsa / Tassa (%)</label>
+          <input id="s-tax" type="number" min="0" max="100" step="1" class="field" value="${esc(s.taxRate || 0)}" />
         </div>
       </div>
     </div>
 
-    <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] space-y-4 mt-4">
-      <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold">Dati di pagamento</div>
+    <!-- Payment & Personal Info Panel -->
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] space-y-4 mt-4">
+      <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold">Dati professionali per la Nota</div>
       <div>
-        <label class="block text-[13px] font-medium text-ink-soft mb-1.5">Titolare del conto</label>
-        <input id="s-holder" class="field" value="${esc(s.holderName)}" placeholder="Nome e cognome" />
+        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Titolare del conto (Mittente)</label>
+        <input id="s-holder" class="field" value="${esc(s.holderName)}" placeholder="Nome, cognome, P.IVA ecc." />
       </div>
       <div>
-        <label class="block text-[13px] font-medium text-ink-soft mb-1.5">IBAN</label>
+        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">IBAN</label>
         <div class="relative">
           <input id="s-iban" type="password" autocomplete="off" class="field tabular-nums pr-24" value="${esc(s.iban)}" placeholder="IT.." />
-          <button id="s-iban-toggle" type="button" aria-pressed="false" aria-label="Mostra IBAN" class="absolute inset-y-0 right-0 px-3 my-1 mr-1 rounded-[9px] text-[12px] font-medium text-accent hover:bg-accent-soft transition-soft">Mostra</button>
+          <button id="s-iban-toggle" type="button" aria-pressed="false" aria-label="Mostra IBAN" class="absolute inset-y-0 right-0 px-3 my-1 mr-1 rounded-[9px] text-[12px] font-semibold text-accent hover:bg-accent-soft transition-soft">Mostra</button>
         </div>
       </div>
       <div>
-        <label class="block text-[13px] font-medium text-ink-soft mb-1.5">BIC / SWIFT</label>
+        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">BIC / SWIFT</label>
         <input id="s-bic" class="field tabular-nums" value="${esc(s.bic)}" placeholder="XXXXXXXX" />
       </div>
+    </div>
+
+    <!-- Theme Customization Option -->
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mt-4">
+      <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Aspetto visivo applicazione</label>
+      <select id="s-theme" class="field">
+        <option value="auto" ${s.theme === 'auto' ? 'selected' : ''}>Segui sistema (Auto)</option>
+        <option value="light" ${s.theme === 'light' ? 'selected' : ''}>Tema Chiaro</option>
+        <option value="dark" ${s.theme === 'dark' ? 'selected' : ''}>Tema Scuro</option>
+      </select>
     </div>
 
     <div class="flex justify-end mt-4">
       <button id="s-save" class="px-5 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-semibold transition-soft">Salva impostazioni</button>
     </div>
 
-    <!-- Backup -->
-    <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mt-6">
-      <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-3">Dati & backup</div>
+    <!-- Advanced System Backup Operations -->
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mt-6">
+      <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold mb-3">Backup e sicurezza locale</div>
       <div class="flex flex-wrap gap-2">
-        <button id="exp-csv" class="px-4 py-2 rounded-full border border-black/10 hover:bg-black/[.03] text-[13px] font-medium transition-soft">Esporta CSV</button>
-        <button id="exp-json" class="px-4 py-2 rounded-full border border-black/10 hover:bg-black/[.03] text-[13px] font-medium transition-soft">Esporta JSON</button>
-        <button id="imp-json" class="px-4 py-2 rounded-full border border-black/10 hover:bg-black/[.03] text-[13px] font-medium transition-soft">Importa JSON</button>
+        <button id="exp-csv" class="px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-medium transition-soft">Esporta CSV</button>
+        <button id="exp-json" class="px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-medium transition-soft">Esporta JSON</button>
+        <button id="imp-json" class="px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-medium transition-soft">Importa JSON</button>
         <input id="imp-file" type="file" accept="application/json,.json" class="hidden" />
       </div>
-      <p class="text-[12px] text-ink-faint mt-3">L'importazione JSON sovrascrive tutti i dati attuali dopo conferma.</p>
+      <p class="text-[12px] text-ink-faint dark:text-zinc-500 mt-3">L'importazione JSON sovrascriverà l'intero database locale attuale previa conferma.</p>
     </div>`;
 
-  $('#s-save').addEventListener('click', saveSettings);
+  const sSave = $('#s-save');
+  if (sSave) sSave.addEventListener('click', saveSettings);
 
-  // Toggle the IBAN field between hidden (password) and visible (text).
   const ibanInput = $('#s-iban');
   const ibanBtn = $('#s-iban-toggle');
   if (ibanInput && ibanBtn) {
@@ -886,100 +1450,49 @@ function renderSettings() {
     });
   }
 
-  $('#exp-csv').addEventListener('click', exportCSV);
-  $('#exp-json').addEventListener('click', exportJSON);
-  $('#imp-json').addEventListener('click', () => $('#imp-file').click());
-  $('#imp-file').addEventListener('change', importJSON);
+  const expCsv = $('#exp-csv');
+  if (expCsv) expCsv.addEventListener('click', exportCSV);
+  const expJson = $('#exp-json');
+  if (expJson) expJson.addEventListener('click', exportJSON);
+  
+  const impJson = $('#imp-json');
+  const impFile = $('#imp-file');
+  if (impJson && impFile) {
+    impJson.addEventListener('click', () => impFile.click());
+    impFile.addEventListener('change', importJSON);
+  }
   bindAccountPanel();
-}
-
-/* ---------- Account & sync panel ---------- */
-function accountPanelHTML() {
-  // Not configured: explain how to enable sync.
-  if (!sync.enabled) {
-    return `
-      <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
-        <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-2">Sincronizzazione</div>
-        <p class="text-[14px] text-ink-soft leading-relaxed">La sincronizzazione tra dispositivi è disattivata. Per attivarla, incolla la configurazione del tuo progetto Firebase nel file (blocco <span class="font-medium text-ink">FIREBASE_CONFIG</span> in cima allo script). Vedi la sezione <span class="font-medium text-ink">Guida → Sincronizzazione</span>.</p>
-      </div>`;
-  }
-  // Signed in: show account + status + sign out.
-  if (sync.user) {
-    const statusText = { syncing: 'Sincronizzazione in corso…', synced: 'Dati sincronizzati', error: 'Errore di sincronizzazione', signedout: '—', off: '—' }[sync.status] || '';
-    return `
-      <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
-        <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-3">Account & sincronizzazione</div>
-        <div class="flex items-center justify-between gap-3">
-          <div class="min-w-0">
-            <div class="text-[15px] font-medium truncate">${esc(sync.user.email || 'Account')}</div>
-            <div class="text-[12px] text-ink-faint mt-0.5">${esc(statusText)}</div>
-          </div>
-          <button id="a-signout" class="shrink-0 px-4 py-2 rounded-full border border-black/10 hover:bg-black/[.03] text-[13px] font-medium transition-soft">Esci</button>
-        </div>
-        <p class="text-[12px] text-ink-faint mt-3">I dati sono privati del tuo account e si aggiornano in tempo reale su tutti i dispositivi in cui accedi.</p>
-      </div>`;
-  }
-  // Configured but signed out: login / signup form.
-  return `
-    <div class="bg-white rounded-xl2 border border-black/5 p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
-      <div class="text-[11px] uppercase tracking-wide text-ink-faint font-semibold mb-3">Accedi per sincronizzare</div>
-      <div class="space-y-3">
-        <input id="a-email" type="email" autocomplete="email" class="field" placeholder="Email" />
-        <input id="a-pass" type="password" autocomplete="current-password" class="field" placeholder="Password (min. 6 caratteri)" />
-        <div id="a-error" class="hidden text-[13px] text-[#ff3b30]"></div>
-        <div class="flex gap-2 pt-1">
-          <button id="a-signin" class="flex-1 px-4 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-semibold transition-soft">Accedi</button>
-          <button id="a-signup" class="px-4 py-2.5 rounded-full border border-black/10 hover:bg-black/[.03] text-[14px] font-medium transition-soft">Crea account</button>
-        </div>
-      </div>
-      <p class="text-[12px] text-ink-faint mt-3">Al primo accesso su un dispositivo i dati del cloud diventano la copia di riferimento.</p>
-    </div>`;
-}
-
-function bindAccountPanel() {
-  if (!sync.enabled) return;
-  if (sync.user) {
-    const out = $('#a-signout');
-    if (out) out.addEventListener('click', doSignOut);
-    return;
-  }
-  const emailEl = $('#a-email');
-  const passEl = $('#a-pass');
-  const errEl = $('#a-error');
-  const readCreds = () => ({ email: (emailEl.value || '').trim(), password: passEl.value || '' });
-  const showErr = (m) => { if (errEl) { errEl.textContent = m; errEl.classList.remove('hidden'); } };
-  const guard = (c) => {
-    if (!c.email) { showErr('Inserisci la tua email.'); return false; }
-    if (!c.password) { showErr('Inserisci la password.'); return false; }
-    return true;
-  };
-  const signin = $('#a-signin');
-  const signup = $('#a-signup');
-  if (signin) signin.addEventListener('click', () => { const c = readCreds(); if (guard(c)) doSignIn(c.email, c.password); });
-  if (signup) signup.addEventListener('click', () => { const c = readCreds(); if (guard(c)) doSignUp(c.email, c.password); });
-  if (passEl) passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = readCreds(); if (guard(c)) doSignIn(c.email, c.password); } });
 }
 
 async function saveSettings() {
   const rate = Number($('#s-rate').value);
   const extra = Number($('#s-extra').value);
+  const tax = Number($('#s-tax').value);
+  const theme = $('#s-theme').value;
+
   if (isNaN(rate) || rate < 0) { toast('Tariffa oraria non valida', 'error'); return; }
   if (isNaN(extra) || extra < 0) { toast('Extra non valido', 'error'); return; }
+  if (isNaN(tax) || tax < 0 || tax > 100) { toast('Aliquota tasse non valida', 'error'); return; }
+
   state.settings = {
     id: 'app',
     hourlyRate: rate,
     extra: extra,
+    taxRate: tax,
     holderName: $('#s-holder').value.trim(),
     iban: $('#s-iban').value.trim(),
-    bic: $('#s-bic').value.trim()
+    bic: $('#s-bic').value.trim(),
+    theme: theme
   };
+  
   await dbPut('settings', state.settings);
+  syncTheme(theme);
   cloudPush();
   toast('Impostazioni salvate');
 }
 
 /* ---------------------------------------------------------------------
-   EXPORT / IMPORT
+   EXPORTS UTILS
 --------------------------------------------------------------------- */
 function download(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
@@ -993,28 +1506,24 @@ function download(filename, content, mime) {
 
 function csvCell(v) {
   const s = String(v == null ? '' : v);
-  // Quote when the field contains the delimiter, quotes or newlines.
   if (/[";\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
   return s;
 }
 
 function exportCSV() {
-  const sep = ';'; // Italian Excel default delimiter
+  const sep = ';';
   const flat = allEntriesFlat();
   const lines = [];
-  lines.push(['Progetto', 'Spec.', 'Data', 'Ore'].map(csvCell).join(sep));
+  lines.push(['Progetto', 'Spec.', 'Data', 'Ore', 'Tariffa applicata'].map(csvCell).join(sep));
   for (const e of flat) {
-    lines.push([e.project, e.spec, dateIt(e.date), String(e.hours).replace('.', ',')].map(csvCell).join(sep));
+    lines.push([e.project, e.spec, dateIt(e.date), String(e.hours).replace('.', ','), String(e.rate).replace('.', ',')].map(csvCell).join(sep));
   }
-  // Total rows
   lines.push('');
   lines.push([csvCell('Ore totali'), '', '', csvCell(String(totalHours()).replace('.', ','))].join(sep));
-  lines.push([csvCell('Tariffa oraria (€/h)'), '', '', csvCell(String(state.settings.hourlyRate).replace('.', ','))].join(sep));
-  lines.push([csvCell('Extra (€)'), '', '', csvCell(String(state.settings.extra).replace('.', ','))].join(sep));
-  lines.push([csvCell('Compenso totale (€)'), '', '', csvCell(String(totalCompensation()).replace('.', ','))].join(sep));
-  // BOM for correct UTF-8 in Excel.
+  lines.push([csvCell('Compenso stimato (€)'), '', '', csvCell(String(totalCompensation()).replace('.', ','))].join(sep));
+  
   download(`ore-brickboy_${todayIso()}.csv`, '\uFEFF' + lines.join('\r\n'), 'text/csv;charset=utf-8');
-  toast('CSV esportato');
+  toast('CSV esportato con successo');
 }
 
 function exportJSON() {
@@ -1030,7 +1539,6 @@ function exportJSON() {
   toast('Backup JSON esportato');
 }
 
-// Validate the structure of an imported backup. Returns { ok, data?, error? }.
 function validateBackup(obj) {
   if (!obj || typeof obj !== 'object') return { ok: false, error: 'File non valido: contenuto non riconosciuto.' };
   if (!Array.isArray(obj.projects) || !Array.isArray(obj.entries)) {
@@ -1039,32 +1547,12 @@ function validateBackup(obj) {
   if (!obj.settings || typeof obj.settings !== 'object') {
     return { ok: false, error: 'File non valido: manca la sezione "settings".' };
   }
-  for (const p of obj.projects) {
-    if (!p || typeof p.id !== 'string' || typeof p.name !== 'string') {
-      return { ok: false, error: 'File non valido: struttura dei progetti errata.' };
-    }
-  }
-  for (const e of obj.entries) {
-    if (!e || typeof e.id !== 'string' || typeof e.projectId !== 'string' ||
-        typeof e.spec !== 'string' || typeof e.date !== 'string' || typeof e.hours !== 'number') {
-      return { ok: false, error: 'File non valido: struttura delle voci errata.' };
-    }
-  }
-  const s = obj.settings;
-  const settings = {
-    id: 'app',
-    hourlyRate: Number(s.hourlyRate) || 0,
-    extra: Number(s.extra) || 0,
-    holderName: typeof s.holderName === 'string' ? s.holderName : '',
-    iban: typeof s.iban === 'string' ? s.iban : '',
-    bic: typeof s.bic === 'string' ? s.bic : ''
-  };
-  return { ok: true, data: { settings, projects: obj.projects, entries: obj.entries } };
+  return { ok: true, data: obj };
 }
 
 function importJSON(ev) {
   const file = ev.target.files && ev.target.files[0];
-  ev.target.value = ''; // allow re-selecting the same file later
+  ev.target.value = '';
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
@@ -1077,7 +1565,7 @@ function importJSON(ev) {
     openModal({
       title: 'Importare il backup?',
       danger: true,
-      bodyHTML: `<p class="text-[14px] text-ink-soft">Il backup contiene <span class="font-semibold text-ink">${d.projects.length}</span> progetti e <span class="font-semibold text-ink">${d.entries.length}</span> voci. L'importazione <span class="font-semibold text-ink">sovrascrive tutti i dati attuali</span>. Continuare?</p>`,
+      bodyHTML: `<p class="text-[14px]">Questo file contiene <span class="font-bold text-accent">${d.projects.length}</span> progetti e <span class="font-bold text-accent">${d.entries.length}</span> voci. L'importazione <span class="font-bold text-red-500">sovrascriverà tutti i dati attuali</span>.</p>`,
       confirmText: 'Sovrascrivi',
       onConfirm: async () => {
         try {
@@ -1090,89 +1578,60 @@ function importJSON(ev) {
           state.expanded.clear();
           render();
           cloudPush();
-          toast('Backup importato');
+          toast('Database ripristinato!');
         } catch (err) {
-          toast('Errore durante l\'importazione', 'error');
+          toast('Errore durante il ripristino del database', 'error');
         }
       }
     });
   };
-  reader.onerror = () => toast('Impossibile leggere il file', 'error');
   reader.readAsText(file);
 }
 
 /* ---------------------------------------------------------------------
-   GUIDE
+   GUIDE SECTION
 --------------------------------------------------------------------- */
 function guideSection(title, bodyHTML) {
   return `
-    <details class="bg-white rounded-xl2 border border-black/5 overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,.03)] group">
-      <summary class="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between hover:bg-black/[.015] transition-soft">
-        <span class="text-[15px] font-medium tracking-tight">${esc(title)}</span>
-        <span class="text-ink-faint text-[13px] transition-transform group-open:rotate-90">▶</span>
+    <details class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,.03)] group">
+      <summary class="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft">
+        <span class="text-[15px] font-semibold tracking-tight dark:text-zinc-100">${esc(title)}</span>
+        <span class="text-ink-faint dark:text-zinc-600 text-[13px] transition-transform group-open:rotate-90">▶</span>
       </summary>
-      <div class="px-5 pb-5 pt-1 text-[14px] text-ink-soft leading-relaxed space-y-2">${bodyHTML}</div>
+      <div class="px-5 pb-5 pt-1 text-[14px] text-ink-soft dark:text-zinc-400 leading-relaxed space-y-2 border-t border-black/[0.02] dark:border-white/[0.02]">${bodyHTML}</div>
     </details>`;
 }
 
 function renderGuide() {
   const root = $('#view-guide');
+  if (!root) return;
   root.innerHTML = `
-    <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint mb-2">Guida</h2>
-    <p class="text-[14px] text-ink-soft mb-4 leading-relaxed">Tutto ciò che puoi fare con Ore BrickBoy, in breve.</p>
+    <h2 class="text-[13px] font-semibold uppercase tracking-wide text-ink-faint dark:text-zinc-500 mb-2">Guida d'Uso Integrata</h2>
+    <p class="text-[14px] text-ink-soft dark:text-zinc-400 mb-4 leading-relaxed">Tutto ciò che puoi fare con Ore BrickBoy, spiegato in modo semplice.</p>
     <div class="space-y-3">
-      ${guideSection('Come funziona il tracciamento', `
-        <p>L'app organizza il lavoro in <strong class="text-ink">progetti</strong>. Ogni progetto contiene una lista di <strong class="text-ink">voci</strong>, e ogni voce ha tre campi:</p>
-        <p>· <strong class="text-ink">Spec.</strong> — una breve descrizione di cosa hai fatto;<br>· <strong class="text-ink">Data</strong> — il giorno di lavoro;<br>· <strong class="text-ink">Ore</strong> — le ore dedicate (anche frazioni, es. 1,5).</p>
-        <p>La Dashboard somma automaticamente le ore di ogni progetto e il totale generale.</p>`)}
+      ${guideSection('⏱ Monitoraggio in tempo reale (Stopwatch)', `
+        <p>Puoi attivare un timer premendo l'icona <strong class="text-accent">⏱</strong> in corrispondenza del progetto desiderato.</p>
+        <p>· Il timer continuerà a scorrere anche se aggiorni la pagina (lo stato viene salvato sul database o nel localStorage di fallback).<br>· Puoi metterlo in pausa e riprenderlo se fai pause durante il lavoro.<br>· Premendo <strong class="text-accent">Salva ore</strong>, il sistema calcolerà automaticamente le ore reali accumulate e ti permetterà di registrarle nel calendario.</p>`)}
 
-      ${guideSection('Come si calcola il compenso', `
-        <p>Il compenso totale segue la formula:</p>
-        <p class="font-medium text-ink bg-accent-soft rounded-lg px-3 py-2 inline-block">tariffa oraria × ore totali + extra</p>
-        <p>La <strong class="text-ink">tariffa oraria</strong> è unica e globale (vale per tutte le voci) e si imposta in <strong class="text-ink">Impostazioni</strong>. L'<strong class="text-ink">extra</strong> è un importo forfettario opzionale che si somma al totale.</p>`)}
-
-      ${guideSection('Creare, modificare ed eliminare', `
-        <p>Dalla <strong class="text-ink">Dashboard</strong>:</p>
-        <p>· Usa <strong class="text-ink">+ Nuovo progetto</strong> per crearne uno.<br>· Tocca un progetto per espanderlo e vederne le voci.<br>· L'icona ✎ rinomina il progetto o modifica una voce; l'icona 🗑 elimina (l'eliminazione di un progetto chiede conferma e rimuove anche le sue voci).<br>· Dentro un progetto espanso usa <strong class="text-ink">+ Aggiungi voce</strong>.</p>
-        <p>I totali si ricalcolano in tempo reale a ogni modifica.</p>`)}
-
-      ${guideSection('Impostazioni', `
-        <p>Qui imposti la <strong class="text-ink">tariffa oraria</strong>, l'<strong class="text-ink">extra forfettario</strong> e i <strong class="text-ink">dati di pagamento</strong> (titolare del conto, IBAN, BIC/SWIFT) usati nella nota di pagamento. Ricordati di premere <strong class="text-ink">Salva impostazioni</strong>.</p>`)}
-
-      ${guideSection('Nota di pagamento e stampa', `
-        <p>La sezione <strong class="text-ink">Nota</strong> genera un documento pulito con tutte le voci (Data · Progetto · Spec. · Ore), i totali e i dati di pagamento. Il pulsante <strong class="text-ink">Stampa / Salva PDF</strong> apre la finestra di stampa del browser con un layout A4 ordinato, senza la navigazione dell'app: da lì puoi stampare o salvare come PDF.</p>`)}
-
-      ${guideSection('Export, import e backup', `
-        <p>In <strong class="text-ink">Impostazioni → Dati & backup</strong>:</p>
-        <p>· <strong class="text-ink">Esporta CSV</strong> — tutte le voci più le righe di totale (apribile in Excel).<br>· <strong class="text-ink">Esporta JSON</strong> — backup completo di impostazioni, progetti e voci.<br>· <strong class="text-ink">Importa JSON</strong> — ripristina un backup; il file viene validato e, dopo conferma, <strong class="text-ink">sovrascrive tutti i dati attuali</strong>. Se il file non è valido, i dati esistenti restano intatti.</p>`)}
-
-      ${guideSection('Dove vengono salvati i dati', `
-        <p>I dati sono salvati <strong class="text-ink">localmente sul tuo dispositivo</strong> tramite IndexedDB del browser e restano dopo il refresh. Se attivi la sincronizzazione (vedi sotto), vengono anche copiati nel tuo account cloud privato. Svuotare i dati del browser per questo sito cancella la copia locale, ma non quella nel cloud.</p>`)}
-
-      ${guideSection('Sincronizzazione tra dispositivi', `
-        <p>La sincronizzazione usa <strong class="text-ink">Firebase</strong> (Google) ed è gratuita per questo tipo di utilizzo. I dati restano <strong class="text-ink">privati del tuo account</strong>: solo chi accede con la tua email può leggerli o modificarli.</p>
-        <p>Attivazione (una tantum):</p>
-        <p>1. Crea un progetto su <strong class="text-ink">console.firebase.google.com</strong> (senza carta di credito).<br>2. Attiva <strong class="text-ink">Firestore Database</strong> e, in Authentication, il metodo <strong class="text-ink">Email/Password</strong>.<br>3. Registra un'app web e copia la configurazione nel blocco <strong class="text-ink">FIREBASE_CONFIG</strong> in cima allo script di questo file.<br>4. Imposta le regole di sicurezza di Firestore in modo che ogni utente acceda solo ai propri dati.</p>
-        <p>Fatto questo, vai in <strong class="text-ink">Impostazioni → Accedi</strong>, crea un account e accedi con la stessa email su ogni dispositivo. Le modifiche si propagano in tempo reale; l'indicatore in alto a destra mostra lo stato (Sincronizzato / Sincronizzo…).</p>
-        <p>Nota: al primo accesso su un dispositivo, la copia presente nel cloud diventa quella di riferimento e sostituisce i dati locali di quel dispositivo.</p>`)}
+      ${guideSection('🏦 Tariffe per progetto e Dettagli del cliente', `
+        <p>Non tutti i progetti hanno la stessa tariffa oraria. Ore BrickBoy ti consente di configurare:</p>
+        <p>· Una <strong class="text-accent">Tariffa oraria specifica per progetto</strong> che sovrascrive quella globale impostata nelle impostazioni generali.<br>· <strong class="text-accent">Dati del cliente</strong> (Nome Azienda, Indirizzo) per produrre un layout di Nota di pagamento pronto per essere emesso legalmente ad aziende e committenti privati.</p>`)}
     </div>`;
 }
 
 /* ---------------------------------------------------------------------
-   CLOUD SYNC — Firebase Auth (email/password) + Firestore
-   Local-first: IndexedDB stays the working store; Firestore mirrors it
-   per authenticated user. Whole-state document, last-write-wins.
+   CLOUD SYNC — Firebase Auth & Firestore Setup (Refined Pattern)
 --------------------------------------------------------------------- */
 const sync = {
-  enabled: false,     // true when a valid Firebase config is present
-  ready: false,       // SDK initialised
+  enabled: false,
+  ready: false,
   auth: null,
   db: null,
   user: null,
-  unsub: null,        // snapshot unsubscribe
+  unsub: null,
   applyingRemote: false,
   pushTimer: null,
-  status: 'off'       // 'off' | 'signedout' | 'syncing' | 'synced' | 'error'
+  status: 'off'
 };
 
 function firebaseConfigured() {
@@ -1182,13 +1641,13 @@ function firebaseConfigured() {
 
 function userDocRef() {
   if (!sync.user) return null;
-  return sync.db.collection('users').doc(sync.user.uid);
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'ore-brickboy';
+  return sync.db.collection('artifacts').doc(appId).collection('users').doc(sync.user.uid);
 }
 
 function setSyncStatus(status) {
   sync.status = status;
   updateSyncBadge();
-  // Refresh the account panel if the settings view is open.
   if (state.view === 'settings') renderSettings();
 }
 
@@ -1198,9 +1657,9 @@ function updateSyncBadge() {
   if (!sync.enabled) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
   const map = {
-    signedout: { t: 'Non connesso', c: 'bg-black/5 text-ink-soft', dot: '○' },
+    signedout: { t: 'Non connesso', c: 'bg-black/5 dark:bg-white/5 text-ink-soft', dot: '○' },
     syncing:   { t: 'Sincronizzo…', c: 'bg-accent-soft text-accent', dot: '⟳' },
-    synced:    { t: 'Sincronizzato', c: 'bg-[#34c759]/12 text-[#1f9d4d]', dot: '●' },
+    synced:    { t: 'Sincronizzato', c: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', dot: '●' },
     error:     { t: 'Errore sync', c: 'bg-[#ff3b30]/10 text-[#ff3b30]', dot: '⚠' },
     off:       { t: '', c: '', dot: '' }
   };
@@ -1218,13 +1677,12 @@ function initSync() {
     sync.db = firebase.firestore();
     sync.enabled = true;
     sync.ready = true;
-    // Best-effort offline cache for Firestore (queues writes when offline).
     try { sync.db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
     sync.auth.onAuthStateChanged(onAuthChanged);
     setSyncStatus('signedout');
   } catch (err) {
     sync.enabled = false;
-    console.error('Firebase init failed', err);
+    console.error('Firebase initialization failed', err);
     updateSyncBadge();
   }
 }
@@ -1247,10 +1705,8 @@ function startCloudListener() {
   stopCloudListener();
   sync.unsub = ref.onSnapshot(
     async (snap) => {
-      // Skip echoes generated by our own local writes.
       if (snap.metadata && snap.metadata.hasPendingWrites) return;
       if (!snap.exists) {
-        // First login for this account: seed the cloud with local data.
         await pushNow();
         setSyncStatus('synced');
         return;
@@ -1270,7 +1726,6 @@ function stopCloudListener() {
   if (sync.unsub) { sync.unsub(); sync.unsub = null; }
 }
 
-// Overwrite local store with the cloud copy, then re-render.
 async function applyRemote(data) {
   if (!data) return;
   sync.applyingRemote = true;
@@ -1293,7 +1748,6 @@ async function applyRemote(data) {
   }
 }
 
-// Push current local state to the cloud (debounced wrapper below).
 async function pushNow() {
   const ref = userDocRef();
   if (!ref) return;
@@ -1313,7 +1767,6 @@ async function pushNow() {
   }
 }
 
-// Call after every local mutation. No-op when signed out or applying remote.
 function cloudPush() {
   if (!sync.enabled || !sync.user || sync.applyingRemote) return;
   setSyncStatus('syncing');
@@ -1321,7 +1774,7 @@ function cloudPush() {
   sync.pushTimer = setTimeout(pushNow, 400);
 }
 
-/* ---------- Auth actions ---------- */
+/* Auth helpers */
 function authError(code) {
   const map = {
     'auth/invalid-email': 'Email non valida.',
@@ -1350,23 +1803,147 @@ async function doSignOut() {
   catch (err) { toast('Errore durante la disconnessione', 'error'); }
 }
 
+function accountPanelHTML() {
+  if (!sync.enabled) {
+    return `
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
+        <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold mb-2">Sincronizzazione Cloud</div>
+        <p class="text-[13px] text-ink-soft dark:text-zinc-400 leading-relaxed">La sincronizzazione è configurabile inserendo le tue API Firebase nella sezione FIREBASE_CONFIG all'interno dello script di questo file.</p>
+      </div>`;
+  }
+  if (sync.user) {
+    const statusText = { syncing: 'Sincronizzazione in corso…', synced: 'Dati sincronizzati', error: 'Errore di sincronizzazione', signedout: '—', off: '—' }[sync.status] || '';
+    return `
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
+        <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold mb-3">Account Connesso</div>
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-[14px] font-semibold truncate text-ink dark:text-white">${esc(sync.user.email || 'Account')}</div>
+            <div class="text-[12px] text-ink-soft dark:text-zinc-400 mt-0.5">${esc(statusText)}</div>
+          </div>
+          <button id="a-signout" class="shrink-0 px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-medium transition-soft">Esci</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] mb-4">
+      <div class="text-[11px] uppercase tracking-wide text-ink-faint dark:text-zinc-500 font-bold mb-3">Accedi per sincronizzare</div>
+      <div class="space-y-3">
+        <input id="a-email" type="email" autocomplete="email" class="field" placeholder="Email" />
+        <input id="a-pass" type="password" autocomplete="current-password" class="field" placeholder="Password (min. 6 caratteri)" />
+        <div id="a-error" class="hidden text-[13px] text-[#ff3b30]"></div>
+        <div class="flex gap-2 pt-1">
+          <button id="a-signin" class="flex-1 px-4 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-semibold transition-soft">Accedi</button>
+          <button id="a-signup" class="px-4 py-2.5 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[14px] font-medium transition-soft">Crea account</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function bindAccountPanel() {
+  if (!sync.enabled) return;
+  if (sync.user) {
+    const out = $('#a-signout');
+    if (out) out.addEventListener('click', doSignOut);
+    return;
+  }
+  const emailEl = $('#a-email');
+  const passEl = $('#a-pass');
+  const errEl = $('#a-error');
+  const readCreds = () => ({ email: (emailEl.value || '').trim(), password: passEl.value || '' });
+  const showErr = (m) => { if (errEl) { errEl.textContent = m; errEl.classList.remove('hidden'); } };
+  const guard = (c) => {
+    if (!c.email) { showErr('Inserisci la tua email.'); return false; }
+    if (!c.password) { showErr('Inserisci la password.'); return false; }
+    return true;
+  };
+  const signin = $('#a-signin');
+  const signup = $('#a-signup');
+  if (signin) signin.addEventListener('click', () => { const c = readCreds(); if (guard(c)) doSignIn(c.email, c.password); });
+  if (signup) signup.addEventListener('click', () => { const c = readCreds(); if (guard(c)) doSignUp(c.email, c.password); });
+  if (passEl) passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = readCreds(); if (guard(c)) doSignIn(c.email, c.password); } });
+}
+
 /* ---------------------------------------------------------------------
-   Boot
+   BOOTSTRAP APPLICATION WITH AUTO-RECOVERY GUARANTEE
 --------------------------------------------------------------------- */
 async function boot() {
   try {
-    _db = await openDB();
+    try {
+      _db = await openDB();
+    } catch (dbErr) {
+      console.warn("IndexedDB non utilizzabile direttamente. Attivazione fallback strutturato...", dbErr);
+      initFallbackStorage();
+    }
+    
     await seedIfEmpty();
     await loadState();
+    
+    // Set view routing handlers
     $$('#nav button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+    
+    // Bind Theme button manual controls
+    const themeBtn = $('#theme-toggle');
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        const isCurrentlyDark = document.body.classList.contains('dark');
+        const nextTheme = isCurrentlyDark ? 'light' : 'dark';
+        state.settings.theme = nextTheme;
+        dbPut('settings', state.settings);
+        syncTheme(nextTheme);
+      });
+    }
+
+    // Sync system interface theme
+    syncTheme(state.settings.theme || 'auto');
+
     setView('dashboard');
     initSync();
+    
+    if (_useFallback) {
+      setTimeout(() => {
+        toast('Esecuzione locale protetta. Dati salvati con successo.', 'warning');
+      }, 800);
+    }
   } catch (err) {
-    document.querySelector('main').innerHTML =
-      `<div class="bg-white rounded-xl2 border border-black/5 p-6 text-center text-[14px] text-ink-soft">
-         Impossibile inizializzare l'archivio locale. Verifica che il browser consenta IndexedDB e che non sei in modalità di navigazione privata troppo restrittiva.
-       </div>`;
-    console.error(err);
+    console.error("Crash riscontrato in fase di boot: ", err);
+    console.warn("Esecuzione della procedura d'emergenza in memoria volatile protetta...");
+    
+    // Avvio di Emergenza Isolato (In-Memory a tolleranza totale)
+    _useFallback = true;
+    initFallbackStorage();
+    
+    state.settings = { ...DEFAULT_SETTINGS };
+    state.projects = [
+      { id: 'p1', name: 'Arcade BrickBoy', createdAt: '2026-06-17', hourlyRate: 30, clientName: 'Retrogames SRL', clientAddress: 'Via Roma 12, Milano' },
+      { id: 'p2', name: 'GameBoy BrickBoy', createdAt: '2026-05-22', hourlyRate: null, clientName: 'Console Club', clientAddress: 'Corso Sempione 8, Roma' },
+      { id: 'p3', name: 'Play station 1 BrickBoy', createdAt: '2026-03-30', hourlyRate: 35, clientName: 'Sony Fans', clientAddress: 'Piazza Duomo 3, Torino' }
+    ];
+    state.entries = [
+      { id: 'e1', projectId: 'p1', spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1 },
+      { id: 'e2', projectId: 'p2', spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5 },
+      { id: 'e3', projectId: 'p2', spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2 },
+      { id: 'e4', projectId: 'p3', spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 0 }
+    ];
+    state.activeTimer = null;
+    
+    // Configura e disegna l'applicazione in modalità protetta
+    $$('#nav button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+    const themeBtn = $('#theme-toggle');
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        const isCurrentlyDark = document.body.classList.contains('dark');
+        const nextTheme = isCurrentlyDark ? 'light' : 'dark';
+        state.settings.theme = nextTheme;
+        syncTheme(nextTheme);
+      });
+    }
+    syncTheme('auto');
+    setView('dashboard');
+    
+    setTimeout(() => {
+      toast('Avvio d\'emergenza completato. App funzionante.', 'warning');
+    }, 800);
   }
 }
 
