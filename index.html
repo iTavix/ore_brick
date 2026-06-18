@@ -1843,8 +1843,8 @@ function firebaseConfigured() {
 
 function userDocRef() {
   if (!sync.user) return null;
-  const appId = typeof __app_id !== 'undefined' ? __app_id : 'ore-brickboy';
-  return sync.db.collection('artifacts').doc(appId).collection('users').doc(sync.user.uid);
+  // Percorso allineato alle regole Firestore: /users/{uid}
+  return sync.db.collection('users').doc(sync.user.uid);
 }
 
 function setSyncStatus(status) {
@@ -1924,7 +1924,7 @@ function startCloudListener() {
     (err) => {
       console.error('Snapshot error', err);
       setSyncStatus('error');
-      toast('Errore di sincronizzazione', 'error');
+      toast(syncErrorMsg(err), 'error');
     }
   );
 }
@@ -1977,7 +1977,7 @@ async function pushNow() {
   } catch (err) {
     console.error('push failed', err);
     setSyncStatus('error');
-    toast('Salvataggio cloud non riuscito', 'error');
+    toast(syncErrorMsg(err), 'error');
   }
 }
 
@@ -1986,6 +1986,18 @@ function cloudPush() {
   setSyncStatus('syncing');
   clearTimeout(sync.pushTimer);
   sync.pushTimer = setTimeout(pushNow, 400);
+}
+
+/* Messaggio leggibile per gli errori di sincronizzazione Firestore */
+function syncErrorMsg(err) {
+  const code = (err && err.code) ? String(err.code) : '';
+  if (code.indexOf('permission-denied') !== -1) {
+    return 'Sincronizzazione negata: aggiorna le regole di sicurezza di Firestore.';
+  }
+  if (code.indexOf('unavailable') !== -1) return 'Firestore non raggiungibile. Controlla la connessione.';
+  if (code.indexOf('failed-precondition') !== -1) return 'Database Firestore non configurato (va creato dalla console).';
+  if (code.indexOf('not-found') !== -1) return 'Database Firestore non trovato: crealo dalla console.';
+  return 'Errore di sincronizzazione' + (code ? ' (' + code + ')' : '') + '.';
 }
 
 /* Auth helpers */
@@ -2027,8 +2039,7 @@ async function doSignUp(email, password, role) {
     sync.pendingRole = (role === 'client') ? 'client' : 'owner';
     sync.role = sync.pendingRole;
     await sync.auth.createUserWithEmailAndPassword(email, password);
-    // Invia automaticamente l'email di verifica (best effort, non bloccante)
-    try { if (sync.auth.currentUser) await sync.auth.currentUser.sendEmailVerification(); } catch (_) {}
+    // La verifica email è facoltativa e non blocca l'app: si invia su richiesta dal pannello account.
     toast('Account ' + roleLabel(sync.pendingRole) + ' creato');
   }
   catch (err) { console.error('Sign-up error', err); sync.pendingRole = null; showAuthError(authError(err.code)); toast(authError(err.code), 'error'); }
