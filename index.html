@@ -95,13 +95,32 @@
 
   /* Impaginazione ottimale per stampa */
   @media print {
-    @page { size: A4; margin: 15mm; }
-    body { background: #fff !important; color: #000 !important; }
+    /* margine 0 a livello pagina: elimina l'area in cui il browser stampa
+       URL / data / numero di pagina. I margini "veri" li applica .print-area. */
+    @page { size: A4; margin: 0; }
+
+    /* senza questo, min-height:100vh del body forza un'altezza pari all'intera
+       pagina e il contenuto, con i margini, trabocca sulla 2ª pagina */
+    html, body { height: auto !important; min-height: 0 !important; }
+    body { display: block !important; background: #fff !important; color: #000 !important; }
+
     .no-print { display: none !important; }
-    #app-shell { max-width: none !important; padding: 0 !important; }
+    #app-shell { display: block !important; min-height: 0 !important; max-width: none !important; padding: 0 !important; margin: 0 !important; }
     #view-payment { display: block !important; }
-    .print-area { box-shadow: none !important; border: none !important; border-radius: 0 !important; padding: 0 !important; margin: 0 !important; }
+
+    .print-area {
+      box-shadow: none !important; border: none !important; border-radius: 0 !important;
+      margin: 0 !important;
+      padding: 14mm 15mm !important;   /* margini di stampa, ora interni al foglio */
+      overflow: visible !important;
+    }
+    .print-area .overflow-x-auto { overflow: visible !important; }
+    .print-table { width: 100% !important; min-width: 0 !important; }
     .print-table th, .print-table td { padding: 8px 10px !important; border-bottom: 1px solid #e2e2e6 !important; }
+
+    /* non spezzare a metà i blocchi chiave se il contenuto cresce */
+    .print-table tr, .print-table thead { break-inside: avoid; }
+    .print-keep { break-inside: avoid; }
   }
 </style>
 </head>
@@ -1593,8 +1612,10 @@ function renderPayment() {
     
     if (state.filters.period === 'current-month') {
       const d = new Date();
-      const isoStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-      const isoEnd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-31`;
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()).padStart(2, '0');
+      const isoStart = `${d.getFullYear()}-${mm}-01`;
+      const isoEnd = `${d.getFullYear()}-${mm}-${dd}`;
       return entry.date >= isoStart && entry.date <= isoEnd;
     }
     if (state.filters.period === 'custom') {
@@ -1691,7 +1712,7 @@ function renderPayment() {
         </table>
       </div>
 
-      <div class="mt-6 flex justify-end">
+      <div class="mt-6 flex justify-end print-keep">
         <div class="w-full sm:w-80 text-[13px] space-y-2">
           <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Prestazioni Orarie</span><span class="tabular-nums">${esc(eur(baseCompensation))}</span></div>
           <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Totale Ore</span><span class="tabular-nums font-bold">${esc(hrs(tH))}</span></div>
@@ -1723,7 +1744,7 @@ function renderPayment() {
         </div>
       </div>
 
-      <div class="mt-8 pt-5 border-t border-black/10 dark:border-white/10">
+      <div class="mt-8 pt-5 border-t border-black/10 dark:border-white/10 print-keep">
         <div class="text-[10px] uppercase tracking-wider text-ink-faint font-bold mb-3">Estremi di Liquidazione</div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-[13px]">
           <div>
