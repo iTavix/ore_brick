@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#ffffff" />
 <title>HourFlow — Smart Freelance Suite</title>
-<!-- Favicon SVG principale codificata in Base64 per massima compatibilità -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
-<!-- Favicon PNG alternativa di fallback -->
 <link rel="alternate icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAACXBIWXMAABYlAAAWJQFJUiTwAAADKUlEQVRYR+2YS0wTURSGdxZgY6IiGgVREgTUiAt9gAsTNy6MC90YF0bduHInRt24MXHjxp0bN66MC40bE99REgUfKBoFidgYg6Z978y0U6bT9mE608bT/JNp296Zc77577m306byX9XU1FTVpE2UThXg307zH+6B1KzV8q0mbeL2p2m09X9vDqRmWN0mbiM+B1Ij8fH6M3pDandpE3G8/uzbI07/vI63VpM2ceb1N6H9r6Y9orbyfVbLdZ7L/YnaPof9Z0K/0Vp95tqf1eBAdZ/G/jOiXWeu/U6N9pMOnf8Ea9fX/E7PeeY7M6v1Xvun1Nbe13Gv9Z6Z1XrvvebYnzv7Fep7fOfYHznrM9eZaeU7b0XvvdYzz7XvGnvfVes5N6v1jGfP9O8Za++17xp7f7We6f/+I3V17Z+ofR5W7zWznmveM639mWP/70jXGat71YHv9N6Oet8p6zl336x/r5XvtT2vOfuW9p6p1v98R/b07+9orV6zz6eZ9gfeev6tZ/+6Wf+O1jN9ZzzTv6v1b6P+R6X+G6p9gO9vG9e3e3bWO2Y9967W6hnPfK/9D1Lp7v/Z8d0pYf2GWPvD6r0m7m/b0Dveb/+N3v9g/b1W/k+pGdb/2Xf73N/+A2rtDx2q7U+D6r1mrn9X670mzrT2Z679WfX+E7VPonYd+I7Xn9EbUnM46+EbyffanvMe/o3We/g+6v2gQ+87WuvvG9VyrffM/ofV7tXWe6f9E6zW8m/X1nyvfc9Y+wM12v89on9XvXdW67X+79TWe6b/O6K28v7v8+7/F3X2p+Xar6W9VnvaI07Z9v8O833O83/v86v1Xu85O+vfU1v5zvvE+e9vG/9vWv+Oep+pXFvVvWbGvWeq9T9V7YPo/SeO7zXf5979G9W6r3nP+8T5L6fW7v73+vOfPef+/R3+n3L8F8Wz/9uP6P1V/7Of/aYmbbxXm3jTpmU/vE8/vGnzv9qkZreWe6tJzW5vWpM2Xv8gNfsT/6spbWp2+X/t+PdpUvvf/09NfH+Yf6bUjPqf6Z+UmlxXfG/eN3G8ef++0VfUnLzS+/Of/W/y9V8Z9b88G/Gv1H8T177g+V3V9g6rfRb2D38A1z6L2veqVv7zD/p/AAr9M8Lg6wAAAAABJRU5ErkJggg==" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -40,11 +38,12 @@
   /* Transizioni fluide native */
   .transition-soft { transition: all .22s cubic-bezier(.4,0,.2,1); }
 
-  /* Segmented Controls */
-  .seg-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .seg { background: #e9e9eb; border-radius: 12px; padding: 3px; display: flex; min-width: max-content; }
+  /* Segmented Controls - Ottimizzati per il Responsive Mobile */
+  .seg-container { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .seg-container::-webkit-scrollbar { display: none; }
+  .seg { background: #e9e9eb; border-radius: 12px; padding: 3px; display: flex; width: 100%; min-width: max-content; }
   .dark .seg { background: #2c2c2e; }
-  .seg button { border-radius: 9px; padding: 6px 12px; font-size: 13px; font-weight: 500; transition: all .2s ease; white-space: nowrap; }
+  .seg button { border-radius: 9px; padding: 6px 12px; font-size: 13px; font-weight: 500; transition: all .2s ease; white-space: nowrap; flex: 1 1 auto; text-align: center; }
   .seg button[aria-selected="true"] {
     background: #fff;
     box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 .5px rgba(0,0,0,.04);
@@ -109,7 +108,6 @@
 </head>
 <body class="min-h-screen flex flex-col transition-soft">
 
-  <!-- ===================== TOP BAR / NAV ===================== -->
   <header class="no-print sticky top-0 z-30 bg-white/80 dark:bg-[#121214]/80 backdrop-blur-xl border-b border-black/5 dark:border-white/5">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
       <div class="flex items-center gap-2 shrink-0">
@@ -123,18 +121,15 @@
       </div>
       <div class="flex-1"></div>
       
-      <!-- Badge di avviso fallback locale -->
       <div id="fallback-badge" class="hidden shrink-0 text-[11px] font-semibold rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2.5 py-1 flex items-center gap-1.5" title="Uso di localStorage per file:// locale">
         <span>⚠️</span> <span class="hidden sm:inline">Offline Locale</span>
       </div>
 
-      <!-- Widget Timer real-time persistente in Header -->
       <div id="nav-timer-widget" class="hidden items-center gap-2 bg-red-500/10 dark:bg-red-500/20 px-2.5 py-1 rounded-full text-red-600 dark:text-red-400 text-[12px] font-semibold">
         <span class="w-1.5 h-1.5 rounded-full bg-red-600 dark:bg-red-500 pulse-dot"></span>
         <span id="nav-timer-clock" class="tabular-nums font-mono">00:00:00</span>
       </div>
 
-      <!-- Toggle del Tema -->
       <button id="theme-toggle" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Inverti schema colori">
         <svg class="w-5 h-5 dark:hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
         <svg class="w-5 h-5 hidden dark:inline text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
@@ -154,36 +149,27 @@
     </nav>
   </header>
 
-  <!-- ===================== MAIN APP SHELL ===================== -->
   <main id="app-shell" class="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-6">
-    <!-- Sezione Dashboard -->
     <section id="view-dashboard" class="fade"></section>
     
-    <!-- Sezione Nota di Pagamento -->
     <section id="view-payment" class="fade hidden"></section>
     
-    <!-- Sezione Clienti -->
     <section id="view-clients" class="fade hidden"></section>
     
-    <!-- Sezione Impostazioni -->
     <section id="view-settings" class="fade hidden"></section>
     
-    <!-- Sezione Guida -->
     <section id="view-guide" class="fade hidden"></section>
   </main>
 
-  <!-- ===================== FOOTER ===================== -->
   <footer class="no-print border-t border-black/5 dark:border-white/5 bg-white/60 dark:bg-[#121214]/60">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 py-5 text-center text-[12px] text-ink-faint font-medium">
-      Realizzato con cura · <span class="text-ink-soft dark:text-white"> by iTavix & Claude Opus 4.8</span>
+      Realizzato con cura by iTavix & Claude Opus 4.8 · <span class="text-ink-soft dark:text-white">HourFlow Engine v2.0 Professional</span>
     </div>
   </footer>
 
-  <!-- Container per Modali e Toast dinamici -->
   <div id="modal-root"></div>
   <div id="toast-root" class="fixed left-1/2 bottom-6 z-50 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none"></div>
 
-  <!-- SDK di Sincronizzazione Firebase -->
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
@@ -1657,7 +1643,7 @@ function renderPayment() {
       </div>
     </div>
 
-    <div class="print-area bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder shadow-sm p-6 sm:p-8 dark:text-zinc-100">
+    <div class="print-area bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder shadow-sm p-4 sm:p-8 dark:text-zinc-100 overflow-x-auto">
       
       <div class="flex flex-col sm:flex-row justify-between items-start gap-4 pb-5 border-b border-black/10 dark:border-white/10">
         <div>
@@ -1665,7 +1651,7 @@ function renderPayment() {
           <div class="text-[11px] font-bold text-ink-faint dark:text-zinc-500 uppercase tracking-wider mt-2">Mittente:</div>
           <div class="text-[14px] font-bold text-ink dark:text-white">${esc(s.holderName || '—')}</div>
         </div>
-        <div class="text-right text-[12px] text-ink-soft dark:text-zinc-400">
+        <div class="text-left sm:text-right text-[12px] text-ink-soft dark:text-zinc-400">
           <div>Emissione: <strong class="text-ink dark:text-white">${esc(dateIt(todayIso()))}</strong></div>
           <div class="mt-3 text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0">
             <div class="text-[10px] font-bold uppercase tracking-wide text-ink-faint">Destinatario Cliente:</div>
@@ -1674,17 +1660,19 @@ function renderPayment() {
         </div>
       </div>
 
-      <table class="print-table w-full text-[13px] mt-6">
-        <thead>
-          <tr class="text-left text-[11px] uppercase tracking-wide text-ink-faint border-b border-black/10 dark:border-white/10">
-            <th class="py-2 pr-3 font-bold">Data</th>
-            <th class="py-2 pr-3 font-bold">Dettagli Tariffa</th>
-            <th class="py-2 pr-3 font-bold">Descrizione Attività</th>
-            <th class="py-2 font-bold text-right">Ore</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="overflow-x-auto w-full">
+        <table class="print-table w-full text-[13px] mt-6 min-w-[500px]">
+          <thead>
+            <tr class="text-left text-[11px] uppercase tracking-wide text-ink-faint border-b border-black/10 dark:border-white/10">
+              <th class="py-2 pr-3 font-bold">Data</th>
+              <th class="py-2 pr-3 font-bold">Dettagli Tariffa</th>
+              <th class="py-2 pr-3 font-bold">Descrizione Attività</th>
+              <th class="py-2 font-bold text-right">Ore</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
 
       <div class="mt-6 flex justify-end">
         <div class="w-full sm:w-80 text-[13px] space-y-2">
@@ -1720,7 +1708,7 @@ function renderPayment() {
 
       <div class="mt-8 pt-5 border-t border-black/10 dark:border-white/10">
         <div class="text-[10px] uppercase tracking-wider text-ink-faint font-bold mb-3">Estremi di Liquidazione</div>
-        <div class="grid sm:grid-cols-2 gap-y-3 gap-x-6 text-[13px]">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-[13px]">
           <div>
             <span class="text-ink-faint font-medium text-[11px] block">Intestatario</span>
             <span class="text-ink dark:text-zinc-200 font-semibold mt-0.5 block">${esc(s.holderName || '—')}</span>
