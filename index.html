@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#ffffff" />
 <title>HourFlow — Smart Freelance Suite</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
+<link rel="alternate icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAACXBIWXMAABYlAAAWJQFJUiTwAAADKUlEQVRYR+2YS0wTURSGdxZgY6IiGgVREgTUiAt9gAsTNy6MC90YF0bduHInRt24MXHjxp0bN66MC40bE99REgUfKBoFidgYg6Z978y0U6bT9mE608bT/JNp296Zc77577m306byX9XU1FTVpE2UThXg307zH+6B1KzV8q0mbeL2p2m09X9vDqRmWN0mbiM+B1Ij8fH6M3pDandpE3G8/uzbI07/vI63VpM2ceb1N6H9r6Y9orbyfVbLdZ7L/YnaPof9Z0K/0Vp95tqf1eBAdZ/G/jOiXWeu/U6N9pMOnf8Ea9fX/E7PeeY7M6v1Xvun1Nbe13Gv9Z6Z1XrvvebYnzv7Fep7fOfYHznrM9eZaeU7b0XvvdYzz7XvGnvfVes5N6v1jGfP9O8Za++17xp7f7We6f/+I3V17Z+ofR5W7zWznmveM639mWP/70jXGat71YHv9N6Oet8p6zl336x/r5XvtT2vOfuW9p6p1v98R/b07+9orV6zz6eZ9gfeev6tZ/+6Wf+O1jN9ZzzTv6v1b6P+R6X+G6p9gO9vG9e3e3bWO2Y9967W6hnPfK/9D1Lp7v/Z8d0pYf2GWPvD6r0m7m/b0Dveb/+N3v9g/b1W/k+pGdb/2Xf73N/+A2rtDx2q7U+D6r1mrn9X670mzrT2Z679WfX+E7VPonYd+I7Xn9EbUnM46+EbyffanvMe/o3We/g+6v2gQ+87WuvvG9VyrffM/ofV7tXWe6f9E6zW8m/X1nyvfc9Y+wM12v89on9XvXdW67X+79TWe6b/O6K28v7v8+7/F3X2p+Xar6W9VnvaI07Z9v8O833O83/v86v1Xu85O+vfU1v5zvvE+e9vG/9vWv+Oep+pXFvVvWbGvWeq9T9V7YPo/SeO7zXf5979G9W6r3nP+8T5L6fW7v73+vOfPef+/R3+n3L8F8Wz/9uP6P1V/7Of/aYmbbxXm3jTpmU/vE8/vGnzv9qkZreWe6tJzW5vWpM2Xv8gNfsT/6spbWp2+X/t+PdpUvvf/09NfH+Yf6bUjPqf6Z+UmlxXfG/eN3G8ef++0VfUnLzS+/Of/W/y9V8Z9b88G/Gv1H8T177g+V3V9g6rfRb2D38A1z6L2veqVv7zD/p/AAr9M8Lg6wAAAAABJRU5ErkJggg==" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -95,32 +96,13 @@
 
   /* Impaginazione ottimale per stampa */
   @media print {
-    /* Margine reale: @page margin:0 fa produrre stampe bianche su Safari.
-       La rimozione di URL/data/numero pagina del browser va fatta dalla
-       finestra di stampa (vedi note), non azzerando il margine. */
-    @page { size: A4; margin: 14mm; }
-
-    /* Fix 2ª pagina: senza questo, min-height:100vh del body forza l'altezza
-       dell'intera pagina e il contenuto trabocca su una seconda pagina. */
-    html, body { height: auto !important; min-height: 0 !important; }
-    body { display: block !important; background: #fff !important; color: #000 !important; }
-
+    @page { size: A4; margin: 15mm; }
+    body { background: #fff !important; color: #000 !important; }
     .no-print { display: none !important; }
-    #app-shell { display: block !important; min-height: 0 !important; max-width: none !important; padding: 0 !important; margin: 0 !important; }
+    #app-shell { max-width: none !important; padding: 0 !important; }
     #view-payment { display: block !important; }
-
-    .print-area {
-      box-shadow: none !important; border: none !important; border-radius: 0 !important;
-      margin: 0 !important; padding: 0 !important;
-      overflow: visible !important;
-    }
-    .print-area .overflow-x-auto { overflow: visible !important; }
-    .print-table { width: 100% !important; min-width: 0 !important; }
+    .print-area { box-shadow: none !important; border: none !important; border-radius: 0 !important; padding: 0 !important; margin: 0 !important; }
     .print-table th, .print-table td { padding: 8px 10px !important; border-bottom: 1px solid #e2e2e6 !important; }
-
-    /* non spezzare a metà i blocchi chiave se il contenuto cresce */
-    .print-table tr, .print-table thead { break-inside: avoid; }
-    .print-keep { break-inside: avoid; }
   }
 </style>
 </head>
@@ -247,7 +229,7 @@ function eur(n) {
 
 function hrs(n) {
   const v = Number(n) || 0;
-  return v.toLocaleString('it-IT', { maximumFractionDigits: 2 }) + ' h';
+  return v.toLocaleString('it-IT', { maximumFractionDigits: 2 }) + (v === 1 ? ' h' : ' h');
 }
 
 function dateIt(iso) {
@@ -553,18 +535,14 @@ function getFilteredEntries() {
   const month = now.getMonth();
 
   if (state.filters.period === 'current-month') {
-    const mm = String(month + 1).padStart(2, '0');
-    const dd = String(new Date(year, month + 1, 0).getDate()).padStart(2, '0');
-    const startIso = `${year}-${mm}-01`;
-    const endIso = `${year}-${mm}-${dd}`;
+    const startIso = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const endIso = `${year}-${String(month + 1).padStart(2, '0')}-31`;
     filtered = filtered.filter(e => e.date >= startIso && e.date <= endIso);
   } else if (state.filters.period === 'last-month') {
     const prevMonth = month === 0 ? 11 : month - 1;
     const prevYear = month === 0 ? year - 1 : year;
-    const mm = String(prevMonth + 1).padStart(2, '0');
-    const dd = String(new Date(prevYear, prevMonth + 1, 0).getDate()).padStart(2, '0');
-    const startIso = `${prevYear}-${mm}-01`;
-    const endIso = `${prevYear}-${mm}-${dd}`;
+    const startIso = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-01`;
+    const endIso = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-31`;
     filtered = filtered.filter(e => e.date >= startIso && e.date <= endIso);
   } else if (state.filters.period === 'current-year') {
     const startIso = `${year}-01-01`;
@@ -902,7 +880,7 @@ function projectCard(p) {
 
   return `
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-sm">
-      <div data-proj-id="${p.id}" role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(p.name)} — espandi o comprimi le sessioni" class="project-header-row flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
+      <div data-proj-id="${p.id}" class="project-header-row flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft">
         <span class="chev ${open ? 'open' : ''} text-ink-faint dark:text-zinc-600 text-[11px]">▶</span>
         <div class="flex-1 min-w-0">
           <div class="text-[15px] font-bold tracking-tight truncate dark:text-white">${esc(p.name)}</div>
@@ -979,38 +957,24 @@ function bindDashboardEvents(root) {
   const addProjBtn = $('#add-project', root);
   if (addProjBtn) addProjBtn.addEventListener('click', addProject);
 
-  // La delega va agganciata UNA SOLA VOLTA al nodo persistente #view-dashboard:
-  // renderDashboard() ne sostituisce solo l'innerHTML, quindi senza questa guardia
-  // ogni render aggiungerebbe un nuovo listener (azioni eseguite più volte / toggle "bloccato").
-  if (!root.dataset.delegated) {
-    root.dataset.delegated = '1';
+  root.addEventListener('click', (e) => {
+    const actionBtn = e.target.closest('[data-action]');
+    if (actionBtn) {
+      e.stopPropagation();
+      const action = actionBtn.dataset.action;
+      const id = actionBtn.dataset.id;
+      handleDashboardAction(action, id);
+      return;
+    }
 
-    const toggleProject = (id) => {
-      if (!id) return;
+    const headerRow = e.target.closest('.project-header-row');
+    if (headerRow) {
+      const id = headerRow.dataset.projId;
       if (state.expanded.has(id)) state.expanded.delete(id);
       else state.expanded.add(id);
       renderDashboard();
-    };
-
-    root.addEventListener('click', (e) => {
-      const actionBtn = e.target.closest('[data-action]');
-      if (actionBtn) {
-        e.stopPropagation();
-        handleDashboardAction(actionBtn.dataset.action, actionBtn.dataset.id);
-        return;
-      }
-      const headerRow = e.target.closest('.project-header-row');
-      if (headerRow) toggleProject(headerRow.dataset.projId);
-    });
-
-    // Accessibilità da tastiera: Invio/Spazio sulle intestazioni progetto
-    root.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
-      if (e.target.closest('[data-action]')) return;
-      const headerRow = e.target.closest('.project-header-row');
-      if (headerRow) { e.preventDefault(); toggleProject(headerRow.dataset.projId); }
-    });
-  }
+    }
+  });
 }
 
 function handleDashboardAction(action, id) {
@@ -1612,10 +1576,8 @@ function renderPayment() {
     
     if (state.filters.period === 'current-month') {
       const d = new Date();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()).padStart(2, '0');
-      const isoStart = `${d.getFullYear()}-${mm}-01`;
-      const isoEnd = `${d.getFullYear()}-${mm}-${dd}`;
+      const isoStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+      const isoEnd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-31`;
       return entry.date >= isoStart && entry.date <= isoEnd;
     }
     if (state.filters.period === 'custom') {
@@ -1674,7 +1636,7 @@ function renderPayment() {
           <button id="btn-sync-dashboard-filters" class="no-print px-3.5 py-1.5 rounded-full border border-black/15 dark:border-white/10 text-[12px] font-bold transition-soft flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/5">
             ✏️ Filtra ora
           </button>
-          <button id="btn-print" type="button" class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[12px] font-bold transition-soft flex items-center gap-1">
+          <button id="btn-print" class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[12px] font-bold transition-soft flex items-center gap-1">
             ⎙ Stampa PDF
           </button>
         </div>
@@ -1712,7 +1674,7 @@ function renderPayment() {
         </table>
       </div>
 
-      <div class="mt-6 flex justify-end print-keep">
+      <div class="mt-6 flex justify-end">
         <div class="w-full sm:w-80 text-[13px] space-y-2">
           <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Prestazioni Orarie</span><span class="tabular-nums">${esc(eur(baseCompensation))}</span></div>
           <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Totale Ore</span><span class="tabular-nums font-bold">${esc(hrs(tH))}</span></div>
@@ -1744,7 +1706,7 @@ function renderPayment() {
         </div>
       </div>
 
-      <div class="mt-8 pt-5 border-t border-black/10 dark:border-white/10 print-keep">
+      <div class="mt-8 pt-5 border-t border-black/10 dark:border-white/10">
         <div class="text-[10px] uppercase tracking-wider text-ink-faint font-bold mb-3">Estremi di Liquidazione</div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-[13px]">
           <div>
@@ -1778,11 +1740,7 @@ function renderPayment() {
     </div>`;
 
   const prtBtn = $('#btn-print');
-  if (prtBtn) prtBtn.addEventListener('click', () => {
-    // Safari a volte ignora window.print() chiamato in modo sincrono dentro
-    // l'handler del click: rimandarlo di un tick e' il workaround documentato.
-    setTimeout(() => { try { window.print(); } catch (e) { console.error('print failed', e); } }, 0);
-  });
+  if (prtBtn) prtBtn.addEventListener('click', () => window.print());
 
   const syncFiltBtn = $('#btn-sync-dashboard-filters');
   if (syncFiltBtn) syncFiltBtn.addEventListener('click', () => setView('dashboard'));
@@ -2120,17 +2078,9 @@ function importJSON(ev) {
           await dbClear('entries');
           await dbClear('clients');
           await dbPut('settings', d.settings);
-          // Import difensivo: scarta record non-oggetto e garantisce un id,
-          // così un singolo record corrotto non interrompe l'intero ripristino.
-          for (const p of d.projects) {
-            if (p && typeof p === 'object') { if (!p.id) p.id = genId(); await dbPut('projects', p); }
-          }
-          for (const e of d.entries) {
-            if (e && typeof e === 'object') { if (!e.id) e.id = genId(); await dbPut('entries', e); }
-          }
-          for (const c of (d.clients || [])) {
-            if (c && typeof c === 'object') { if (!c.id) c.id = genId(); await dbPut('clients', c); }
-          }
+          for (const p of d.projects) await dbPut('projects', p);
+          for (const e of d.entries) await dbPut('entries', e);
+          for (const c of (d.clients || [])) await dbPut('clients', c);
           await loadState();
           state.expanded.clear();
           render();
@@ -2318,11 +2268,6 @@ function initSync() {
     firebase.initializeApp(window.FIREBASE_CONFIG);
     sync.auth = firebase.auth();
     sync.db = firebase.firestore();
-    // Safari/WebKit blocca spesso il trasporto WebChannel in streaming di Firestore
-    // ("Fetch API cannot load ... due to access control checks"). Il long-polling
-    // usa un trasporto compatibile. settings() va chiamato PRIMA di ogni altra
-    // operazione (enablePersistence, onSnapshot, ecc.).
-    try { sync.db.settings({ experimentalAutoDetectLongPolling: true }); } catch (_) {}
     sync.enabled = true;
     sync.ready = true;
     try { sync.db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
