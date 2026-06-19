@@ -95,12 +95,13 @@
 
   /* Impaginazione ottimale per stampa */
   @media print {
-    /* margine 0 a livello pagina: elimina l'area in cui il browser stampa
-       URL / data / numero di pagina. I margini "veri" li applica .print-area. */
-    @page { size: A4; margin: 0; }
+    /* Margine reale: @page margin:0 fa produrre stampe bianche su Safari.
+       La rimozione di URL/data/numero pagina del browser va fatta dalla
+       finestra di stampa (vedi note), non azzerando il margine. */
+    @page { size: A4; margin: 14mm; }
 
-    /* senza questo, min-height:100vh del body forza un'altezza pari all'intera
-       pagina e il contenuto, con i margini, trabocca sulla 2ª pagina */
+    /* Fix 2ª pagina: senza questo, min-height:100vh del body forza l'altezza
+       dell'intera pagina e il contenuto trabocca su una seconda pagina. */
     html, body { height: auto !important; min-height: 0 !important; }
     body { display: block !important; background: #fff !important; color: #000 !important; }
 
@@ -110,8 +111,7 @@
 
     .print-area {
       box-shadow: none !important; border: none !important; border-radius: 0 !important;
-      margin: 0 !important;
-      padding: 14mm 15mm !important;   /* margini di stampa, ora interni al foglio */
+      margin: 0 !important; padding: 0 !important;
       overflow: visible !important;
     }
     .print-area .overflow-x-auto { overflow: visible !important; }
@@ -1674,7 +1674,7 @@ function renderPayment() {
           <button id="btn-sync-dashboard-filters" class="no-print px-3.5 py-1.5 rounded-full border border-black/15 dark:border-white/10 text-[12px] font-bold transition-soft flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/5">
             ✏️ Filtra ora
           </button>
-          <button id="btn-print" class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[12px] font-bold transition-soft flex items-center gap-1">
+          <button id="btn-print" type="button" class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[12px] font-bold transition-soft flex items-center gap-1">
             ⎙ Stampa PDF
           </button>
         </div>
@@ -1778,7 +1778,11 @@ function renderPayment() {
     </div>`;
 
   const prtBtn = $('#btn-print');
-  if (prtBtn) prtBtn.addEventListener('click', () => window.print());
+  if (prtBtn) prtBtn.addEventListener('click', () => {
+    // Safari a volte ignora window.print() chiamato in modo sincrono dentro
+    // l'handler del click: rimandarlo di un tick e' il workaround documentato.
+    setTimeout(() => { try { window.print(); } catch (e) { console.error('print failed', e); } }, 0);
+  });
 
   const syncFiltBtn = $('#btn-sync-dashboard-filters');
   if (syncFiltBtn) syncFiltBtn.addEventListener('click', () => setView('dashboard'));
