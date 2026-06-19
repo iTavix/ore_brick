@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#ffffff" />
 <title>HourFlow — Smart Freelance Suite</title>
-<!-- Favicon SVG principale codificata in Base64 per massima compatibilità -->
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw=" />
-<!-- Favicon PNG alternativa di fallback -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
 <link rel="alternate icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAACXBIWXMAABYlAAAWJQFJUiTwAAADKUlEQVRYR+2YS0wTURSGdxZgY6IiGgVREgTUiAt9gAsTNy6MC90YF0bduHInRt24MXHjxp0bN66MC40bE99REgUfKBoFidgYg6Z978y0U6bT9mE608bT/JNp296Zc77577m306byX9XU1FTVpE2UThXg307zH+6B1KzV8q0mbeL2p2m09X9vDqRmWN0mbiM+B1Ij8fH6M3pDandpE3G8/uzbI07/vI63VpM2ceb1N6H9r6Y9orbyfVbLdZ7L/YnaPof9Z0K/0Vp95tqf1eBAdZ/G/jOiXWeu/U6N9pMOnf8Ea9fX/E7PeeY7M6v1Xvun1Nbe13Gv9Z6Z1XrvvebYnzv7Fep7fOfYHznrM9eZaeU7b0XvvdYzz7XvGnvfVes5N6v1jGfP9O8Za++17xp7f7We6f/+I3V17Z+ofR5W7zWznmveM639mWP/70jXGat71YHv9N6Oet8p6zl336x/r5XvtT2vOfuW9p6p1v98R/b07+9orV6zz6eZ9gfeev6tZ/+6Wf+O1jN9ZzzTv6v1b6P+R6X+G6p9gO9vG9e3e3bWO2Y9967W6hnPfK/9D1Lp7v/Z8d0pYf2GWPvD6r0m7m/b0Dveb/+N3v9g/b1W/k+pGdb/2Xf73N/+A2rtDx2q7U+D6r1mrn9X670mzrT2Z679WfX+E7VPonYd+I7Xn9EbUnM46+EbyffanvMe/o3We/g+6v2gQ+87WuvvG9VyrffM/ofV7tXWe6f9E6zW8m/X1nyvfc9Y+wM12v89on9XvXdW67X+79TWe6b/O6K28v7v8+7/F3X2p+Xar6W9VnvaI07Z9v8O833O83/v86v1Xu85O+vfU1v5zvvE+e9vG/9vWv+Oep+pXFvVvWbGvWeq9T9V7YPo/SeO7zXf5979G9W6r3nP+8T5L6fW7v73+vOfPef+/R3+n3L8F8Wz/9uP6P1V/7Of/aYmbbxXm3jTpmU/vE8/vGnzv9qkZreWe6tJzW5vWpM2Xv8gNfsT/6spbWp2+X/t+PdpUvvf/09NfH+Yf6bUjPqf6Z+UmlxXfG/eN3G8ef++0VfUnLzS+/Of/W/y9V8Z9b88G/Gv1H8T177g+V3V9g6rfRb2D38A1z6L2veqVv7zD/p/AAr9M8Lg6wAAAAABJRU5ErkJggg==" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -40,45 +38,24 @@
   /* Transizioni fluide native */
   .transition-soft { transition: all .22s cubic-bezier(.4,0,.2,1); }
 
-  /* Segmented Controls - Ottimizzati e Resi Responsivi per Smartphone */
-  .seg-container { width: 100%; }
-  .seg {
-    background: #e9e9eb;
-    border-radius: 12px;
-    padding: 3px;
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    width: 100%;
-  }
+  /* Segmented Controls - Ottimizzati per il Responsive Mobile */
+  .seg-container { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .seg-container::-webkit-scrollbar { display: none; }
+  .seg { background: #e9e9eb; border-radius: 12px; padding: 3px; display: flex; width: 100%; min-width: max-content; }
   .dark .seg { background: #2c2c2e; }
-  .seg button {
-    border-radius: 9px;
-    padding: 6px 2px;
-    font-size: 10px;
-    font-weight: 600;
-    transition: all .2s ease;
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .seg button { border-radius: 9px; padding: 6px 12px; font-size: 13px; font-weight: 500; transition: all .2s ease; white-space: nowrap; flex: 1 1 auto; text-align: center; }
+  .seg button[aria-selected="true"] {
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 .5px rgba(0,0,0,.04);
+    color: #1d1d1f;
   }
-  @media (min-width: 400px) {
-    .seg button {
-      font-size: 11px;
-      padding: 6px 4px;
-    }
+  .dark .seg button[aria-selected="true"] {
+    background: #3a3a3c;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    color: #fff;
   }
-  @media (min-width: 640px) {
-    .seg {
-      display: flex;
-      width: max-content;
-    }
-    .seg button {
-      padding: 6px 14px;
-      font-size: 13px;
-      flex: initial;
-    }
-  }
+  .seg button[aria-selected="false"] { color: #6e6e73; }
+  .dark .seg button[aria-selected="false"] { color: #a1a1a6; }
 
   /* Indicatori ed effetti grafici */
   .chev { transition: transform .22s ease; }
@@ -131,32 +108,28 @@
 </head>
 <body class="min-h-screen flex flex-col transition-soft">
 
-  <!-- ===================== TOP BAR / NAV ===================== -->
   <header class="no-print sticky top-0 z-30 bg-white/80 dark:bg-[#121214]/80 backdrop-blur-xl border-b border-black/5 dark:border-white/5">
-    <div class="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-1.5 sm:gap-3">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
       <div class="flex items-center gap-2 shrink-0">
         <div class="w-8 h-8 rounded-[10px] bg-accent flex items-center justify-center shadow-sm">
           <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 9h1v8h4v1h-5z" fill="white"/></svg>
         </div>
         <div class="leading-tight">
           <div class="font-bold text-[15px] tracking-tight dark:text-white">HourFlow</div>
-          <div class="text-[11px] text-ink-faint -mt-0.5 dark:text-ink-faint font-medium hidden sm:block">Freelance Smart Suite</div>
+          <div class="text-[11px] text-ink-faint -mt-0.5 dark:text-ink-faint font-medium">Freelance Smart Suite</div>
         </div>
       </div>
       <div class="flex-1"></div>
       
-      <!-- Badge di avviso fallback locale -->
       <div id="fallback-badge" class="hidden shrink-0 text-[11px] font-semibold rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2.5 py-1 flex items-center gap-1.5" title="Uso di localStorage per file:// locale">
         <span>⚠️</span> <span class="hidden sm:inline">Offline Locale</span>
       </div>
 
-      <!-- Widget Timer real-time persistente in Header -->
-      <div id="nav-timer-widget" class="hidden items-center gap-2 bg-red-500/10 dark:bg-red-500/20 px-1.5 sm:px-2.5 py-1 rounded-full text-red-600 dark:text-red-400 text-[12px] font-semibold">
+      <div id="nav-timer-widget" class="hidden items-center gap-2 bg-red-500/10 dark:bg-red-500/20 px-2.5 py-1 rounded-full text-red-600 dark:text-red-400 text-[12px] font-semibold">
         <span class="w-1.5 h-1.5 rounded-full bg-red-600 dark:bg-red-500 pulse-dot"></span>
         <span id="nav-timer-clock" class="tabular-nums font-mono">00:00:00</span>
       </div>
 
-      <!-- Toggle del Tema -->
       <button id="theme-toggle" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Inverti schema colori">
         <svg class="w-5 h-5 dark:hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
         <svg class="w-5 h-5 hidden dark:inline text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
@@ -176,36 +149,27 @@
     </nav>
   </header>
 
-  <!-- ===================== MAIN APP SHELL ===================== -->
   <main id="app-shell" class="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-6">
-    <!-- Sezione Dashboard -->
     <section id="view-dashboard" class="fade"></section>
     
-    <!-- Sezione Nota di Pagamento -->
     <section id="view-payment" class="fade hidden"></section>
     
-    <!-- Sezione Clienti -->
     <section id="view-clients" class="fade hidden"></section>
     
-    <!-- Sezione Impostazioni -->
     <section id="view-settings" class="fade hidden"></section>
     
-    <!-- Sezione Guida -->
     <section id="view-guide" class="fade hidden"></section>
   </main>
 
-  <!-- ===================== FOOTER ===================== -->
   <footer class="no-print border-t border-black/5 dark:border-white/5 bg-white/60 dark:bg-[#121214]/60">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 py-5 text-center text-[12px] text-ink-faint font-medium">
       Realizzato con cura by iTavix & Claude Opus 4.8 · <span class="text-ink-soft dark:text-white">HourFlow Engine v2.0 Professional</span>
     </div>
   </footer>
 
-  <!-- Container per Modali e Toast dinamici -->
   <div id="modal-root"></div>
   <div id="toast-root" class="fixed left-1/2 bottom-6 z-50 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none"></div>
 
-  <!-- SDK di Sincronizzazione Firebase -->
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
@@ -815,10 +779,8 @@ function renderDashboard() {
   if (!visibleProjects.length) {
     projectsHTML = `
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
-        <div class="text-3xl mb-3 text-accent flex justify-center">
-          <svg class="w-12 h-12" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 0 1 2.008 1.24l.885 1.77a2.25 2.25 0 0 0 2.007 1.24h1.98a2.25 2.25 0 0 0 2.007-1.24l.885-1.77a2.25 2.25 0 0 1 2.007-1.24h3.86m-18 0h18a2.25 2.25 0 0 1 2.25 2.25v4.5A2.25 2.25 0 0 1 19.5 21h-15A2.25 2.25 0 0 1 2.25 18.75v-4.5A2.25 2.25 0 0 1 2.25 13.5zm0 0V6a2.25 2.25 0 0 1 2.25-2.25h15A2.25 2.25 0 0 1 21.75 6v7.5M12 7.5h.008v.008H12V7.5zM12 10.5h.008v.008H12v-.008zM15 7.5h.008v.008H15V7.5zM15 10.5h.008v.008H15v-.008z"/></svg>
-        </div>
-        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-semibold">Nessun progetto corrispondente.</p>
+        <div class="text-3xl mb-3">🗂️</div>
+        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Nessun progetto corrispondente.</p>
       </div>`;
   } else {
     projectsHTML = `<div class="space-y-3" id="projects-list-container">${visibleProjects.map(projectCard).join('')}</div>`;
@@ -842,7 +804,7 @@ function summaryCard(label, value, valueClass, sub) {
   return `
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-4 py-4 shadow-sm flex flex-col justify-between">
       <div class="text-[10px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">${esc(label)}</div>
-      <div class="mt-1.5 text-[13px] min-[380px]:text-[16px] sm:text-[20px] font-extrabold tracking-tight ${valueClass} leading-tight tabular-nums">${esc(value)}</div>
+      <div class="mt-1.5 text-[18px] sm:text-[20px] font-extrabold tracking-tight ${valueClass} leading-tight tabular-nums">${esc(value)}</div>
       ${sub ? `<div class="text-[9px] font-medium text-ink-faint dark:text-zinc-500 mt-1 truncate">${esc(sub)}</div>` : ''}
     </div>`;
 }
@@ -906,10 +868,10 @@ function projectCard(p) {
           </div>
           <div class="text-[13px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0 mr-1">${esc(hrs(e.hours))}</div>
           ${editable ? `          <div class="flex items-center gap-1 shrink-0">
-            <button data-action="edit-entry" data-id="${e.id}" title="Modifica" class="w-8.5 h-8.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">
+            <button data-action="edit-entry" data-id="${e.id}" title="Modifica" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
             </button>
-            <button data-action="del-entry" data-id="${e.id}" title="Elimina" class="w-8.5 h-8.5 rounded-full hover:bg-red-500/10 transition-soft text-ink-faint hover:text-red-500 flex items-center justify-center">
+            <button data-action="del-entry" data-id="${e.id}" title="Elimina" class="w-8 h-8 rounded-full hover:bg-red-500/10 transition-soft text-ink-faint hover:text-red-500 flex items-center justify-center">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
             </button>
           </div>` : ''}
@@ -935,7 +897,7 @@ function projectCard(p) {
         </div>
         ${editable ? `        <div class="flex items-center gap-1">
           <button data-action="start-timer" data-id="${p.id}" title="Avvia sessione live" class="w-8 h-8 rounded-full bg-accent/10 hover:bg-accent/20 text-accent transition-soft flex items-center justify-center">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           </button>
           <button data-action="rename-project" data-id="${p.id}" title="Modifica dettagli" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
@@ -957,7 +919,299 @@ function projectCard(p) {
 }
 
 /* ---------------------------------------------------------------------
-   GESTIONE PROGETTO CON SUPPORTO CENTRALIZZATO MULTI-CLIENTE
+   GESTIONE EVENTI VELOCE (Event Delegation)
+--------------------------------------------------------------------- */
+function bindDashboardEvents(root) {
+  const filtPeriod = $('#filt-period', root);
+  const filtProject = $('#filt-project', root);
+  const filtStart = $('#filt-start', root);
+  const filtEnd = $('#filt-end', root);
+  const btnReset = $('#btn-reset-filters', root);
+
+  if (filtPeriod) filtPeriod.addEventListener('change', () => {
+    state.filters.period = filtPeriod.value;
+    $('#custom-date-container', root).classList.toggle('hidden', filtPeriod.value !== 'custom');
+    renderDashboard();
+  });
+
+  if (filtProject) filtProject.addEventListener('change', () => {
+    state.filters.project = filtProject.value;
+    renderDashboard();
+  });
+
+  if (filtStart) filtStart.addEventListener('change', () => {
+    state.filters.startDate = filtStart.value;
+    renderDashboard();
+  });
+
+  if (filtEnd) filtEnd.addEventListener('change', () => {
+    state.filters.endDate = filtEnd.value;
+    renderDashboard();
+  });
+
+  if (btnReset) btnReset.addEventListener('click', () => {
+    state.filters = { period: 'all', startDate: '', endDate: '', project: 'all' };
+    renderDashboard();
+  });
+
+  const addProjBtn = $('#add-project', root);
+  if (addProjBtn) addProjBtn.addEventListener('click', addProject);
+
+  root.addEventListener('click', (e) => {
+    const actionBtn = e.target.closest('[data-action]');
+    if (actionBtn) {
+      e.stopPropagation();
+      const action = actionBtn.dataset.action;
+      const id = actionBtn.dataset.id;
+      handleDashboardAction(action, id);
+      return;
+    }
+
+    const headerRow = e.target.closest('.project-header-row');
+    if (headerRow) {
+      const id = headerRow.dataset.projId;
+      if (state.expanded.has(id)) state.expanded.delete(id);
+      else state.expanded.add(id);
+      renderDashboard();
+    }
+  });
+}
+
+function handleDashboardAction(action, id) {
+  switch (action) {
+    case 'start-timer':
+      startProjectTimer(id);
+      break;
+    case 'rename-project':
+      renameProject(id);
+      break;
+    case 'del-project':
+      deleteProject(id);
+      break;
+    case 'add-entry-trigger':
+      addEntry(id);
+      break;
+    case 'edit-entry':
+      editEntry(id);
+      break;
+    case 'del-entry':
+      deleteEntry(id);
+      break;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   CRONOMETRO / WORK MONITORING (Precision Updates)
+--------------------------------------------------------------------- */
+function buildStopwatchWidgetHTML() {
+  if (!state.activeTimer) return '';
+  const p = state.projects.find(x => x.id === state.activeTimer.projectId);
+  const pName = p ? p.name : 'Progetto rimosso';
+  const paused = state.activeTimer.paused;
+  
+  return `
+    <div class="bg-red-500/10 dark:bg-red-500/20 rounded-xl2 border border-red-500/20 p-4 shadow-sm mb-6 flex flex-col md:flex-row items-center gap-4 justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center">
+          <span class="w-2.5 h-2.5 rounded-full bg-red-600 dark:bg-red-400 pulse-dot"></span>
+        </div>
+        <div class="text-left">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Cronometro Attivo</div>
+          <div class="text-[15px] font-bold text-ink dark:text-white leading-tight">${esc(pName)}</div>
+          <div class="text-[12px] text-ink-soft dark:text-zinc-400 mt-0.5">${esc(state.activeTimer.spec || '(nessuna descrizione)')}</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 w-full md:w-auto justify-end">
+        <div class="text-[24px] font-bold font-mono tracking-wider tabular-nums text-red-600 dark:text-red-400 mr-2" id="widget-timer-clock">
+          00:00:00
+        </div>
+        <button id="btn-timer-pause" class="px-4 py-2 rounded-full bg-white dark:bg-zinc-800 text-ink dark:text-white border border-black/10 dark:border-white/10 text-[13px] font-bold hover:bg-gray-50 dark:hover:bg-zinc-700 transition-soft">
+          ${paused ? 'Riprendi' : 'Pausa'}
+        </button>
+        <button id="btn-timer-stop" class="px-4 py-2 rounded-full bg-red-600 hover:bg-red-700 text-white text-[13px] font-bold transition-soft shadow-sm">
+          Salva ore
+        </button>
+        <button id="btn-timer-discard" class="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-ink-faint hover:text-red-500 transition-soft" title="Scarta">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </button>
+      </div>
+    </div>`;
+}
+
+async function startProjectTimer(projectId) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  if (state.activeTimer) {
+    toast('Un altro timer è già attivo. Completa o scarta la sessione corrente.', 'error');
+    return;
+  }
+  const p = state.projects.find(x => x.id === projectId);
+  if (!p) return;
+
+  openModal({
+    title: 'Inizia Sessione di Lavoro',
+    bodyHTML: `
+      <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Verrà registrato il tempo effettivo per il progetto: <span class="font-bold text-ink dark:text-white">${esc(p.name)}</span>.</p>
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Cosa stai facendo? (Descrizione attività)</label>
+      <input id="f-timer-spec" class="field" placeholder="Es. Refactoring API, stesura documentazione" />
+    `,
+    confirmText: 'Avvia Cronometro',
+    onConfirm: async (card) => {
+      const spec = $('#f-timer-spec', card).value.trim();
+      const timerObj = {
+        id: 'current',
+        projectId,
+        spec: spec || 'Attività generica',
+        startTime: Date.now(),
+        paused: false,
+        elapsedBeforePause: 0
+      };
+      state.activeTimer = timerObj;
+      await dbPut('timer', timerObj);
+      renderDashboard();
+      toast('Timer avviato correttamente');
+    }
+  });
+}
+
+async function toggleTimerPause() {
+  if (!state.activeTimer) return;
+  if (state.activeTimer.paused) {
+    state.activeTimer.paused = false;
+    state.activeTimer.startTime = Date.now();
+  } else {
+    state.activeTimer.paused = true;
+    state.activeTimer.elapsedBeforePause += Date.now() - state.activeTimer.startTime;
+  }
+  await dbPut('timer', state.activeTimer);
+  renderDashboard();
+}
+
+async function stopAndSaveTimer() {
+  if (!state.activeTimer) return;
+  
+  let totalElapsedMs = state.activeTimer.elapsedBeforePause;
+  if (!state.activeTimer.paused) {
+    totalElapsedMs += Date.now() - state.activeTimer.startTime;
+  }
+  
+  const calculatedHours = Math.max(0.1, Math.round((totalElapsedMs / 3600000) * 100) / 100);
+  const projectId = state.activeTimer.projectId;
+  const spec = state.activeTimer.spec;
+
+  openModal({
+    title: 'Termina e Salva Sessione',
+    bodyHTML: `
+      <p class="text-[14px] mb-3">Tempo rilevato: <span class="font-bold text-accent">${calculatedHours} ore</span>. Registrare questa riga sul progetto?</p>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+          <input id="f-final-date" type="date" class="field" value="${todayIso()}" />
+        </div>
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore da registrare</label>
+          <input id="f-final-hours" type="number" min="0" step="0.05" class="field" value="${calculatedHours}" />
+        </div>
+      </div>
+    `,
+    confirmText: 'Registra Sessione',
+    onConfirm: async (card) => {
+      const date = $('#f-final-date', card).value;
+      const hours = Number($('#f-final-hours', card).value);
+      if (hours <= 0 || isNaN(hours)) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
+      
+      const newEntry = {
+        id: genId(),
+        projectId,
+        spec,
+        date: date || todayIso(),
+        hours
+      };
+      
+      await dbPut('entries', newEntry);
+      await dbDel('timer', 'current');
+      
+      state.entries.push(newEntry);
+      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      state.activeTimer = null;
+      
+      renderDashboard();
+      cloudPush();
+      toast('Sessione registrata correttamente');
+    }
+  });
+}
+
+async function discardTimer() {
+  openModal({
+    title: 'Annullare la sessione?',
+    danger: true,
+    bodyHTML: '<p class="text-[14px] text-ink-soft dark:text-zinc-400">Tutti i progressi temporali accumulati in questa sessione verranno cancellati.</p>',
+    confirmText: 'Elimina sessione',
+    onConfirm: async () => {
+      await dbDel('timer', 'current');
+      state.activeTimer = null;
+      renderDashboard();
+      toast('Timer rimosso');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   HIGH-PERFORMANCE TARGETED TIMER WRITER
+   Aggiorna direttamente i nodi interessati senza toccare il DOM circostante.
+--------------------------------------------------------------------- */
+let _lastTickTime = 0;
+function updateTimerUI() {
+  if (!state.activeTimer) {
+    const navWidget = $('#nav-timer-widget');
+    if (navWidget) navWidget.classList.add('hidden');
+    document.title = "HourFlow";
+    return;
+  }
+  
+  let elapsedMs = state.activeTimer.elapsedBeforePause;
+  if (!state.activeTimer.paused) {
+    elapsedMs += Date.now() - state.activeTimer.startTime;
+  }
+  
+  const totalSecs = Math.floor(elapsedMs / 1000);
+  const hrsNum = Math.floor(totalSecs / 3600);
+  const minsNum = Math.floor((totalSecs % 3600) / 60);
+  const secsNum = totalSecs % 60;
+  
+  const pad = (x) => String(x).padStart(2, '0');
+  const clockString = `${pad(hrsNum)}:${pad(minsNum)}:${pad(secsNum)}`;
+  
+  if (totalSecs !== _lastTickTime) {
+    document.title = `⏱️ [${clockString}] HourFlow`;
+    _lastTickTime = totalSecs;
+  }
+  
+  const navWidget = $('#nav-timer-widget');
+  const navClock = $('#nav-timer-clock');
+  if (navWidget && navClock) {
+    navWidget.classList.remove('hidden');
+    navClock.innerText = clockString;
+  }
+  
+  const widgetClock = $('#widget-timer-clock');
+  if (widgetClock) {
+    widgetClock.innerText = clockString;
+  }
+}
+
+// Precision clock cycle
+setInterval(updateTimerUI, 500);
+
+/* Gestione risparmio energetico se la pagina non è visibile */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === 'visible') {
+    updateTimerUI();
+  }
+});
+
+/* ---------------------------------------------------------------------
+   PROJECTS & CRUD DELLE SESSIONI
 --------------------------------------------------------------------- */
 function addProject() {
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
@@ -1137,9 +1391,7 @@ function renderClients() {
   if (state.clients.length === 0) {
     listHTML = `
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
-        <div class="text-3xl mb-3 text-accent flex justify-center">
-          <svg class="w-12 h-12" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.121 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A11.386 11.386 0 0110.089 18M15 12a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 4h10.5a1.5 1.5 0 001.5-1.5v-1.125A3.375 3.375 0 0016.125 10.5H5.875A3.375 3.375 0 002.5 13.875v1.125A1.5 1.5 0 004 17z"/></svg>
-        </div>
+        <div class="text-3xl mb-3">👥</div>
         <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Nessun cliente registrato.</p>
         <p class="text-ink-faint dark:text-zinc-600 text-[13px] mt-1">${editable ? 'Crea un cliente per associarlo ai tuoi progetti e fatturare con facilità.' : 'Nessuna informazione presente.'}</p>
       </div>`;
@@ -1385,8 +1637,7 @@ function renderPayment() {
             ✏️ Filtra ora
           </button>
           <button id="btn-print" class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[12px] font-bold transition-soft flex items-center gap-1">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
-            Stampa PDF
+            ⎙ Stampa PDF
           </button>
         </div>
       </div>
@@ -1471,9 +1722,8 @@ function renderPayment() {
                    <span class="hidden print:inline text-ink dark:text-zinc-200 font-bold tabular-nums break-all">${esc(groupIban(s.iban))}</span>
                    <button id="iban-toggle" type="button" aria-pressed="false" class="no-print ml-2 text-[11px] font-bold text-accent hover:underline">Mostra</button>
                    <button id="iban-copy" type="button" class="no-print ml-2 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline">Copia</button>`
-                : `<span class="no-print inline-flex items-center gap-1.5 text-ink-soft dark:text-zinc-400 font-bold text-[12px] gap-2">
-                     <svg class="w-4 h-4 text-ink-soft dark:text-zinc-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                     <span>Riservato</span>
+                : `<span class="no-print inline-flex items-center gap-1.5 text-ink-soft dark:text-zinc-400 font-bold text-[12px]">
+                     <span>🔒 Riservato</span>
                      <button id="iban-login" type="button" class="text-accent hover:underline">Accedi</button>
                    </span>
                    <span class="hidden print:inline text-ink-soft dark:text-zinc-400 font-semibold">Riservato (Accesso richiesto)</span>`
@@ -1617,7 +1867,7 @@ function renderSettings() {
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4">
       <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold mb-2">Coordinate Professionali</div>
       <div class="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
-        <svg class="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span class="text-lg">🔒</span>
         <div>
           <div class="text-[13px] font-bold text-ink dark:text-white">Dati sensibili crittografati</div>
           <p class="text-[12px] text-ink-soft dark:text-zinc-400 mt-0.5 leading-relaxed">Solo l'account del Proprietario può gestire gli estremi di pagamento fiscali.</p>
@@ -1848,14 +2098,11 @@ function importJSON(ev) {
 /* ---------------------------------------------------------------------
    GUIDE VIEW (Manuale Integrato)
 --------------------------------------------------------------------- */
-function guideSection(iconHtml, title, bodyHTML) {
+function guideSection(title, bodyHTML) {
   return `
     <details class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-sm group">
       <summary class="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft">
-        <div class="flex items-center gap-3">
-          ${iconHtml}
-          <span class="text-[15px] font-bold tracking-tight dark:text-zinc-100">${esc(title)}</span>
-        </div>
+        <span class="text-[15px] font-bold tracking-tight dark:text-zinc-100">${esc(title)}</span>
         <span class="text-ink-faint dark:text-zinc-600 text-[13px] transition-transform group-open:rotate-90">▶</span>
       </summary>
       <div class="px-5 pb-5 pt-1 text-[13px] text-ink-soft dark:text-zinc-400 leading-relaxed space-y-2.5 border-t border-black/[0.02] dark:border-white/[0.02]">${bodyHTML}</div>
@@ -1865,18 +2112,12 @@ function guideSection(iconHtml, title, bodyHTML) {
 function renderGuide() {
   const root = $('#view-guide');
   if (!root) return;
-  
-  // Icone stile SF Symbols per la Guida
-  const iconChart = `<svg class="w-5 h-5 text-accent shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>`;
-  const iconTimer = `<svg class="w-5 h-5 text-accent shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M12 2v3"/><path d="M16 2h-8"/></svg>`;
-  const iconReceipt = `<svg class="w-5 h-5 text-accent shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>`;
-
   root.innerHTML = `
     <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-2">Manuale di Utilizzo Professionale</h2>
     <p class="text-[14px] text-ink-soft dark:text-zinc-400 mb-4 leading-relaxed font-medium">Tutte le potenzialità di HourFlow spiegate nel dettaglio.</p>
     <div class="space-y-3">
 
-      ${guideSection(iconChart, 'Dashboard & Filtri Avanzati', `
+      ${guideSection('📈 Dashboard & Filtri Avanzati', `
         <p>La **Dashboard** è la tua centrale di controllo operativa. Da qui puoi tenere sotto controllo le ore totali registrate, la tariffa di base e la compensazione finanziaria calcolata.</p>
         <p>Grazie ai nuovi **Filtri di Visualizzazione**, puoi segmentare istantaneamente il tuo lavoro per:</p>
         <ul class="list-disc pl-5 space-y-1">
@@ -1885,7 +2126,7 @@ function renderGuide() {
         </ul>
         <p>Tutti gli indicatori, il grafico analitico e la Nota di pagamento si aggiornano in tempo reale rispettando fedelmente i filtri impostati.</p>`)}
 
-      ${guideSection(iconTimer, 'Cronometro di precisione real-time', `
+      ${guideSection('⏱️ Cronometro di precisione real-time', `
         <p>Avvia una sessione di lavoro in tempo reale toccando il pulsante **⏱** situato su qualsiasi riga di progetto.</p>
         <p>Il cronometro di HourFlow è stato progettato per massimizzare le prestazioni del dispositivo:</p>
         <ul class="list-disc pl-5 space-y-1">
@@ -1893,7 +2134,7 @@ function renderGuide() {
           <li>**Uscita Sicura:** Anche se rinfreschi la pagina o spegni il browser, il cronometro riprenderà la conta dall'istante esatto di avvio.</li>
         </ul>`)}
 
-      ${guideSection(iconReceipt, 'Nota Pro, Rivalsa, IVA e Ritenuta', `
+      ${guideSection('🧾 Nota Pro, Rivalsa, IVA e Ritenuta', `
         <p>La sezione **Nota Pro** compila istantaneamente una fattura/ricevuta intestata al cliente selezionato.</p>
         <p>Dalle **Impostazioni** puoi calibrare il calcolo fiscale a seconda della tua posizione contributiva:</p>
         <ul class="list-disc pl-5 space-y-1">
@@ -1903,6 +2144,58 @@ function renderGuide() {
         </ul>`)}
 
     </div>`;
+}
+
+/* ---------------------------------------------------------------------
+   GESTIONE EVENTI ACCOUNT PANEL (BINDACOUNTOPANEL)
+--------------------------------------------------------------------- */
+function bindAccountPanel() {
+  if (!sync.enabled) return;
+  if (sync.user) {
+    const out = $('#a-signout');
+    if (out) out.addEventListener('click', doSignOut);
+    const ver = $('#a-verify');
+    if (ver) ver.addEventListener('click', doSendVerification);
+    return;
+  }
+  const emailEl = $('#a-email');
+  const passEl = $('#a-pass');
+  const errEl = $('#a-error');
+  const roleSeg = $('#a-role');
+  const roleHint = $('#a-role-hint');
+  let chosenRole = 'owner';
+
+  if (roleSeg) {
+    $$('button[data-role]', roleSeg).forEach(btn => {
+      btn.addEventListener('click', () => {
+        chosenRole = btn.dataset.role;
+        $$('button[data-role]', roleSeg).forEach(b => b.setAttribute('aria-selected', String(b === btn)));
+        if (roleHint) {
+          roleHint.innerText = chosenRole === 'client'
+            ? 'Livello Cliente: visualizzazione protetta della fattura e dell\'IBAN senza possibilità di modificare.'
+            : 'Livello Proprietario: abilitazione modifiche, coordinate IBAN e tariffe.';
+        }
+      });
+    });
+  }
+
+  const readCreds = () => ({ email: (emailEl.value || '').trim(), password: passEl.value || '' });
+  const showErr = (m) => { if (errEl) { errEl.textContent = m; errEl.classList.remove('hidden'); } };
+  const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  const guard = (c, isSignup) => {
+    if (!c.email) { showErr('Email obbligatoria.'); return false; }
+    if (!validEmail(c.email)) { showErr('Formato email non valido.'); return false; }
+    if (!c.password) { showErr('Inserisci la password d\'accesso.'); return false; }
+    if (isSignup && c.password.length < 6) { showErr('La password deve contenere almeno 6 caratteri.'); return false; }
+    if (errEl) errEl.classList.add('hidden');
+    return true;
+  };
+
+  const signin = $('#a-signin');
+  const signup = $('#a-signup');
+  if (signin) signin.addEventListener('click', () => { const c = readCreds(); if (guard(c, false)) doSignIn(c.email, c.password); });
+  if (signup) signup.addEventListener('click', () => { const c = readCreds(); if (guard(c, true)) doSignUp(c.email, c.password, chosenRole); });
+  if (passEl) passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = readCreds(); if (guard(c, false)) doSignIn(c.email, c.password); } });
 }
 
 /* ---------------------------------------------------------------------
