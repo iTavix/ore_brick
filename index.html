@@ -229,7 +229,7 @@ function eur(n) {
 
 function hrs(n) {
   const v = Number(n) || 0;
-  return v.toLocaleString('it-IT', { maximumFractionDigits: 2 }) + (v === 1 ? ' h' : ' h');
+  return v.toLocaleString('it-IT', { maximumFractionDigits: 2 }) + ' h';
 }
 
 function dateIt(iso) {
@@ -535,14 +535,18 @@ function getFilteredEntries() {
   const month = now.getMonth();
 
   if (state.filters.period === 'current-month') {
-    const startIso = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-    const endIso = `${year}-${String(month + 1).padStart(2, '0')}-31`;
+    const mm = String(month + 1).padStart(2, '0');
+    const dd = String(new Date(year, month + 1, 0).getDate()).padStart(2, '0');
+    const startIso = `${year}-${mm}-01`;
+    const endIso = `${year}-${mm}-${dd}`;
     filtered = filtered.filter(e => e.date >= startIso && e.date <= endIso);
   } else if (state.filters.period === 'last-month') {
     const prevMonth = month === 0 ? 11 : month - 1;
     const prevYear = month === 0 ? year - 1 : year;
-    const startIso = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-01`;
-    const endIso = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-31`;
+    const mm = String(prevMonth + 1).padStart(2, '0');
+    const dd = String(new Date(prevYear, prevMonth + 1, 0).getDate()).padStart(2, '0');
+    const startIso = `${prevYear}-${mm}-01`;
+    const endIso = `${prevYear}-${mm}-${dd}`;
     filtered = filtered.filter(e => e.date >= startIso && e.date <= endIso);
   } else if (state.filters.period === 'current-year') {
     const startIso = `${year}-01-01`;
@@ -880,7 +884,7 @@ function projectCard(p) {
 
   return `
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-sm">
-      <div data-proj-id="${p.id}" class="project-header-row flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft">
+      <div data-proj-id="${p.id}" role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(p.name)} — espandi o comprimi le sessioni" class="project-header-row flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
         <span class="chev ${open ? 'open' : ''} text-ink-faint dark:text-zinc-600 text-[11px]">▶</span>
         <div class="flex-1 min-w-0">
           <div class="text-[15px] font-bold tracking-tight truncate dark:text-white">${esc(p.name)}</div>
@@ -957,24 +961,38 @@ function bindDashboardEvents(root) {
   const addProjBtn = $('#add-project', root);
   if (addProjBtn) addProjBtn.addEventListener('click', addProject);
 
-  root.addEventListener('click', (e) => {
-    const actionBtn = e.target.closest('[data-action]');
-    if (actionBtn) {
-      e.stopPropagation();
-      const action = actionBtn.dataset.action;
-      const id = actionBtn.dataset.id;
-      handleDashboardAction(action, id);
-      return;
-    }
+  // La delega va agganciata UNA SOLA VOLTA al nodo persistente #view-dashboard:
+  // renderDashboard() ne sostituisce solo l'innerHTML, quindi senza questa guardia
+  // ogni render aggiungerebbe un nuovo listener (azioni eseguite più volte / toggle "bloccato").
+  if (!root.dataset.delegated) {
+    root.dataset.delegated = '1';
 
-    const headerRow = e.target.closest('.project-header-row');
-    if (headerRow) {
-      const id = headerRow.dataset.projId;
+    const toggleProject = (id) => {
+      if (!id) return;
       if (state.expanded.has(id)) state.expanded.delete(id);
       else state.expanded.add(id);
       renderDashboard();
-    }
-  });
+    };
+
+    root.addEventListener('click', (e) => {
+      const actionBtn = e.target.closest('[data-action]');
+      if (actionBtn) {
+        e.stopPropagation();
+        handleDashboardAction(actionBtn.dataset.action, actionBtn.dataset.id);
+        return;
+      }
+      const headerRow = e.target.closest('.project-header-row');
+      if (headerRow) toggleProject(headerRow.dataset.projId);
+    });
+
+    // Accessibilità da tastiera: Invio/Spazio sulle intestazioni progetto
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      if (e.target.closest('[data-action]')) return;
+      const headerRow = e.target.closest('.project-header-row');
+      if (headerRow) { e.preventDefault(); toggleProject(headerRow.dataset.projId); }
+    });
+  }
 }
 
 function handleDashboardAction(action, id) {
@@ -2078,9 +2096,17 @@ function importJSON(ev) {
           await dbClear('entries');
           await dbClear('clients');
           await dbPut('settings', d.settings);
-          for (const p of d.projects) await dbPut('projects', p);
-          for (const e of d.entries) await dbPut('entries', e);
-          for (const c of (d.clients || [])) await dbPut('clients', c);
+          // Import difensivo: scarta record non-oggetto e garantisce un id,
+          // così un singolo record corrotto non interrompe l'intero ripristino.
+          for (const p of d.projects) {
+            if (p && typeof p === 'object') { if (!p.id) p.id = genId(); await dbPut('projects', p); }
+          }
+          for (const e of d.entries) {
+            if (e && typeof e === 'object') { if (!e.id) e.id = genId(); await dbPut('entries', e); }
+          }
+          for (const c of (d.clients || [])) {
+            if (c && typeof c === 'object') { if (!c.id) c.id = genId(); await dbPut('clients', c); }
+          }
           await loadState();
           state.expanded.clear();
           render();
