@@ -6,7 +6,6 @@
 <meta name="theme-color" content="#ffffff" />
 <title>HourFlow — Smart Freelance Suite</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
-<link rel="alternate icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAACXBIWXMAABYlAAAWJQFJUiTwAAADKUlEQVRYR+2YS0wTURSGdxZgY6IiGgVREgTUiAt9gAsTNy6MC90YF0bduHInRt24MXHjxp0bN66MC40bE99REgUfKBoFidgYg6Z978y0U6bT9mE608bT/JNp296Zc77577m306byX9XU1FTVpE2UThXg307zH+6B1KzV8q0mbeL2p2m09X9vDqRmWN0mbiM+B1Ij8fH6M3pDandpE3G8/uzbI07/vI63VpM2ceb1N6H9r6Y9orbyfVbLdZ7L/YnaPof9Z0K/0Vp95tqf1eBAdZ/G/jOiXWeu/U6N9pMOnf8Ea9fX/E7PeeY7M6v1Xvun1Nbe13Gv9Z6Z1XrvvebYnzv7Fep7fOfYHznrM9eZaeU7b0XvvdYzz7XvGnvfVes5N6v1jGfP9O8Za++17xp7f7We6f/+I3V17Z+ofR5W7zWznmveM639mWP/70jXGat71YHv9N6Oet8p6zl336x/r5XvtT2vOfuW9p6p1v98R/b07+9orV6zz6eZ9gfeev6tZ/+6Wf+O1jN9ZzzTv6v1b6P+R6X+G6p9gO9vG9e3e3bWO2Y9967W6hnPfK/9D1Lp7v/Z8d0pYf2GWPvD6r0m7m/b0Dveb/+N3v9g/b1W/k+pGdb/2Xf73N/+A2rtDx2q7U+D6r1mrn9X670mzrT2Z679WfX+E7VPonYd+I7Xn9EbUnM46+EbyffanvMe/o3We/g+6v2gQ+87WuvvG9VyrffM/ofV7tXWe6f9E6zW8m/X1nyvfc9Y+wM12v89on9XvXdW67X+79TWe6b/O6K28v7v8+7/F3X2p+Xar6W9VnvaI07Z9v8O833O83/v86v1Xu85O+vfU1v5zvvE+e9vG/9vWv+Oep+pXFvVvWbGvWeq9T9V7YPo/SeO7zXf5979G9W6r3nP+8T5L6fW7v73+vOfPef+/R3+n3L8F8Wz/9uP6P1V/7Of/aYmbbxXm3jTpmU/vE8/vGnzv9qkZreWe6tJzW5vWpM2Xv8gNfsT/6spbWp2+X/t+PdpUvvf/09NfH+Yf6bUjPqf6Z+UmlxXfG/eN3G8ef++0VfUnLzS+/Of/W/y9V8Z9b88G/Gv1H8T177g+V3V9g6rfRb2D38A1z6L2veqVv7zD/p/AAr9M8Lg6wAAAAABJRU5ErkJggg==" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -2294,6 +2293,11 @@ function initSync() {
     firebase.initializeApp(window.FIREBASE_CONFIG);
     sync.auth = firebase.auth();
     sync.db = firebase.firestore();
+    // Safari/WebKit blocca spesso il trasporto WebChannel in streaming di Firestore
+    // ("Fetch API cannot load ... due to access control checks"). Il long-polling
+    // usa un trasporto compatibile. settings() va chiamato PRIMA di ogni altra
+    // operazione (enablePersistence, onSnapshot, ecc.).
+    try { sync.db.settings({ experimentalAutoDetectLongPolling: true }); } catch (_) {}
     sync.enabled = true;
     sync.ready = true;
     try { sync.db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
