@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#ffffff" />
 <title>HourFlow — Smart Freelance Suite</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23FF9500'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath d='M15.5 9h1v8h4v1h-5z' fill='white'/%3E%3C/svg%3E" />
+<!-- Favicon SVG principale codificata in Base64 per massima compatibilità -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
+<!-- Favicon PNG alternativa di fallback -->
+<link rel="alternate icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAACXBIWXMAABYlAAAWJQFJUiTwAAADKUlEQVRYR+2YS0wTURSGdxZgY6IiGgVREgTUiAt9gAsTNy6MC90YF0bduHInRt24MXHjxp0bN66MC40bE99REgUfKBoFidgYg6Z978y0U6bT9mE608bT/JNp296Zc77577m306byX9XU1FTVpE2UThXg307zH+6B1KzV8q0mbeL2p2m09X9vDqRmWN0mbiM+B1Ij8fH6M3pDandpE3G8/uzbI07/vI63VpM2ceb1N6H9r6Y9orbyfVbLdZ7L/YnaPof9Z0K/0Vp95tqf1eBAdZ/G/jOiXWeu/U6N9pMOnf8Ea9fX/E7PeeY7M6v1Xvun1Nbe13Gv9Z6Z1XrvvebYnzv7Fep7fOfYHznrM9eZaeU7b0XvvdYzz7XvGnvfVes5N6v1jGfP9O8Za++17xp7f7We6f/+I3V17Z+ofR5W7zWznmveM639mWP/70jXGat71YHv9N6Oet8p6zl336x/r5XvtT2vOfuW9p6p1v98R/b07+9orV6zz6eZ9gfeev6tZ/+6Wf+O1jN9ZzzTv6v1b6P+R6X+G6p9gO9vG9e3e3bWO2Y9967W6hnPfK/9D1Lp7v/Z8d0pYf2GWPvD6r0m7m/b0Dveb/+N3v9g/b1W/k+pGdb/2Xf73N/+A2rtDx2q7U+D6r1mrn9X670mzrT2Z679WfX+E7VPonYd+I7Xn9EbUnM46+EbyffanvMe/o3We/g+6v2gQ+87WuvvG9VyrffM/ofV7tXWe6f9E6zW8m/X1nyvfc9Y+wM12v89on9XvXdW67X+79TWe6b/O6K28v7v8+7/F3X2p+Xar6W9VnvaI07Z9v8O833O83/v86v1Xu85O+vfU1v5zvvE+e9vG/9vWv+Oep+pXFvVvWbGvWeq9T9V7YPo/SeO7zXf5979G9W6r3nP+8T5L6fW7v73+vOfPef+/R3+n3L8F8Wz/9uP6P1V/7Of/aYmbbxXm3jTpmU/vE8/vGnzv9qkZreWe6tJzW5vWpM2Xv8gNfsT/6spbWp2+X/t+PdpUvvf/09NfH+Yf6bUjPqf6Z+UmlxXfG/eN3G8ef++0VfUnLzS+/Of/W/y9V8Z9b88G/Gv1H8T177g+V3V9g6rfRb2D38A1z6L2veqVv7zD/p/AAr9M8Lg6wAAAAABJRU5ErkJggg==" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -172,7 +175,7 @@
   <!-- ===================== FOOTER ===================== -->
   <footer class="no-print border-t border-black/5 dark:border-white/5 bg-white/60 dark:bg-[#121214]/60">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 py-5 text-center text-[12px] text-ink-faint font-medium">
-      Realizzato con cura · <span class="text-ink-soft dark:text-white">HourFlow Engine v2.0 Professional</span>
+      Realizzato con cura · <span class="text-ink-soft dark:text-white"> by iTavix & Claude Opus 4.8</span>
     </div>
   </footer>
 
@@ -327,7 +330,6 @@ function initFallbackStorage() {
   }
 }
 
-// Corretta la chiave per salvare su local storage coerentemente
 function saveFallback(store) {
   if (!_useFallback) return;
   setLocalStorageItem('obb_p_' + store, JSON.stringify(fallbackData[store]));
@@ -1225,114 +1227,168 @@ document.addEventListener("visibilitychange", () => {
 /* ---------------------------------------------------------------------
    PROJECTS & CRUD DELLE SESSIONI
 --------------------------------------------------------------------- */
-function entryFormHTML(e) {
-  return `
-    <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Attività svolta (Specifica)</label>
-    <input id="f-spec" class="field mb-3" placeholder="Es. Integrazione design system" value="${e ? esc(e.spec) : ''}" />
-    <div class="grid grid-cols-2 gap-3">
-      <div>
-        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data sessione</label>
-        <input id="f-date" type="date" class="field" value="${e ? esc(e.date) : todayIso()}" />
+function addProject() {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  
+  const clientOptions = state.clients.map(c => 
+    `<option value="${c.id}">${esc(c.name)}</option>`
+  ).join('');
+
+  openModal({
+    title: 'Aggiungi Nuovo Progetto',
+    bodyHTML: `
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
+      <input id="f-name" class="field mb-3" placeholder="Es. App Mobile BrickBoy" />
+      
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(lascia vuoto per usare la globale)</span></label>
+      <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
+      <select id="f-client-select" class="field mb-3">
+        <option value="">-- Nessun Cliente Associato --</option>
+        ${clientOptions}
+        <option value="__NEW__" class="text-accent font-bold">+ Crea Nuovo Cliente…</option>
+      </select>
+
+      <div id="new-client-inline-form" class="hidden border border-black/5 dark:border-white/5 rounded-xl p-3 bg-black/[0.01] dark:bg-white/[0.01] mb-3">
+        <h4 class="text-[12px] font-bold uppercase tracking-wider text-accent mb-2">Nuova Anagrafica Rapida</h4>
+        <input id="f-new-client-name" class="field text-[13px] py-1.5 mb-2" placeholder="Nome / Denominazione Cliente" />
+        <input id="f-new-client-vat" class="field text-[13px] py-1.5 mb-2" placeholder="P.IVA / CF (opzionale)" />
+        <textarea id="f-new-client-address" class="field text-[13px] py-1.5 h-12 resize-none" placeholder="Indirizzo Sede (opzionale)"></textarea>
       </div>
-      <div>
-        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Durata (Ore effettive)</label>
-        <input id="f-hours" type="number" min="0" step="0.25" inputmode="decimal" class="field" placeholder="0" value="${e ? esc(e.hours) : ''}" />
-      </div>
-    </div>`;
-}
-
-function validateEntry(card) {
-  const spec = $('#f-spec', card).value.trim();
-  const date = $('#f-date', card).value;
-  const hoursRaw = $('#f-hours', card).value;
-  if (!spec) { showError(card, 'Fornire una descrizione dell\'attività.'); return null; }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date).getTime())) { showError(card, 'Specificare una data valida.'); return null; }
-  const hours = Number(hoursRaw);
-  if (hoursRaw === '' || isNaN(hours) || hours < 0) { showError(card, 'Inserire un valore numerico coerente per le ore.'); return null; }
-  return { spec, date, hours };
-}
-
-function addEntry(projectId) {
-  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
-  openModal({
-    title: 'Aggiungi Sessione Manuale',
-    bodyHTML: entryFormHTML(null),
-    confirmText: 'Registra Voce',
+    `,
+    onMount: (card) => {
+      const select = $('#f-client-select', card);
+      const inlineForm = $('#new-client-inline-form', card);
+      if (select && inlineForm) {
+        select.addEventListener('change', () => {
+          inlineForm.classList.toggle('hidden', select.value !== '__NEW__');
+        });
+      }
+    },
+    confirmText: 'Crea Progetto',
     onConfirm: async (card) => {
-      const v = validateEntry(card);
-      if (!v) return false;
-      const e = { id: genId(), projectId, ...v };
-      await dbPut('entries', e);
-      state.entries.push(e);
-      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-      state.expanded.add(projectId);
+      const name = $('#f-name', card).value.trim();
+      if (!name) { showError(card, 'Nome progetto obbligatorio.'); return false; }
+      const customRate = $('#f-rate', card).value;
+      const selectVal = $('#f-client-select', card).value;
+
+      let clientId = null;
+      if (selectVal === '__NEW__') {
+        const inlineName = $('#f-new-client-name', card).value.trim();
+        if (!inlineName) { showError(card, 'Specificare la denominazione per il nuovo cliente.'); return false; }
+        
+        const newClientObj = {
+          id: genId(),
+          name: inlineName,
+          vatCode: $('#f-new-client-vat', card).value.trim(),
+          address: $('#f-new-client-address', card).value.trim(),
+          email: '',
+          phone: ''
+        };
+        await dbPut('clients', newClientObj);
+        state.clients.push(newClientObj);
+        state.clients.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        clientId = newClientObj.id;
+      } else if (selectVal) {
+        clientId = selectVal;
+      }
+      
+      const p = { 
+        id: genId(), 
+        name, 
+        createdAt: todayIso(),
+        hourlyRate: customRate !== '' ? Number(customRate) : null,
+        clientId
+      };
+      
+      await dbPut('projects', p);
+      state.projects.push(p);
+      state.expanded.add(p.id);
       renderDashboard();
       cloudPush();
-      toast('Voce aggiunta correttamente');
+      toast('Progetto configurato con successo');
     }
   });
 }
 
-function editEntry(id) {
-  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
-  const e = state.entries.find(x => x.id === id);
-  if (!e) return;
-  openModal({
-    title: 'Modifica Sessione',
-    bodyHTML: entryFormHTML(e),
-    confirmText: 'Applica Modifiche',
-    onConfirm: async (card) => {
-      const v = validateEntry(card);
-      if (!v) return false;
-      Object.assign(e, v);
-      await dbPut('entries', e);
-      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-      renderDashboard();
-      cloudPush();
-      toast('Sessione modificata');
-    }
-  });
-}
-
-function deleteEntry(id) {
-  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
-  const e = state.entries.find(x => x.id === id);
-  if (!e) return;
-  openModal({
-    title: 'Eliminare questa voce?',
-    danger: true,
-    bodyHTML: `<p class="text-[14px] text-ink-soft">Rimuovere definitivamente l'attività: <br><span class="font-semibold text-ink dark:text-white">${esc(e.spec)}</span> (${esc(hrs(e.hours))})?</p>`,
-    confirmText: 'Elimina',
-    onConfirm: async () => {
-      await dbDel('entries', id);
-      state.entries = state.entries.filter(x => x.id !== id);
-      renderDashboard();
-      cloudPush();
-      toast('Voce rimossa con successo');
-    }
-  });
-}
-
-function deleteProject(id) {
+function renameProject(id) {
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
   const p = state.projects.find(x => x.id === id);
   if (!p) return;
-  const count = entriesOf(id).length;
+
+  const clientOptions = state.clients.map(c => 
+    `<option value="${c.id}" ${p.clientId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+
   openModal({
-    title: 'Cancellare definitivamente?',
-    danger: true,
-    bodyHTML: `<p class="text-[14px] text-ink-soft">Stai per eliminare <span class="font-bold text-ink dark:text-white">${esc(p.name)}</span> ${count ? `e tutte le sue <span class="font-bold text-ink dark:text-white">${count}</span> sessioni associate` : ''}. Questa operazione non può essere annullata.</p>`,
-    confirmText: 'Sì, Elimina Tutto',
-    onConfirm: async () => {
-      const associated = state.entries.filter(e => e.projectId === id);
-      for (const e of associated) await dbDel('entries', e.id);
-      await dbDel('projects', id);
-      state.entries = state.entries.filter(e => e.projectId !== id);
-      state.projects = state.projects.filter(x => x.id !== id);
-      state.expanded.delete(id);
+    title: 'Modifica Dettagli Progetto',
+    bodyHTML: `
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
+      <input id="f-name" class="field mb-3" value="${esc(p.name)}" />
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h)</label>
+      <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" value="${p.hourlyRate != null ? p.hourlyRate : ''}" />
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
+      <select id="f-client-select" class="field mb-3">
+        <option value="">-- Nessun Cliente Associato --</option>
+        ${clientOptions}
+        <option value="__NEW__" class="text-accent font-bold">+ Crea Nuovo Cliente…</option>
+      </select>
+
+      <div id="new-client-inline-form" class="hidden border border-black/5 dark:border-white/5 rounded-xl p-3 bg-black/[0.01] dark:bg-white/[0.01] mb-3">
+        <h4 class="text-[12px] font-bold uppercase tracking-wider text-accent mb-2">Nuova Anagrafica Rapida</h4>
+        <input id="f-new-client-name" class="field text-[13px] py-1.5 mb-2" placeholder="Nome / Denominazione Cliente" />
+        <input id="f-new-client-vat" class="field text-[13px] py-1.5 mb-2" placeholder="P.IVA / CF (opzionale)" />
+        <textarea id="f-new-client-address" class="field text-[13px] py-1.5 h-12 resize-none" placeholder="Indirizzo Sede (opzionale)"></textarea>
+      </div>
+    `,
+    onMount: (card) => {
+      const select = $('#f-client-select', card);
+      const inlineForm = $('#new-client-inline-form', card);
+      if (select && inlineForm) {
+        select.addEventListener('change', () => {
+          inlineForm.classList.toggle('hidden', select.value !== '__NEW__');
+        });
+      }
+    },
+    confirmText: 'Salva Modifiche',
+    onConfirm: async (card) => {
+      const name = $('#f-name', card).value.trim();
+      if (!name) { showError(card, 'Il nome non può essere vuoto.'); return false; }
+      const customRate = $('#f-rate', card).value;
+      const selectVal = $('#f-client-select', card).value;
+
+      let clientId = null;
+      if (selectVal === '__NEW__') {
+        const inlineName = $('#f-new-client-name', card).value.trim();
+        if (!inlineName) { showError(card, 'Specificare la denominazione per il nuovo cliente.'); return false; }
+        
+        const newClientObj = {
+          id: genId(),
+          name: inlineName,
+          vatCode: $('#f-new-client-vat', card).value.trim(),
+          address: $('#f-new-client-address', card).value.trim(),
+          email: '',
+          phone: ''
+        };
+        await dbPut('clients', newClientObj);
+        state.clients.push(newClientObj);
+        state.clients.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        clientId = newClientObj.id;
+      } else if (selectVal) {
+        clientId = selectVal;
+      }
+
+      p.name = name;
+      p.hourlyRate = customRate !== '' ? Number(customRate) : null;
+      p.clientId = clientId;
+      
+      await dbPut('projects', p);
       renderDashboard();
       cloudPush();
-      toast('Progetto eliminato con successo');
+      toast('Dati del progetto aggiornati');
     }
   });
 }
@@ -1502,175 +1558,6 @@ function deleteClient(id) {
 }
 
 /* ---------------------------------------------------------------------
-   GESTIONE PROGETTO CON SUPPORTO CENTRALIZZATO MULTI-CLIENTE
---------------------------------------------------------------------- */
-function addProject() {
-  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
-  
-  const clientOptions = state.clients.map(c => 
-    `<option value="${c.id}">${esc(c.name)}</option>`
-  ).join('');
-
-  openModal({
-    title: 'Aggiungi Nuovo Progetto',
-    bodyHTML: `
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
-      <input id="f-name" class="field mb-3" placeholder="Es. App Mobile BrickBoy" />
-      
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(lascia vuoto per usare la globale)</span></label>
-      <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
-
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
-      <select id="f-client-select" class="field mb-3">
-        <option value="">-- Nessun Cliente Associato --</option>
-        ${clientOptions}
-        <option value="__NEW__" class="text-accent font-bold">+ Crea Nuovo Cliente…</option>
-      </select>
-
-      <div id="new-client-inline-form" class="hidden border border-black/5 dark:border-white/5 rounded-xl p-3 bg-black/[0.01] dark:bg-white/[0.01] mb-3">
-        <h4 class="text-[12px] font-bold uppercase tracking-wider text-accent mb-2">Nuova Anagrafica Rapida</h4>
-        <input id="f-new-client-name" class="field text-[13px] py-1.5 mb-2" placeholder="Nome / Denominazione Cliente" />
-        <input id="f-new-client-vat" class="field text-[13px] py-1.5 mb-2" placeholder="P.IVA / CF (opzionale)" />
-        <textarea id="f-new-client-address" class="field text-[13px] py-1.5 h-12 resize-none" placeholder="Indirizzo Sede (opzionale)"></textarea>
-      </div>
-    `,
-    onMount: (card) => {
-      const select = $('#f-client-select', card);
-      const inlineForm = $('#new-client-inline-form', card);
-      if (select && inlineForm) {
-        select.addEventListener('change', () => {
-          inlineForm.classList.toggle('hidden', select.value !== '__NEW__');
-        });
-      }
-    },
-    confirmText: 'Crea Progetto',
-    onConfirm: async (card) => {
-      const name = $('#f-name', card).value.trim();
-      if (!name) { showError(card, 'Nome progetto obbligatorio.'); return false; }
-      const customRate = $('#f-rate', card).value;
-      const selectVal = $('#f-client-select', card).value;
-
-      let clientId = null;
-      if (selectVal === '__NEW__') {
-        const inlineName = $('#f-new-client-name', card).value.trim();
-        if (!inlineName) { showError(card, 'Specificare la denominazione per il nuovo cliente.'); return false; }
-        
-        const newClientObj = {
-          id: genId(),
-          name: inlineName,
-          vatCode: $('#f-new-client-vat', card).value.trim(),
-          address: $('#f-new-client-address', card).value.trim(),
-          email: '',
-          phone: ''
-        };
-        await dbPut('clients', newClientObj);
-        state.clients.push(newClientObj);
-        state.clients.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-        clientId = newClientObj.id;
-      } else if (selectVal) {
-        clientId = selectVal;
-      }
-      
-      const p = { 
-        id: genId(), 
-        name, 
-        createdAt: todayIso(),
-        hourlyRate: customRate !== '' ? Number(customRate) : null,
-        clientId
-      };
-      
-      await dbPut('projects', p);
-      state.projects.push(p);
-      state.expanded.add(p.id);
-      renderDashboard();
-      cloudPush();
-      toast('Progetto configurato con successo');
-    }
-  });
-}
-
-function renameProject(id) {
-  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
-  const p = state.projects.find(x => x.id === id);
-  if (!p) return;
-
-  const clientOptions = state.clients.map(c => 
-    `<option value="${c.id}" ${p.clientId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`
-  ).join('');
-
-  openModal({
-    title: 'Modifica Dettagli Progetto',
-    bodyHTML: `
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
-      <input id="f-name" class="field mb-3" value="${esc(p.name)}" />
-
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h)</label>
-      <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" value="${p.hourlyRate != null ? p.hourlyRate : ''}" />
-
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
-      <select id="f-client-select" class="field mb-3">
-        <option value="">-- Nessun Cliente Associato --</option>
-        ${clientOptions}
-        <option value="__NEW__" class="text-accent font-bold">+ Crea Nuovo Cliente…</option>
-      </select>
-
-      <div id="new-client-inline-form" class="hidden border border-black/5 dark:border-white/5 rounded-xl p-3 bg-black/[0.01] dark:bg-white/[0.01] mb-3">
-        <h4 class="text-[12px] font-bold uppercase tracking-wider text-accent mb-2">Nuova Anagrafica Rapida</h4>
-        <input id="f-new-client-name" class="field text-[13px] py-1.5 mb-2" placeholder="Nome / Denominazione Cliente" />
-        <input id="f-new-client-vat" class="field text-[13px] py-1.5 mb-2" placeholder="P.IVA / CF (opzionale)" />
-        <textarea id="f-new-client-address" class="field text-[13px] py-1.5 h-12 resize-none" placeholder="Indirizzo Sede (opzionale)"></textarea>
-      </div>
-    `,
-    onMount: (card) => {
-      const select = $('#f-client-select', card);
-      const inlineForm = $('#new-client-inline-form', card);
-      if (select && inlineForm) {
-        select.addEventListener('change', () => {
-          inlineForm.classList.toggle('hidden', select.value !== '__NEW__');
-        });
-      }
-    },
-    confirmText: 'Salva Modifiche',
-    onConfirm: async (card) => {
-      const name = $('#f-name', card).value.trim();
-      if (!name) { showError(card, 'Il nome non può essere vuoto.'); return false; }
-      const customRate = $('#f-rate', card).value;
-      const selectVal = $('#f-client-select', card).value;
-
-      let clientId = null;
-      if (selectVal === '__NEW__') {
-        const inlineName = $('#f-new-client-name', card).value.trim();
-        if (!inlineName) { showError(card, 'Specificare la denominazione per il nuovo cliente.'); return false; }
-        
-        const newClientObj = {
-          id: genId(),
-          name: inlineName,
-          vatCode: $('#f-new-client-vat', card).value.trim(),
-          address: $('#f-new-client-address', card).value.trim(),
-          email: '',
-          phone: ''
-        };
-        await dbPut('clients', newClientObj);
-        state.clients.push(newClientObj);
-        state.clients.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-        clientId = newClientObj.id;
-      } else if (selectVal) {
-        clientId = selectVal;
-      }
-
-      p.name = name;
-      p.hourlyRate = customRate !== '' ? Number(customRate) : null;
-      p.clientId = clientId;
-      
-      await dbPut('projects', p);
-      renderDashboard();
-      cloudPush();
-      toast('Dati del progetto aggiornati');
-    }
-  });
-}
-
-/* ---------------------------------------------------------------------
    AGGIORNAMENTO NOTA DI PAGAMENTO RELAZIONALE
 --------------------------------------------------------------------- */
 function allEntriesFlat() {
@@ -1760,7 +1647,7 @@ function renderPayment() {
           <p class="text-[11px] text-ink-soft dark:text-zinc-400 mt-0.5">La nota mostrerà solo le voci filtrate nella Dashboard.</p>
         </div>
         <div class="flex items-center gap-2">
-          <button id="btn-sync-dashboard-filters" class="px-3.5 py-1.5 rounded-full border border-black/15 dark:border-white/10 text-[12px] font-bold transition-soft flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/5">
+          <button id="btn-sync-dashboard-filters" class="no-print px-3.5 py-1.5 rounded-full border border-black/15 dark:border-white/10 text-[12px] font-bold transition-soft flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/5">
             ✏️ Filtra ora
           </button>
           <button id="btn-print" class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[12px] font-bold transition-soft flex items-center gap-1">
@@ -2515,7 +2402,7 @@ function authError(code) {
     'auth/invalid-email': 'Formato email non corretto.',
     'auth/missing-password': 'Digitare la password.',
     'auth/weak-password': 'Scegliere una password di almeno 6 caratteri.',
-    'auth/email-already-in-use': 'Email già associata ad un account existent.',
+    'auth/email-already-in-use': 'Email già associata ad un account esistente.',
     'auth/wrong-password': 'Credenziali non corrette.'
   };
   return map[code] || 'Errore autenticazione.';
