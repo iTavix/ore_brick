@@ -414,6 +414,15 @@ const dbGetAll = async (store) => {
 };
 
 const dbPut = async (store, value) => {
+  // Per-record sync: ogni scrittura LOCALE di un record timbra updatedAt (epoch ms)
+  // così il merge cloud puo' decidere chi vince per singolo record (last-write-wins
+  // a livello di documento, non dell'intero archivio). Durante applyingRemote NON
+  // si timbra, per conservare il timestamp originale arrivato dal cloud.
+  if (value && typeof value === 'object' &&
+      (store === 'projects' || store === 'entries' || store === 'clients') &&
+      !sync.applyingRemote) {
+    value.updatedAt = Date.now();
+  }
   if (_useFallback) {
     if (store === 'settings' || store === 'timer') {
       fallbackData[store][value.id] = value;
@@ -2267,6 +2276,11 @@ function bindAccountPanel() {
 /* ---------------------------------------------------------------------
    CLOUD ENGINE (Firebase & Real-time Integration)
 --------------------------------------------------------------------- */
+// Schema cloud: 2 = sottocollezioni per-record (users/{uid}/{store}/{id}).
+// 1 = vecchio documento unico con array (migrato automaticamente al primo accesso).
+const CLOUD_SCHEMA = 2;
+const SYNC_STORES = ['projects', 'entries', 'clients'];
+
 const sync = {
   enabled: false,
   ready: false,
@@ -2275,10 +2289,20 @@ const sync = {
   user: null,
   role: null,        
   pendingRole: null, 
-  unsub: null,
+  unsub: null,          // listener documento padre (settings/ruolo)
+  colUnsubs: [],        // listener delle sottocollezioni
   applyingRemote: false,
   pushTimer: null,
-  status: 'off'
+  reloadTimer: null,
+  status: 'off',
+  // "Ombra" delle versioni note sul server: store -> Map(id -> updatedAt).
+  // Serve a calcolare il diff in push (cosa creare/aggiornare/eliminare).
+  server: { projects: new Map(), entries: new Map(), clients: new Map() },
+  // Idratazione: una sottocollezione e' "idratata" dopo il primo snapshot.
+  // Finche' non lo e', NON si propagano eliminazioni (evita di azzerare il
+  // server prima di aver letto cosa contiene).
+  hydrated: { projects: false, entries: false, clients: false },
+  serverSettingsAt: 0
 };
 
 function isAuthed() { return !!(sync.enabled && sync.user); }
@@ -2302,6 +2326,12 @@ function firebaseConfigured() {
 function userDocRef() {
   if (!sync.user) return null;
   return sync.db.collection('users').doc(sync.user.uid);
+}
+
+// Riferimento alla sottocollezione per-record: users/{uid}/{store}
+function colRef(store) {
+  if (!sync.user) return null;
+  return sync.db.collection('users').doc(sync.user.uid).collection(store);
 }
 
 function setSyncStatus(status) {
@@ -2359,39 +2389,110 @@ function onAuthChanged(user) {
     sync.role = null;
     sync.pendingRole = null;
     stopCloudListener();
+    resetSyncShadow();
     setSyncStatus('signedout');
   }
   render();
 }
 
-function startCloudListener() {
-  const ref = userDocRef();
-  if (!ref) return;
+// Svuota l'ombra del server e i flag di idratazione (al logout o cambio utente).
+function resetSyncShadow() {
+  for (const s of SYNC_STORES) { sync.server[s] = new Map(); sync.hydrated[s] = false; }
+  sync.serverSettingsAt = 0;
+}
+
+async function startCloudListener() {
+  if (!sync.user) return;
   setSyncStatus('syncing');
   stopCloudListener();
-  sync.unsub = ref.onSnapshot(
-    async (snap) => {
-      if (snap.metadata && snap.metadata.hasPendingWrites) return;
-      if (!snap.exists) {
-        await pushNow();
-        setSyncStatus('synced');
-        return;
-      }
-      await applyRemote(snap.data());
-      setSyncStatus('synced');
-    },
-    (err) => {
-      setSyncStatus('error');
-      toast(syncErrorMsg(err), 'error');
-    }
-  );
+  resetSyncShadow();
+  try {
+    await initialHydrate();        // caricamento iniziale deterministico (one-shot .get)
+  } catch (err) {
+    setSyncStatus('error');
+    toast(syncErrorMsg(err), 'error');
+    return;
+  }
+  attachRealtimeListeners();       // merge per-record realtime sui cambiamenti successivi
+  setSyncStatus('synced');
 }
 
 function stopCloudListener() {
   if (sync.unsub) { sync.unsub(); sync.unsub = null; }
+  for (const u of sync.colUnsubs) { try { u(); } catch (_) {} }
+  sync.colUnsubs = [];
+  clearTimeout(sync.reloadTimer);
 }
 
-async function applyRemote(data) {
+// Caricamento iniziale deterministico via .get() (l'ordine d'arrivo tra documento
+// padre e sottocollezioni nei listener NON e' garantito, quindi non ci si appoggia
+// ad esso). Account inesistente -> push dello stato locale. Account esistente ->
+// il cloud e' autoritativo: si sostituiscono i record locali (inclusi i dati demo
+// di un'installazione nuova), coerentemente col comportamento storico.
+async function initialHydrate() {
+  const snap = await userDocRef().get();
+
+  if (!snap.exists) {
+    for (const s of SYNC_STORES) sync.hydrated[s] = true; // niente sul cloud da leggere
+    await pushNow();                                       // carica lo stato locale
+    return;
+  }
+
+  const data = snap.data() || {};
+  if (data.accountRole === 'client' || data.accountRole === 'owner') sync.role = data.accountRole;
+  else if (!sync.role) sync.role = 'owner';
+
+  // Migrazione una-tantum dal vecchio documento unico con array.
+  if ((!data.schema || data.schema < CLOUD_SCHEMA) && hasLegacyArrays(data)) {
+    await migrateLegacyDoc(data);
+  }
+
+  sync.applyingRemote = true;
+  try {
+    await dbClear('projects'); await dbClear('entries'); await dbClear('clients');
+    for (const store of SYNC_STORES) {
+      const qs = await colRef(store).get();
+      for (const doc of qs.docs) {
+        const at = typeof doc.data().updatedAt === 'number' ? doc.data().updatedAt : 0;
+        sync.server[store].set(doc.id, at);
+        await dbPut(store, { ...doc.data(), id: doc.id }); // applyingRemote=true: updatedAt preservato
+      }
+      sync.hydrated[store] = true;
+    }
+    if (data.settings && typeof data.settings === 'object') {
+      sync.serverSettingsAt = typeof data.settingsAt === 'number' ? data.settingsAt : 0;
+      await dbPut('settings', { ...data.settings, id: 'app' });
+    }
+    await loadState();
+    render();
+  } finally {
+    sync.applyingRemote = false;
+  }
+}
+
+function attachRealtimeListeners() {
+  // Documento padre: ruolo + impostazioni in tempo reale.
+  sync.unsub = userDocRef().onSnapshot(
+    (snap) => {
+      if (!snap.exists) return;
+      if (snap.metadata && snap.metadata.hasPendingWrites) return;
+      applyParentDoc(snap.data());
+    },
+    (err) => { setSyncStatus('error'); toast(syncErrorMsg(err), 'error'); }
+  );
+  // Sottocollezioni record: merge per-record in tempo reale.
+  for (const store of SYNC_STORES) {
+    const unsub = colRef(store).onSnapshot(
+      (qs) => handleColSnapshot(store, qs),
+      (err) => { setSyncStatus('error'); toast(syncErrorMsg(err), 'error'); }
+    );
+    sync.colUnsubs.push(unsub);
+  }
+}
+
+// Documento padre in tempo reale: solo ruolo + impostazioni (oggetto singolo,
+// last-write-wins per timestamp). I record viaggiano nelle sottocollezioni.
+async function applyParentDoc(data) {
   if (!data) return;
   sync.applyingRemote = true;
   try {
@@ -2400,40 +2501,160 @@ async function applyRemote(data) {
     } else if (!sync.role) {
       sync.role = 'owner';
     }
-    const settings = data.settings && typeof data.settings === 'object' ? data.settings : { ...DEFAULT_SETTINGS };
-    settings.id = 'app';
-    const projects = Array.isArray(data.projects) ? data.projects : [];
-    const entries = Array.isArray(data.entries) ? data.entries : [];
-    const clients = Array.isArray(data.clients) ? data.clients : [];
-    await dbClear('projects');
-    await dbClear('entries');
-    await dbClear('clients');
-    await dbPut('settings', settings);
-    for (const p of projects) await dbPut('projects', p);
-    for (const e of entries) await dbPut('entries', e);
-    for (const c of clients) await dbPut('clients', c);
-    await loadState();
-    render();
+    const at = typeof data.settingsAt === 'number' ? data.settingsAt : 0;
+    if (data.settings && typeof data.settings === 'object' && at > sync.serverSettingsAt) {
+      sync.serverSettingsAt = at;
+      const settings = { ...data.settings, id: 'app' };
+      await dbPut('settings', settings);
+      state.settings = settings;
+      render();
+    }
   } catch (err) {
-    console.error('applyRemote failed', err);
+    console.error('applyParentDoc failed', err);
   } finally {
     sync.applyingRemote = false;
   }
 }
 
+function hasLegacyArrays(data) {
+  return Array.isArray(data.projects) || Array.isArray(data.entries) || Array.isArray(data.clients);
+}
+
+// Migrazione: copia gli array del vecchio documento nelle sottocollezioni e
+// ripulisce il documento padre. Idempotente (gira solo finche' schema < CLOUD_SCHEMA).
+// Lo stato locale viene poi ripopolato da initialHydrate via .get().
+async function migrateLegacyDoc(data) {
+  const ts = Date.now();
+  const FieldValue = firebase.firestore.FieldValue;
+  const groups = {
+    projects: Array.isArray(data.projects) ? data.projects : [],
+    entries:  Array.isArray(data.entries)  ? data.entries  : [],
+    clients:  Array.isArray(data.clients)  ? data.clients  : []
+  };
+
+  const batches = [];
+  let batch = sync.db.batch(); let ops = 0;
+  const rotate = () => { batches.push(batch); batch = sync.db.batch(); ops = 0; };
+
+  for (const store of SYNC_STORES) {
+    for (const rec of groups[store]) {
+      if (!rec || typeof rec !== 'object') continue;
+      if (!rec.id) rec.id = genId();
+      if (typeof rec.updatedAt !== 'number') rec.updatedAt = ts;
+      batch.set(colRef(store).doc(String(rec.id)), rec);
+      if (++ops >= 450) rotate();
+    }
+  }
+
+  // Rimuove gli array legacy dal documento padre e segna lo schema nuovo.
+  batch.set(userDocRef(), {
+    schema: CLOUD_SCHEMA,
+    projects: FieldValue.delete(),
+    entries: FieldValue.delete(),
+    clients: FieldValue.delete(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  batches.push(batch);
+
+  for (const b of batches) await b.commit();
+  toast('Sincronizzazione aggiornata al nuovo modello per-record.');
+}
+
+// Pull per-record: applica i cambiamenti remoti con confronto updatedAt.
+// Il remoto vince solo se non e' piu' vecchio del locale.
+function handleColSnapshot(store, qs) {
+  sync.applyingRemote = true;
+  const tasks = [];
+  qs.docChanges().forEach((chg) => {
+    const id = chg.doc.id;
+    const pending = chg.doc.metadata && chg.doc.metadata.hasPendingWrites;
+    if (chg.type === 'removed') {
+      sync.server[store].delete(id);
+      if (pending) return;                 // eco della nostra eliminazione
+      tasks.push(removeRecordLocally(store, id));
+      return;
+    }
+    const data = chg.doc.data() || {};
+    const remoteAt = typeof data.updatedAt === 'number' ? data.updatedAt : 0;
+    sync.server[store].set(id, remoteAt);
+    if (pending) return;                   // eco della nostra scrittura
+    const local = state[store].find(x => x.id === id);
+    if (!local || remoteAt > (local.updatedAt || 0)) {
+      tasks.push(dbPut(store, { ...data, id }));
+    }
+  });
+  Promise.all(tasks).catch((err) => console.error('handleColSnapshot failed', err)).finally(() => {
+    sync.applyingRemote = false;
+    sync.hydrated[store] = true;
+    scheduleReload();
+  });
+}
+
+async function removeRecordLocally(store, id) {
+  if (!state[store].some(x => x.id === id)) return;
+  await dbDel(store, id);
+}
+
+// Ricarica lo stato e ridisegna, accorpando i molti snapshot del caricamento iniziale.
+function scheduleReload() {
+  clearTimeout(sync.reloadTimer);
+  sync.reloadTimer = setTimeout(async () => {
+    await loadState();
+    render();
+  }, 150);
+}
+
+// Push diff-based: documento padre (impostazioni/ruolo) + un upsert/delete per
+// ogni record cambiato rispetto all'ombra del server.
 async function pushNow() {
-  const ref = userDocRef();
-  if (!ref) return;
+  if (!sync.user) return;
   setSyncStatus('syncing');
   try {
-    await ref.set({
+    const FieldValue = firebase.firestore.FieldValue;
+
+    // (1) Documento padre: impostazioni come oggetto singolo (LWW per timestamp).
+    sync.serverSettingsAt = Date.now();
+    await userDocRef().set({
       accountRole: sync.role || 'owner',
       settings: state.settings,
-      projects: state.projects,
-      entries: state.entries,
-      clients: state.clients,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
+      settingsAt: sync.serverSettingsAt,
+      schema: CLOUD_SCHEMA,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // (2) Record: diff contro l'ombra del server (sync.server).
+    for (const store of SYNC_STORES) {
+      const seen = new Set();
+      let batch = sync.db.batch(); let ops = 0;
+      const commit = async () => { if (ops > 0) { await batch.commit(); batch = sync.db.batch(); ops = 0; } };
+
+      // Upsert: record assenti sul server o piu' recenti del server.
+      for (const rec of state[store]) {
+        if (!rec || !rec.id) continue;
+        const id = String(rec.id);
+        seen.add(id);
+        const known = sync.server[store].get(id);
+        const at = typeof rec.updatedAt === 'number' ? rec.updatedAt : Date.now();
+        if (known === undefined || at > known) {
+          batch.set(colRef(store).doc(id), { ...rec, id, updatedAt: at });
+          sync.server[store].set(id, at);
+          if (++ops >= 450) await commit();
+        }
+      }
+
+      // Eliminazioni: presenti sul server ma non piu' in locale. Solo a
+      // sottocollezione idratata, per non cancellare dati non ancora letti.
+      if (sync.hydrated[store]) {
+        for (const id of Array.from(sync.server[store].keys())) {
+          if (!seen.has(id)) {
+            batch.delete(colRef(store).doc(id));
+            sync.server[store].delete(id);
+            if (++ops >= 450) await commit();
+          }
+        }
+      }
+      await commit();
+    }
     setSyncStatus('synced');
   } catch (err) {
     setSyncStatus('error');
