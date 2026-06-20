@@ -3,7 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="theme-color" content="#ffffff" />
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="HourFlow" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="manifest" href="manifest.json" />
 <title>HourFlow — Smart Freelance Suite</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
@@ -25,6 +31,8 @@
     }
   };
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root { color-scheme: light dark; }
   html, body {
@@ -56,6 +64,24 @@
   }
   .seg button[aria-selected="false"] { color: #6e6e73; }
   .dark .seg button[aria-selected="false"] { color: #a1a1a6; }
+
+  /* Menu mobile: SOLO la barra di navigazione (#nav) scorre orizzontalmente con i
+     tab a larghezza naturale; gli altri segmented control restano a riempimento. */
+  .seg-container { scroll-behavior: smooth; scroll-snap-type: x proximity; }
+  #nav button { flex: 0 0 auto; scroll-snap-align: center; }
+  .nav-scroll-wrap { position: relative; }
+  .nav-fade {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 34px;
+    pointer-events: none; border-radius: 0 12px 12px 0;
+    background: linear-gradient(to right, rgba(233,233,235,0), rgba(233,233,235,.96));
+    transition: opacity .2s ease;
+  }
+  .dark .nav-fade { background: linear-gradient(to right, rgba(44,44,46,0), rgba(44,44,46,.96)); }
+  .nav-fade.hide { opacity: 0; }
+  @media (min-width: 640px) {
+    #nav button { flex: 1 1 auto; }
+    .nav-fade { display: none; }
+  }
 
   /* Indicatori ed effetti grafici */
   .chev { transition: transform .22s ease; }
@@ -96,7 +122,13 @@
 
   /* Impaginazione ottimale per stampa */
   @media print {
+    /* Margine reale: @page margin:0 fa produrre stampe bianche su Safari.
+       La rimozione di URL/data/numero pagina del browser va fatta dalla
+       finestra di stampa (vedi note), non azzerando il margine. */
     @page { size: A4; margin: 14mm; }
+
+    /* Fix 2ª pagina: senza questo, min-height:100vh del body forza l'altezza
+       dell'intera pagina e il contenuto trabocca su una seconda pagina. */
     html, body { height: auto !important; min-height: 0 !important; }
     body { display: block !important; background: #fff !important; color: #000 !important; }
 
@@ -111,18 +143,22 @@
       background: #fff !important;
     }
 
+    /* Leggibilità su Safari: WebKit in stampa schiarisce i colori e, se è attiva
+       la modalità scura, lascia il testo chiaro su sfondo bianco. Forzo colori
+       esatti, sfondo bianco e testo scuro leggibile. */
     .print-area, .print-area * {
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
       color: #1d1d1f !important;
     }
     .print-area * { background: transparent !important; }
-    .print-area .text-accent { color: #FF9500 !important; }
-    .print-area .text-red-500 { color: #c81e1e !important; }
+    .print-area .text-accent { color: #FF9500 !important; }   /* titolo nota */
+    .print-area .text-red-500 { color: #c81e1e !important; }  /* ritenuta d'acconto */
     .print-area .overflow-x-auto { overflow: visible !important; }
     .print-table { width: 100% !important; min-width: 0 !important; }
     .print-table th, .print-table td { padding: 8px 10px !important; border-bottom: 1px solid #e2e2e6 !important; }
 
+    /* non spezzare a metà i blocchi chiave se il contenuto cresce */
     .print-table tr, .print-table thead { break-inside: avoid; }
     .print-keep { break-inside: avoid; }
   }
@@ -133,9 +169,7 @@
   <header class="no-print sticky top-0 z-30 bg-white/80 dark:bg-[#121214]/80 backdrop-blur-xl border-b border-black/5 dark:border-white/5">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
       <div class="flex items-center gap-2 shrink-0">
-        <div class="w-8 h-8 rounded-[10px] bg-accent flex items-center justify-center shadow-sm">
-          <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 9h1v8h4v1h-5z" fill="white"/></svg>
-        </div>
+        <img src="apple-touch-icon.png" alt="HourFlow" width="32" height="32" class="w-8 h-8 rounded-[10px] shadow-sm" />
         <div class="leading-tight">
           <div class="font-bold text-[15px] tracking-tight dark:text-white">HourFlow</div>
           <div class="text-[11px] text-ink-faint -mt-0.5 dark:text-ink-faint font-medium">Freelance Smart Suite</div>
@@ -160,22 +194,34 @@
       <button id="sync-badge" class="hidden shrink-0 text-[12px] font-medium rounded-full px-2.5 py-1 transition-soft flex items-center gap-1.5" title="Stato sincronizzazione"></button>
     </div>
     
-    <nav class="max-w-3xl mx-auto px-4 sm:px-6 pb-3 seg-container">
-      <div class="seg gap-0 text-[13px] font-semibold" role="tablist" id="nav">
-        <button role="tab" data-view="dashboard" class="py-2 flex-1 sm:flex-initial">Dashboard</button>
-        <button role="tab" data-view="payment" class="py-2 flex-1 sm:flex-initial">Nota Pro</button>
-        <button role="tab" data-view="clients" class="py-2 flex-1 sm:flex-initial">Clienti</button>
-        <button role="tab" data-view="settings" class="py-2 flex-1 sm:flex-initial">Impostazioni</button>
-        <button role="tab" data-view="guide" class="py-2 flex-1 sm:flex-initial">Manuale d'Uso</button>
+    <nav class="max-w-3xl mx-auto px-4 sm:px-6 pb-3">
+      <div class="nav-scroll-wrap">
+        <div class="seg-container">
+          <div class="seg gap-0 text-[13px] font-semibold" role="tablist" id="nav">
+            <button role="tab" data-view="dashboard">Dashboard</button>
+            <button role="tab" data-view="payment">Nota Pro</button>
+            <button role="tab" data-view="report">Report</button>
+            <button role="tab" data-view="clients">Clienti</button>
+            <button role="tab" data-view="settings">Impostazioni</button>
+            <button role="tab" data-view="guide">Manuale d'Uso</button>
+          </div>
+        </div>
+        <div class="nav-fade" aria-hidden="true"></div>
       </div>
     </nav>
   </header>
 
   <main id="app-shell" class="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-6">
     <section id="view-dashboard" class="fade"></section>
+    
     <section id="view-payment" class="fade hidden"></section>
+    
+    <section id="view-report" class="fade hidden"></section>
+    
     <section id="view-clients" class="fade hidden"></section>
+    
     <section id="view-settings" class="fade hidden"></section>
+    
     <section id="view-guide" class="fade hidden"></section>
   </main>
 
@@ -205,9 +251,14 @@
 <script>
 "use strict";
 
+/* =====================================================================
+   HourFlow Premium Edition - Core Scripting
+   ===================================================================== */
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+// Definizione globale posizionata prima del caricamento dello stato dell'app
 const DEFAULT_SETTINGS = {
   id: 'app',
   hourlyRate: 25,
@@ -218,6 +269,8 @@ const DEFAULT_SETTINGS = {
   holderName: 'Claudio Tavella',
   iban: 'IT47R0364601600526311864007',
   bic: 'NTSBITM1XXX',
+  causale: 'Prestazione professionale',
+  stampDuty: false,
   theme: 'auto'
 };
 
@@ -264,11 +317,37 @@ function maskIban(iban) {
   return out.replace(/(.{4})/g, '$1 ').trim();
 }
 
+// Raggruppa l'IBAN in blocchi da 4 per la stampa leggibile
 function groupIban(iban) {
   const v = String(iban == null ? '' : iban).replace(/\s+/g, '');
   return v ? v.replace(/(.{4})/g, '$1 ').trim() : '';
 }
 
+// Copia testo negli appunti: Clipboard API moderna con fallback su execCommand.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) { /* fallback sotto */ }
+  try {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.style.position = 'fixed'; el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    return true;
+  } catch (_) { return false; }
+}
+
+// Stampa robusta cross-browser, in particolare iOS/Safari. La nota viene stampata
+// dentro un iframe ISOLATO con gli stili della pagina clonati. Cosi' si evitano gli
+// ostacoli che mandano in tilt l'anteprima di Safari (header sticky + backdrop blur,
+// body a 100vh, contenitori overflow-x-auto, dark mode) e non si dipende dal rinvio
+// post-gesto che iOS ignora. Fallback su window.print() se qualcosa fallisce.
 function printNote() {
   const area = document.querySelector('.print-area');
   if (!area) { try { window.print(); } catch (_) {} return; }
@@ -279,9 +358,13 @@ function printNote() {
   const iframe = document.createElement('iframe');
   iframe.id = 'print-frame';
   iframe.setAttribute('aria-hidden', 'true');
+  // Fuori schermo ma con dimensioni reali (A4 a 96dpi): display:none/size 0 non
+  // verrebbe impaginato e alcuni browser lo stampano vuoto.
   iframe.style.cssText = 'position:fixed; left:-9999px; top:0; width:794px; height:1123px; border:0;';
   document.body.appendChild(iframe);
 
+  // Clona tutti gli stili della pagina, incluse le utility generate da Tailwind
+  // (iniettate come <style>): nell'iframe le classi rendono identiche allo schermo.
   let headStyles = '';
   document.querySelectorAll('style, link[rel="stylesheet"]').forEach((node) => {
     headStyles += node.outerHTML;
@@ -319,9 +402,13 @@ function printNote() {
       console.error('print failed', e);
       try { window.print(); } catch (_) {}
     }
+    // afterprint non e' garantito su iOS: pulizia a tempo.
     setTimeout(() => { const f = document.getElementById('print-frame'); if (f) f.remove(); }, 1500);
   };
 
+  // Se il documento e' gia' pronto, stampo SUBITO (resto dentro il gesto del tap,
+  // requisito di iOS). Altrimenti attendo onload, con timeout di sicurezza perche'
+  // i documenti creati via document.write spesso non emettono onload.
   if (doc.readyState === 'complete') {
     fire();
   } else {
@@ -330,8 +417,145 @@ function printNote() {
   }
 }
 
+// Modello della nota corrente: tutti i valori calcolati dai filtri/impostazioni.
+// Usato dall'export PDF (e riutilizzabile altrove) senza dipendere dal DOM.
+function buildNoteModel() {
+  const s = state.settings;
+  const filteredIds = new Set(getFilteredEntries().map(e => e.id));
+  const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
+  const tH = flat.reduce((a, e) => a + (Number(e.hours) || 0), 0);
+  const baseCompensation = flat.reduce((a, e) => a + (Number(e.hours) || 0) * (Number(e.rate) || 0), 0);
+  const taxP = Number(s.taxRate) || 0, vatP = Number(s.vatRate) || 0, wTaxP = Number(s.withholdingTaxRate) || 0;
+  const taxValue = baseCompensation * taxP / 100;
+  const subtotalWithTax = baseCompensation + taxValue;
+  const vatValue = subtotalWithTax * vatP / 100;
+  const wTaxValue = subtotalWithTax * wTaxP / 100;
+  const grandTotal = subtotalWithTax + vatValue - wTaxValue;
+  const stampDuty = (vatP === 0 && s.stampDuty && grandTotal > 77.47) ? 2 : 0;
+  const payable = grandTotal + stampDuty;
+  const ctx = paymentContext();
+  const note = getNote(ctx.key);
+  const ctxPayments = paymentsForContext(ctx.key);
+  const paid = ctxPayments.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  const residual = payable - paid;
+  const clientNames = [...new Set(flat.map(x => x.clientName).filter(Boolean))];
+  const clientAddresses = [...new Set(flat.map(x => x.clientAddress).filter(Boolean))];
+  const clientVats = [...new Set(flat.map(x => x.clientVat).filter(Boolean))];
+  return { s, flat, tH, baseCompensation, taxP, vatP, wTaxP, taxValue, vatValue, wTaxValue,
+           grandTotal, stampDuty, payable, ctx, note, paid, residual, clientNames, clientAddresses, clientVats };
+}
+
+// Esporta la nota come PDF nativo (jsPDF + autotable), senza dialogo di stampa.
+// Se la libreria non è disponibile, ripiega sulla stampa via iframe.
+function exportNotePDF() {
+  if (!(window.jspdf && window.jspdf.jsPDF)) {
+    toast('Modulo PDF non pronto: uso la stampa', 'warning');
+    printNote();
+    return;
+  }
+  const m = buildNoteModel();
+  const s = m.s;
+  const money = (n) => (Number(n) || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' EUR';
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 40;
+  const accent = [255, 149, 0], ink = [29, 29, 31], soft = [110, 110, 115];
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(...accent);
+  doc.text('NOTA DI PAGAMENTO', M, 52);
+
+  let ry = 44;
+  doc.setFontSize(10);
+  if (m.note) { doc.setFont('helvetica', 'bold'); doc.setTextColor(...ink); doc.text(`Nota N. ${noteNumFmt(m.note.n, m.note.year)}`, W - M, ry, { align: 'right' }); ry += 14; }
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...soft);
+  doc.text(`Emissione: ${dateIt(m.note ? m.note.issuedAt : todayIso())}`, W - M, ry, { align: 'right' }); ry += 14;
+  const status = m.payable > 0.005 ? (m.residual <= 0.005 && m.paid > 0 ? 'PAGATA' : (m.paid > 0 ? 'ACCONTO RICEVUTO' : 'DA SALDARE')) : '';
+  if (status) { doc.setFont('helvetica', 'bold'); doc.setTextColor(...ink); doc.text(status, W - M, ry, { align: 'right' }); }
+
+  let y = 88;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...soft); doc.text('MITTENTE', M, y);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...ink); doc.text(s.holderName || '-', M, y + 14);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...soft); doc.text('DESTINATARIO', M, y + 36);
+  const cname = m.clientNames.length === 1 ? m.clientNames[0] : (m.clientNames.length > 1 ? 'Fatturazione Multi-cliente' : '-');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...ink); doc.text(cname, M, y + 50);
+  let dy = y + 64;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...soft);
+  if (m.clientNames.length === 1) {
+    if (m.clientAddresses[0]) { doc.text(String(m.clientAddresses[0]), M, dy); dy += 12; }
+    if (m.clientVats[0]) { doc.text('P.IVA/CF: ' + m.clientVats[0], M, dy); dy += 12; }
+  }
+
+  const body = m.flat.map(e => [dateIt(e.date), `${e.project} (${money(e.rate)}/h)`, e.spec || '', hrs(e.hours)]);
+  doc.autoTable({
+    startY: Math.max(dy + 10, y + 92),
+    head: [['Data', 'Progetto', 'Descrizione', 'Ore']],
+    body: body.length ? body : [['—', '—', 'Nessuna voce', '—']],
+    theme: 'grid',
+    headStyles: { fillColor: [245, 245, 247], textColor: ink, fontStyle: 'bold', fontSize: 8 },
+    bodyStyles: { fontSize: 9, textColor: ink },
+    columnStyles: { 3: { halign: 'right' } },
+    margin: { left: M, right: M }
+  });
+
+  let ty = doc.lastAutoTable.finalY + 18;
+  if (s.causale) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...soft); doc.text(`Causale: ${s.causale}`, M, ty); ty += 18; }
+
+  const totals = [];
+  totals.push(['Prestazioni Orarie', money(m.baseCompensation), false]);
+  totals.push(['Totale Ore', hrs(m.tH), false]);
+  if (m.taxP > 0) totals.push([`Rivalsa Previdenziale (${m.taxP}%)`, money(m.taxValue), false]);
+  if (m.vatP > 0) totals.push([`I.V.A. (${m.vatP}%)`, money(m.vatValue), false]);
+  if (m.wTaxP > 0) totals.push([`Ritenuta d'Acconto (${m.wTaxP}%)`, '-' + money(m.wTaxValue), false]);
+  if (m.stampDuty > 0) { totals.push(['Subtotale', money(m.grandTotal), false]); totals.push(['Marca da bollo', money(m.stampDuty), false]); }
+  totals.push([m.stampDuty > 0 ? 'Totale documento' : 'Netto a pagare', money(m.payable), true]);
+  if (m.paid > 0) { totals.push(['Gia versato', '-' + money(m.paid), false]); totals.push([m.residual <= 0.005 ? 'Saldato' : 'Residuo da pagare', money(Math.max(0, m.residual)), false]); }
+
+  const colX = W - M, labelX = W - M - 180;
+  for (const [label, val, bold] of totals) {
+    if (ty > H - 80) { doc.addPage(); ty = 60; }
+    doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 12 : 10);
+    doc.setTextColor(...(bold ? accent : soft)); doc.text(label, labelX, ty);
+    doc.setTextColor(...(bold ? accent : ink)); doc.text(val, colX, ty, { align: 'right' });
+    ty += bold ? 20 : 14;
+  }
+
+  ty += 12;
+  if (ty > H - 110) { doc.addPage(); ty = 60; }
+  doc.setDrawColor(220); doc.line(M, ty, W - M, ty); ty += 16;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...soft); doc.text('ESTREMI DI LIQUIDAZIONE', M, ty); ty += 16;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...ink);
+  doc.text(`Intestatario: ${s.holderName || '-'}`, M, ty); ty += 14;
+  doc.text(`IBAN: ${s.iban ? groupIban(s.iban) : '-'}`, M, ty); ty += 14;
+  doc.text(`BIC/SWIFT: ${s.bic || '-'}`, M, ty);
+
+  doc.setFontSize(8); doc.setTextColor(...soft); doc.text('HourFlow  ·  iTavix', M, H - 24);
+
+  const numPart = m.note ? `_${String(m.note.n).padStart(4, '0')}-${m.note.year}` : '';
+  doc.save(`nota_pagamento${numPart}_${todayIso()}.pdf`);
+  toast('PDF generato');
+}
+
+/* ---------------------------------------------------------------------
+   Secure Storage Helper & Fallback Engine
+--------------------------------------------------------------------- */
+function getLocalStorageItem(key) {
+  try {
+    return (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(key) : null;
+  } catch (e) { return null; }
+}
+
+function setLocalStorageItem(key, value) {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(key, value);
+    }
+  } catch (e) { console.warn("Impossibile salvare nel localStorage: ", e); }
+}
+
 const DB_NAME = 'hourflow-prm';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let _db = null;
 let _useFallback = false;
 
@@ -340,6 +564,7 @@ const fallbackData = {
   projects: [],
   entries: [],
   clients: [],
+  payments: [],
   timer: {}
 };
 
@@ -360,6 +585,9 @@ function initFallbackStorage() {
     const parsedClients = JSON.parse(getLocalStorageItem('obb_p_clients'));
     fallbackData.clients = Array.isArray(parsedClients) ? parsedClients : [];
 
+    const parsedPayments = JSON.parse(getLocalStorageItem('obb_p_payments'));
+    fallbackData.payments = Array.isArray(parsedPayments) ? parsedPayments : [];
+
     const parsedTimer = JSON.parse(getLocalStorageItem('obb_p_timer'));
     fallbackData.timer = (parsedTimer && typeof parsedTimer === 'object' && !Array.isArray(parsedTimer)) ? parsedTimer : {};
   } catch (e) {
@@ -368,6 +596,7 @@ function initFallbackStorage() {
     fallbackData.projects = [];
     fallbackData.entries = [];
     fallbackData.clients = [];
+    fallbackData.payments = [];
     fallbackData.timer = {};
   }
 }
@@ -394,6 +623,7 @@ function openDB() {
           s.createIndex('projectId', 'projectId', { unique: false });
         }
         if (!db.objectStoreNames.contains('timer')) db.createObjectStore('timer', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('payments')) db.createObjectStore('payments', { keyPath: 'id' });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error || new Error("Errore IndexedDB"));
@@ -429,6 +659,7 @@ const dbGetAll = async (store) => {
     if (store === 'projects') return fallbackData.projects;
     if (store === 'entries') return fallbackData.entries;
     if (store === 'clients') return fallbackData.clients;
+    if (store === 'payments') return fallbackData.payments;
     if (store === 'settings') return Object.values(fallbackData.settings);
     return [];
   }
@@ -439,15 +670,19 @@ const dbGetAll = async (store) => {
 };
 
 const dbPut = async (store, value) => {
+  // Per-record sync: ogni scrittura LOCALE di un record timbra updatedAt (epoch ms)
+  // così il merge cloud puo' decidere chi vince per singolo record (last-write-wins
+  // a livello di documento, non dell'intero archivio). Durante applyingRemote NON
+  // si timbra, per conservare il timestamp originale arrivato dal cloud.
   if (value && typeof value === 'object' &&
-      (store === 'projects' || store === 'entries' || store === 'clients') &&
+      (store === 'projects' || store === 'entries' || store === 'clients' || store === 'payments') &&
       !sync.applyingRemote) {
     value.updatedAt = Date.now();
   }
   if (_useFallback) {
     if (store === 'settings' || store === 'timer') {
       fallbackData[store][value.id] = value;
-    } else if (store === 'projects' || store === 'entries' || store === 'clients') {
+    } else if (store === 'projects' || store === 'entries' || store === 'clients' || store === 'payments') {
       const idx = fallbackData[store].findIndex(item => item.id === value.id);
       if (idx > -1) fallbackData[store][idx] = value;
       else fallbackData[store].push(value);
@@ -465,7 +700,7 @@ const dbDel = async (store, key) => {
   if (_useFallback) {
     if (store === 'settings' || store === 'timer') {
       delete fallbackData[store][key];
-    } else if (store === 'projects' || store === 'entries' || store === 'clients') {
+    } else if (store === 'projects' || store === 'entries' || store === 'clients' || store === 'payments') {
       fallbackData[store] = fallbackData[store].filter(item => item.id !== key);
     }
     saveFallback(store);
@@ -479,7 +714,7 @@ const dbDel = async (store, key) => {
 
 function dbClear(store) {
   if (_useFallback) {
-    if (store === 'projects' || store === 'entries' || store === 'clients') fallbackData[store] = [];
+    if (store === 'projects' || store === 'entries' || store === 'clients' || store === 'payments') fallbackData[store] = [];
     saveFallback(store);
     return Promise.resolve();
   }
@@ -496,20 +731,25 @@ function dbClear(store) {
   }
 }
 
+/* ---------------------------------------------------------------------
+   State Management & Seed Data
+--------------------------------------------------------------------- */
 const state = {
   settings: { ...DEFAULT_SETTINGS },
   projects: [],
   entries: [],
   clients: [],
+  payments: [],
   view: 'dashboard',
   expanded: new Set(),
   activeTimer: null,
+  search: '',
+  
   filters: {
     period: 'all',
     startDate: '',
     endDate: '',
-    project: 'all',
-    unpaidOnly: false
+    project: 'all'
   }
 };
 
@@ -525,10 +765,10 @@ async function seedIfEmpty() {
   for (const p of [p1, p2, p3]) await dbPut('projects', p);
 
   const seedEntries = [
-    { id: genId(), projectId: p1.id, spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5, paymentStatus: 'unpaid' },
-    { id: genId(), projectId: p2.id, spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5, paymentStatus: 'unpaid' },
-    { id: genId(), projectId: p2.id, spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25, paymentStatus: 'unpaid' },
-    { id: genId(), projectId: p3.id, spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75, paymentStatus: 'unpaid' }
+    { id: genId(), projectId: p1.id, spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5 },
+    { id: genId(), projectId: p2.id, spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5 },
+    { id: genId(), projectId: p2.id, spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25 },
+    { id: genId(), projectId: p3.id, spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75 }
   ];
   for (const e of seedEntries) await dbPut('entries', e);
 }
@@ -539,12 +779,15 @@ async function loadState() {
   state.projects = (await dbGetAll('projects')) || [];
   state.entries = (await dbGetAll('entries')) || [];
   state.clients = (await dbGetAll('clients')) || [];
+  state.payments = (await dbGetAll('payments')) || [];
   state.activeTimer = await dbGet('timer', 'current') || null;
 
   if (!Array.isArray(state.projects)) state.projects = [];
   if (!Array.isArray(state.entries)) state.entries = [];
   if (!Array.isArray(state.clients)) state.clients = [];
+  if (!Array.isArray(state.payments)) state.payments = [];
 
+  // Procedura di Auto-migrazione (Crea record anagrafici dai vecchi testi dei clienti)
   let migrated = false;
   for (const p of state.projects) {
     if (!p.clientId && p.clientName) {
@@ -577,16 +820,14 @@ async function loadState() {
   state.clients.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 }
 
+/* ---------------------------------------------------------------------
+   Calcoli Fiscali Relazionali e Filtri
+--------------------------------------------------------------------- */
 function getFilteredEntries() {
   let filtered = state.entries;
 
   if (state.filters.project !== 'all') {
     filtered = filtered.filter(e => e.projectId === state.filters.project);
-  }
-
-  // Nuova funzionalità: Filtro di esclusione delle ore saldate ("Pagate")
-  if (state.filters.unpaidOnly) {
-    filtered = filtered.filter(e => (e.paymentStatus || 'unpaid') !== 'paid');
   }
 
   const now = new Date();
@@ -650,6 +891,9 @@ function totalCompensation() {
   return baseSum + (baseSum > 0 ? extra : 0);
 }
 
+/* ---------------------------------------------------------------------
+   System Toasts & Theme control
+--------------------------------------------------------------------- */
 function toast(message, kind = 'ok') {
   const root = $('#toast-root');
   if (!root) return;
@@ -671,6 +915,29 @@ function syncTheme(themeName) {
   document.body.classList.toggle('dark', isDark);
 }
 
+// In modalità "auto" segue dal vivo il cambio chiaro/scuro del sistema operativo.
+let _themeMql = null;
+function bindAutoTheme() {
+  if (!window.matchMedia) return;
+  _themeMql = window.matchMedia('(prefers-color-scheme: dark)');
+  const onChange = () => { if ((state.settings.theme || 'auto') === 'auto') syncTheme('auto'); };
+  if (_themeMql.addEventListener) _themeMql.addEventListener('change', onChange);
+  else if (_themeMql.addListener) _themeMql.addListener(onChange); // Safari datati
+}
+
+// Registra il service worker per PWA/offline. Path relativi: funziona sia sul
+// dominio utente (itavix.github.io) sia in una sottocartella di GitHub Pages.
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (location.protocol === 'file:') return; // niente SW in apertura locale
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('SW non registrato:', err));
+  });
+}
+
+/* ---------------------------------------------------------------------
+   Modal Manager
+--------------------------------------------------------------------- */
 function closeModal() {
   const root = $('#modal-root');
   if (root) root.innerHTML = '';
@@ -718,6 +985,16 @@ function openModal(opts) {
     card.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'number' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); confirm(); }
       if (e.key === 'Escape') closeModal();
+      // Focus-trap: il Tab resta dentro al modale.
+      if (e.key === 'Tab') {
+        const focusables = $$('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])', card)
+          .filter(el => !el.disabled && el.offsetParent !== null);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
     });
     const first = $('input, textarea, select', card);
     if (first) setTimeout(() => first.focus(), 100);
@@ -736,25 +1013,56 @@ function showError(card, msg) {
   box.textContent = msg;
 }
 
+/* ---------------------------------------------------------------------
+   SISTEMA DI ROUTING E ROUTER (SETVIEW & RENDER)
+--------------------------------------------------------------------- */
+function navScrollContainer() {
+  const n = document.getElementById('nav');
+  return n ? n.parentElement : null; // .seg-container
+}
+function updateNavFade() {
+  const c = navScrollContainer();
+  const fade = document.querySelector('.nav-fade');
+  if (!c || !fade) return;
+  const scrollable = c.scrollWidth > c.clientWidth + 2;
+  const atEnd = c.scrollLeft + c.clientWidth >= c.scrollWidth - 2;
+  fade.classList.toggle('hide', !scrollable || atEnd);
+}
+function scrollNavActiveIntoView() {
+  const c = navScrollContainer();
+  const active = document.querySelector('#nav button[aria-selected="true"]');
+  if (!c || !active) return;
+  const cRect = c.getBoundingClientRect();
+  const aRect = active.getBoundingClientRect();
+  const delta = (aRect.left - cRect.left) - (c.clientWidth - active.clientWidth) / 2;
+  if (Math.abs(delta) > 4) c.scrollBy({ left: delta, behavior: 'smooth' });
+}
+function syncNavScroll() { scrollNavActiveIntoView(); updateNavFade(); }
+
 function setView(view) {
   state.view = view;
-  ['dashboard', 'payment', 'clients', 'settings', 'guide'].forEach(v => {
+  ['dashboard', 'payment', 'report', 'clients', 'settings', 'guide'].forEach(v => {
     const target = $('#view-' + v);
     if (target) target.classList.toggle('hidden', v !== view);
   });
   $$('#nav button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === view)));
   render();
+  syncNavScroll();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function render() {
   if (state.view === 'dashboard') renderDashboard();
   else if (state.view === 'payment') renderPayment();
+  else if (state.view === 'report') renderReports();
   else if (state.view === 'clients') renderClients();
   else if (state.view === 'settings') renderSettings();
   else if (state.view === 'guide') renderGuide();
 }
 
+/* ---------------------------------------------------------------------
+   DASHBOARD / CONTROLLI FILTRI / ANALYTICS
+--------------------------------------------------------------------- */
 function buildFilterWidgetHTML() {
   const p = state.filters;
   const projectOptions = state.projects.map(proj => 
@@ -795,16 +1103,6 @@ function buildFilterWidgetHTML() {
             <input id="filt-end" type="date" class="field py-1.5 px-2 text-[12px]" value="${p.endDate}" />
           </div>
         </div>
-        
-        <!-- Nuova feature: Filtro rapido di esclusione per sessioni saldate -->
-        <div class="col-span-1 sm:col-span-3 border-t border-black/5 dark:border-white/5 pt-3 mt-1 flex items-center justify-between">
-          <div class="flex items-center gap-2.5">
-            <input type="checkbox" id="filt-unpaid-only" class="w-4 h-4 rounded border-gray-300 text-accent focus:ring-accent dark:bg-zinc-800 dark:border-zinc-700" ${p.unpaidOnly ? 'checked' : ''} />
-            <label for="filt-unpaid-only" class="text-[12px] font-bold text-ink-soft dark:text-zinc-400 cursor-pointer select-none">
-              Fatturabile: escludi le ore già saldate ("Pagate")
-            </label>
-          </div>
-        </div>
       </div>
     </div>`;
 }
@@ -833,19 +1131,32 @@ function renderDashboard() {
 
   let projectsHTML;
   const editable = canEdit();
-  const visibleProjects = state.filters.project === 'all' 
-    ? state.projects 
+  const q = (state.search || '').trim().toLowerCase();
+  let visibleProjects = state.filters.project === 'all'
+    ? state.projects
     : state.projects.filter(p => p.id === state.filters.project);
+  if (q) {
+    visibleProjects = visibleProjects.filter(p =>
+      String(p.name || '').toLowerCase().includes(q) ||
+      state.entries.some(e => e.projectId === p.id && String(e.spec || '').toLowerCase().includes(q))
+    );
+  }
 
   if (!visibleProjects.length) {
     projectsHTML = `
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
         <div class="text-3xl mb-3">🗂️</div>
-        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Nessun progetto corrispondente.</p>
+        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">${q ? 'Nessun risultato per la ricerca.' : 'Nessun progetto corrispondente.'}</p>
       </div>`;
   } else {
     projectsHTML = `<div class="space-y-3" id="projects-list-container">${visibleProjects.map(projectCard).join('')}</div>`;
   }
+
+  const searchHTML = state.projects.length ? `
+    <div class="relative mb-3">
+      <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="dash-search" type="text" value="${esc(state.search || '')}" placeholder="Cerca progetti o attività…" autocomplete="off" class="field pl-9 py-2 text-[13px]" />
+    </div>` : '';
 
   root.innerHTML = `
     ${summary}
@@ -856,9 +1167,21 @@ function renderDashboard() {
         Nuovo progetto
       </button>` : ''}
     </div>
+    ${searchHTML}
     ${projectsHTML}`;
 
   bindDashboardEvents(root);
+
+  const searchEl = $('#dash-search', root);
+  if (searchEl) {
+    searchEl.addEventListener('input', () => {
+      const pos = searchEl.selectionStart;
+      state.search = searchEl.value;
+      renderDashboard();
+      const again = document.getElementById('dash-search');
+      if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (_) {} }
+    });
+  }
 }
 
 function summaryCard(label, value, valueClass, sub) {
@@ -896,7 +1219,8 @@ function buildVisualAnalyticsChart() {
         </div>
         <div class="text-[10px] font-semibold text-ink-soft dark:text-zinc-400 mt-2 truncate w-full text-center" title="${esc(p.name)}">${esc(p.name)}</div>
         <div class="text-[9px] font-bold text-ink-faint tabular-nums">${eur(comp)}</div>
-      </div>`;
+      </div>
+    `;
   }).join('');
 
   return `
@@ -920,15 +1244,10 @@ function projectCard(p) {
   const clientName = client ? client.name : '';
 
   const itemsHTML = items.length
-    ? items.map(e => {
-        let entryStatusIndicator = '';
-        if (e.paymentStatus === 'paid') entryStatusIndicator = ' <span class="text-[10px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">Saldato</span>';
-        if (e.paymentStatus === 'advance') entryStatusIndicator = ' <span class="text-[10px] text-blue-500 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded">Acconto</span>';
-        
-        return `
+    ? items.map(e => `
         <div class="group flex items-center gap-3 px-4 py-3 border-t border-black/5 dark:border-white/5 hover:bg-black/[0.01] dark:hover:bg-white/[0.005]">
           <div class="flex-1 min-w-0">
-            <div class="text-[14px] text-ink dark:text-zinc-200 truncate font-semibold">${esc(e.spec)}${entryStatusIndicator}</div>
+            <div class="text-[14px] text-ink dark:text-zinc-200 truncate font-semibold">${esc(e.spec)}</div>
             <div class="text-[11px] text-ink-faint dark:text-zinc-500 mt-0.5 font-medium">${esc(dateIt(e.date))}</div>
           </div>
           <div class="text-[13px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0 mr-1">${esc(hrs(e.hours))}</div>
@@ -940,8 +1259,7 @@ function projectCard(p) {
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
             </button>
           </div>` : ''}
-        </div>`;
-      }).join('')
+        </div>`).join('')
     : `<div class="px-4 py-5 border-t border-black/5 dark:border-white/5 text-center text-[13px] text-ink-faint font-medium">${editable ? 'Nessuna voce per questo filtro. Premi "+" per iniziare.' : 'Nessuna voce registrata.'}</div>`;
 
   return `
@@ -984,12 +1302,14 @@ function projectCard(p) {
     </div>`;
 }
 
+/* ---------------------------------------------------------------------
+   GESTIONE EVENTI VELOCE (Event Delegation)
+--------------------------------------------------------------------- */
 function bindDashboardEvents(root) {
   const filtPeriod = $('#filt-period', root);
   const filtProject = $('#filt-project', root);
   const filtStart = $('#filt-start', root);
   const filtEnd = $('#filt-end', root);
-  const filtUnpaidOnly = $('#filt-unpaid-only', root);
   const btnReset = $('#btn-reset-filters', root);
 
   if (filtPeriod) filtPeriod.addEventListener('change', () => {
@@ -1013,19 +1333,17 @@ function bindDashboardEvents(root) {
     renderDashboard();
   });
 
-  if (filtUnpaidOnly) filtUnpaidOnly.addEventListener('change', () => {
-    state.filters.unpaidOnly = filtUnpaidOnly.checked;
-    renderDashboard();
-  });
-
   if (btnReset) btnReset.addEventListener('click', () => {
-    state.filters = { period: 'all', startDate: '', endDate: '', project: 'all', unpaidOnly: false };
+    state.filters = { period: 'all', startDate: '', endDate: '', project: 'all' };
     renderDashboard();
   });
 
   const addProjBtn = $('#add-project', root);
-  if (addProjBtn) addProjBtn.addEventListener('click', () => addProject());
+  if (addProjBtn) addProjBtn.addEventListener('click', addProject);
 
+  // La delega va agganciata UNA SOLA VOLTA al nodo persistente #view-dashboard:
+  // renderDashboard() ne sostituisce solo l'innerHTML, quindi senza questa guardia
+  // ogni render aggiungerebbe un nuovo listener (azioni eseguite più volte / toggle "bloccato").
   if (!root.dataset.delegated) {
     root.dataset.delegated = '1';
 
@@ -1047,6 +1365,7 @@ function bindDashboardEvents(root) {
       if (headerRow) toggleProject(headerRow.dataset.projId);
     });
 
+    // Accessibilità da tastiera: Invio/Spazio sulle intestazioni progetto
     root.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
       if (e.target.closest('[data-action]')) return;
@@ -1079,6 +1398,9 @@ function handleDashboardAction(action, id) {
   }
 }
 
+/* ---------------------------------------------------------------------
+   CRONOMETRO / WORK MONITORING (Precision Updates)
+--------------------------------------------------------------------- */
 function buildStopwatchWidgetHTML() {
   if (!state.activeTimer) return '';
   const p = state.projects.find(x => x.id === state.activeTimer.projectId);
@@ -1200,8 +1522,7 @@ async function stopAndSaveTimer() {
         projectId,
         spec,
         date: date || todayIso(),
-        hours,
-        paymentStatus: 'unpaid'
+        hours
       };
       
       await dbPut('entries', newEntry);
@@ -1233,6 +1554,10 @@ async function discardTimer() {
   });
 }
 
+/* ---------------------------------------------------------------------
+   HIGH-PERFORMANCE TARGETED TIMER WRITER
+   Aggiorna direttamente i nodi interessati senza toccare il DOM circostante.
+--------------------------------------------------------------------- */
 let _lastTickTime = 0;
 function updateTimerUI() {
   if (!state.activeTimer) {
@@ -1273,8 +1598,10 @@ function updateTimerUI() {
   }
 }
 
+// Precision clock cycle
 setInterval(updateTimerUI, 500);
 
+/* Gestione risparmio energetico se la pagina non è visibile */
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === 'visible') {
     updateTimerUI();
@@ -1282,14 +1609,13 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ---------------------------------------------------------------------
-   GESTIONE PROGETTI & CRUD MANUALE COMPLETATO
+   PROJECTS & CRUD DELLE SESSIONI
 --------------------------------------------------------------------- */
-function addProject(preSelectedClientId = null) {
-  if (preSelectedClientId && typeof preSelectedClientId !== 'string') preSelectedClientId = null;
+function addProject(preClientId) {
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
   
   const clientOptions = state.clients.map(c => 
-    `<option value="${c.id}" ${preSelectedClientId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`
+    `<option value="${c.id}" ${preClientId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`
   ).join('');
 
   openModal({
@@ -1302,7 +1628,7 @@ function addProject(preSelectedClientId = null) {
       <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
 
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
-      <select id="f-client-select" class="field mb-3" ${preSelectedClientId ? 'disabled' : ''}>
+      <select id="f-client-select" class="field mb-3">
         <option value="">-- Nessun Cliente Associato --</option>
         ${clientOptions}
         <option value="__NEW__" class="text-accent font-bold">+ Crea Nuovo Cliente…</option>
@@ -1329,7 +1655,7 @@ function addProject(preSelectedClientId = null) {
       const name = $('#f-name', card).value.trim();
       if (!name) { showError(card, 'Nome progetto obbligatorio.'); return false; }
       const customRate = $('#f-rate', card).value;
-      const selectVal = preSelectedClientId ? preSelectedClientId : $('#f-client-select', card).value;
+      const selectVal = $('#f-client-select', card).value;
 
       let clientId = null;
       if (selectVal === '__NEW__') {
@@ -1363,7 +1689,7 @@ function addProject(preSelectedClientId = null) {
       await dbPut('projects', p);
       state.projects.push(p);
       state.expanded.add(p.id);
-      setView('dashboard');
+      render();
       cloudPush();
       toast('Progetto configurato con successo');
     }
@@ -1451,179 +1777,122 @@ function renameProject(id) {
   });
 }
 
-async function deleteProject(projectId) {
-  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
-  const p = state.projects.find(x => x.id === projectId);
-  if (!p) return;
-
-  const associatedEntries = state.entries.filter(x => x.projectId === projectId);
-  let warningHTML = `<p class="text-[14px]">Rimuovere definitivamente il progetto <span class="font-bold">"${esc(p.name)}"</span>?</p>`;
-  if (associatedEntries.length > 0) {
-    warningHTML += `<p class="text-[13px] text-red-500 bg-red-500/10 rounded-lg p-3 mt-3 font-semibold">⚠️ Attenzione: verranno rimosse anche tutte le <span class="font-extrabold">${associatedEntries.length} sessioni di lavoro</span> associate!</p>`;
-  }
-
-  openModal({
-    title: 'Eliminare Progetto?',
-    danger: true,
-    bodyHTML: warningHTML,
-    confirmText: 'Elimina Progetto',
-    onConfirm: async () => {
-      await dbDel('projects', projectId);
-      state.projects = state.projects.filter(x => x.id !== projectId);
-
-      for (const entry of associatedEntries) {
-        await dbDel('entries', entry.id);
-      }
-      state.entries = state.entries.filter(x => x.projectId !== projectId);
-
-      renderDashboard();
-      cloudPush();
-      toast('Progetto e sessioni collegate rimossi');
-    }
-  });
-}
-
 /* ---------------------------------------------------------------------
-   CRUD COMPLETO PER SESSIONI DI LAVORO (ENTRIES)
+   SESSIONI: aggiunta manuale, modifica, eliminazione
 --------------------------------------------------------------------- */
-async function addEntry(projectId) {
+const entryFieldsHTML = (e) => `
+  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione attività</label>
+  <input id="f-spec" class="field mb-3" placeholder="Es. Sviluppo modulo pagamenti" value="${e ? esc(e.spec || '') : ''}" />
+  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+  <input id="f-date" type="date" class="field mb-3" value="${e && e.date ? esc(e.date) : todayIso()}" />
+  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore lavorate</label>
+  <input id="f-hours" type="number" min="0" step="0.25" class="field" placeholder="Es. 2.5" value="${e && e.hours != null ? e.hours : ''}" />`;
+
+function addEntry(projectId) {
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
   const p = state.projects.find(x => x.id === projectId);
   if (!p) return;
-
   openModal({
-    title: 'Aggiungi Sessione Manuale',
-    bodyHTML: `
-      <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Registra manualmente ore per il progetto: <span class="font-bold text-ink dark:text-white">${esc(p.name)}</span>.</p>
-      <div class="space-y-3">
-        <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione Attività</label>
-          <input id="fe-spec" class="field" placeholder="Es. Sviluppo UI, consulenza Skype" />
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
-            <input id="fe-date" type="date" class="field" value="${todayIso()}" />
-          </div>
-          <div>
-            <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore impiegate</label>
-            <input id="fe-hours" type="number" min="0.05" step="0.05" class="field" placeholder="Es. 2.5" />
-          </div>
-        </div>
-      </div>
-    `,
-    confirmText: 'Registra Ore',
+    title: 'Aggiungi Sessione',
+    bodyHTML: `<p class="text-[12px] text-ink-faint mb-3">Progetto: <span class="font-bold text-ink dark:text-zinc-200">${esc(p.name)}</span></p>${entryFieldsHTML(null)}`,
+    confirmText: 'Aggiungi Sessione',
     onConfirm: async (card) => {
-      const spec = $('#fe-spec', card).value.trim();
-      const date = $('#fe-date', card).value;
-      const hours = Number($('#fe-hours', card).value);
-
-      if (!spec) { showError(card, 'Specificare la descrizione dell\'attività.'); return false; }
-      if (!date) { showError(card, 'Selezionare una data valida.'); return false; }
-      if (isNaN(hours) || hours <= 0) { showError(card, 'Specificare un numero di ore maggiore di 0.'); return false; }
-
-      const newEntry = {
+      const hours = Number($('#f-hours', card).value);
+      if (hours <= 0 || isNaN(hours)) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
+      const entry = {
         id: genId(),
         projectId,
-        spec,
-        date,
-        hours,
-        paymentStatus: 'unpaid'
+        spec: $('#f-spec', card).value.trim() || 'Attività generica',
+        date: $('#f-date', card).value || todayIso(),
+        hours
       };
-
-      await dbPut('entries', newEntry);
-      state.entries.push(newEntry);
+      await dbPut('entries', entry);
+      state.entries.push(entry);
       state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      state.expanded.add(projectId);
       renderDashboard();
       cloudPush();
-      toast('Sessione registrata manualmente');
+      toast('Sessione aggiunta');
     }
   });
 }
 
-async function editEntry(entryId) {
+function editEntry(id) {
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
-  const e = state.entries.find(x => x.id === entryId);
+  const e = state.entries.find(x => x.id === id);
   if (!e) return;
   const p = state.projects.find(x => x.id === e.projectId);
-  const pName = p ? p.name : 'Progetto sconosciuto';
-
   openModal({
-    title: 'Modifica Sessione di Lavoro',
-    bodyHTML: `
-      <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Modifica riga per il progetto: <span class="font-bold text-ink dark:text-white">${esc(pName)}</span>.</p>
-      <div class="space-y-3">
-        <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione Attività</label>
-          <input id="fe-spec" class="field" value="${esc(e.spec)}" />
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
-            <input id="fe-date" type="date" class="field" value="${e.date}" />
-          </div>
-          <div>
-            <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore</label>
-            <input id="fe-hours" type="number" min="0.05" step="0.05" class="field" value="${e.hours}" />
-          </div>
-        </div>
-        <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Stato di Pagamento</label>
-          <select id="fe-paystatus" class="field">
-            <option value="unpaid" ${e.paymentStatus === 'unpaid' || !e.paymentStatus ? 'selected' : ''}>Da Pagare</option>
-            <option value="advance" ${e.paymentStatus === 'advance' ? 'selected' : ''}>Acconto</option>
-            <option value="paid" ${e.paymentStatus === 'paid' ? 'selected' : ''}>Pagata</option>
-          </select>
-        </div>
-      </div>
-    `,
-    confirmText: 'Salva Sessione',
+    title: 'Modifica Sessione',
+    bodyHTML: `${p ? `<p class="text-[12px] text-ink-faint mb-3">Progetto: <span class="font-bold text-ink dark:text-zinc-200">${esc(p.name)}</span></p>` : ''}${entryFieldsHTML(e)}`,
+    confirmText: 'Salva Modifiche',
     onConfirm: async (card) => {
-      const spec = $('#fe-spec', card).value.trim();
-      const date = $('#fe-date', card).value;
-      const hours = Number($('#fe-hours', card).value);
-      const payStatus = $('#fe-paystatus', card).value;
-
-      if (!spec) { showError(card, 'Specificare la descrizione dell\'attività.'); return false; }
-      if (!date) { showError(card, 'Selezionare una data valida.'); return false; }
-      if (isNaN(hours) || hours <= 0) { showError(card, 'Specificare un numero di ore maggiore di 0.'); return false; }
-
-      e.spec = spec;
-      e.date = date;
+      const hours = Number($('#f-hours', card).value);
+      if (hours <= 0 || isNaN(hours)) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
+      e.spec = $('#f-spec', card).value.trim() || 'Attività generica';
+      e.date = $('#f-date', card).value || todayIso();
       e.hours = hours;
-      e.paymentStatus = payStatus;
-
-      await dbPut('entries', e);
+      await dbPut('entries', e); // updatedAt ritimbrato automaticamente
       state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
       renderDashboard();
       cloudPush();
-      toast('Sessione aggiornata correttamente');
+      toast('Sessione aggiornata');
     }
   });
 }
 
-async function deleteEntry(entryId) {
+function deleteEntry(id) {
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
-  const e = state.entries.find(x => x.id === entryId);
+  const e = state.entries.find(x => x.id === id);
   if (!e) return;
-
   openModal({
-    title: 'Eliminare questa sessione?',
+    title: 'Eliminare la sessione?',
     danger: true,
-    bodyHTML: `<p class="text-[14px]">Rimuovere definitivamente la sessione <span class="font-bold">"${esc(e.spec)}"</span> del ${esc(dateIt(e.date))}? Questa operazione è irreversibile.</p>`,
+    bodyHTML: `<p class="text-[14px]">Rimuovere la sessione <span class="font-bold">${esc(e.spec || 'senza descrizione')}</span> del ${esc(dateIt(e.date))} (${esc(hrs(e.hours))})? L'operazione non è reversibile.</p>`,
     confirmText: 'Elimina Sessione',
     onConfirm: async () => {
-      await dbDel('entries', entryId);
-      state.entries = state.entries.filter(x => x.id !== entryId);
+      await dbDel('entries', id);
+      state.entries = state.entries.filter(x => x.id !== id);
       renderDashboard();
-      cloudPush();
-      toast('Sessione rimossa');
+      cloudPush(); // il push diff propaga l'eliminazione al cloud
+      toast('Sessione eliminata');
     }
   });
 }
 
 /* ---------------------------------------------------------------------
-   GESTIONE CLIENTI & ASSOCIAZIONE RAPIDA
+   PROGETTI: eliminazione (con relative sessioni)
+--------------------------------------------------------------------- */
+function deleteProject(id) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  const related = state.entries.filter(e => e.projectId === id);
+  openModal({
+    title: 'Eliminare il progetto?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Eliminare <span class="font-bold">${esc(p.name)}</span>${related.length ? ` insieme alle sue <span class="font-bold text-[#ff3b30]">${related.length} sessioni</span>` : ''}? L'operazione non è reversibile.</p>`,
+    confirmText: 'Elimina Progetto',
+    onConfirm: async () => {
+      for (const e of related) await dbDel('entries', e.id);
+      await dbDel('projects', id);
+      state.entries = state.entries.filter(e => e.projectId !== id);
+      state.projects = state.projects.filter(x => x.id !== id);
+      state.expanded.delete(id);
+      // Se il cronometro attivo apparteneva a questo progetto, fermalo.
+      if (state.activeTimer && state.activeTimer.projectId === id) {
+        await dbDel('timer', 'current');
+        state.activeTimer = null;
+      }
+      renderDashboard();
+      cloudPush();
+      toast('Progetto eliminato');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   GESTIONE COMPONENTI ANAGRAFICA CLIENTI
 --------------------------------------------------------------------- */
 function renderClients() {
   const root = $('#view-clients');
@@ -1652,7 +1921,8 @@ function renderClients() {
         <button id="btn-add-client" class="text-[14px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
           Nuovo Cliente
-        </button>` : ''}
+        </button>
+      ` : ''}
     </div>
     ${listHTML}`;
 
@@ -1682,7 +1952,8 @@ function clientCardHTML(c) {
               <button data-client-action="delete" data-id="${c.id}" class="w-8 h-8 rounded-full hover:bg-red-500/10 flex items-center justify-center text-ink-faint hover:text-red-500 transition-soft" title="Elimina">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
               </button>
-            </div>` : ''}
+            </div>
+          ` : ''}
         </div>
         <div class="mt-2 space-y-1 text-[12px] text-ink-soft dark:text-zinc-400 font-medium">
           ${c.vatCode ? `<div><span class="text-ink-faint">P.IVA / CF:</span> ${esc(c.vatCode)}</div>` : ''}
@@ -1695,10 +1966,10 @@ function clientCardHTML(c) {
         <div>Totale: <span class="text-accent font-extrabold">${eur(totalBilled)} (${hrs(totalClientHours)})</span></div>
       </div>
       ${editable ? `
-        <button data-client-action="new-project" data-id="${c.id}" class="mt-3 w-full py-1.5 text-center bg-gray-100 dark:bg-zinc-800 hover:bg-accent/10 dark:hover:bg-accent/20 hover:text-accent rounded-lg text-[12px] font-bold transition-soft no-print flex items-center justify-center gap-1">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-          Nuovo Progetto per Cliente
-        </button>` : ''}
+      <button data-client-action="new-project" data-id="${c.id}" class="no-print mt-3 w-full text-[12px] font-bold text-accent hover:text-white border border-accent/30 hover:bg-accent rounded-full py-1.5 transition-soft flex items-center justify-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+        Nuovo progetto per questo cliente
+      </button>` : ''}
     </div>`;
 }
 
@@ -1792,7 +2063,7 @@ function deleteClient(id) {
 }
 
 /* ---------------------------------------------------------------------
-   GESTIONE NOTA DI PAGAMENTO CON ICONE IN STILE APPLE
+   AGGIORNAMENTO NOTA DI PAGAMENTO RELAZIONALE
 --------------------------------------------------------------------- */
 function allEntriesFlat() {
   const projectMap = new Map(state.projects.map(p => [p.id, p]));
@@ -1814,29 +2085,194 @@ function allEntriesFlat() {
     .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.project.localeCompare(b.project));
 }
 
+/* ---------------------------------------------------------------------
+   PAGAMENTI: registro acconti/saldi agganciato al contesto di fatturazione
+--------------------------------------------------------------------- */
+// Il contesto è ricavato dai filtri attivi (progetto + finestra temporale).
+// "Mese corrente" viene risolto al mese concreto, così l'associazione dei
+// pagamenti resta stabile anche cambiando mese.
+function paymentContext() {
+  const f = state.filters;
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const monthRange = (y, m) => {
+    const mm = String(m + 1).padStart(2, '0');
+    const last = String(new Date(y, m + 1, 0).getDate()).padStart(2, '0');
+    return { start: `${y}-${mm}-01`, end: `${y}-${mm}-${last}`, label: `Mese ${mm}/${y}` };
+  };
+
+  let start = '', end = '', label = 'Tutto lo storico';
+  if (f.period === 'current-month') {
+    const r = monthRange(year, month); start = r.start; end = r.end; label = r.label;
+  } else if (f.period === 'last-month') {
+    const pm = month === 0 ? 11 : month - 1;
+    const py = month === 0 ? year - 1 : year;
+    const r = monthRange(py, pm); start = r.start; end = r.end; label = r.label;
+  } else if (f.period === 'current-year') {
+    start = `${year}-01-01`; end = `${year}-12-31`; label = `Anno ${year}`;
+  } else if (f.period === 'custom') {
+    start = f.startDate || ''; end = f.endDate || '';
+    label = (start || end) ? `${start ? dateIt(start) : '…'} – ${end ? dateIt(end) : '…'}` : 'Intervallo personalizzato';
+  }
+  const projPart = f.project === 'all' ? 'all' : f.project;
+  const projLabel = f.project === 'all' ? 'Tutti i progetti' : ((state.projects.find(p => p.id === f.project) || {}).name || 'Progetto');
+  return { key: `proj:${projPart}|range:${start || '*'}..${end || '*'}`, label, projLabel };
+}
+
+// Numerazione progressiva delle note: registro per contesto salvato nelle
+// impostazioni (sincronizzate). Ogni numero è progressivo per anno.
+function noteRegistry() {
+  if (!state.settings.noteRegistry || typeof state.settings.noteRegistry !== 'object') {
+    state.settings.noteRegistry = {};
+  }
+  return state.settings.noteRegistry;
+}
+function noteNumFmt(n, year) { return `${String(n).padStart(4, '0')}/${year}`; }
+function getNote(ctxKey) { return noteRegistry()[ctxKey] || null; }
+function nextNoteSeq(year) {
+  const reg = noteRegistry();
+  let max = 0;
+  for (const k in reg) { if (reg[k] && reg[k].year === year && reg[k].n > max) max = reg[k].n; }
+  return max + 1;
+}
+async function assignNoteNumber(ctx) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const reg = noteRegistry();
+  if (reg[ctx.key]) return; // già emessa
+  const year = Number(todayIso().slice(0, 4));
+  reg[ctx.key] = { n: nextNoteSeq(year), year, issuedAt: todayIso(), label: `${ctx.projLabel} · ${ctx.label}` };
+  await dbPut('settings', state.settings);
+  renderPayment();
+  cloudPush();
+  toast(`Nota N. ${noteNumFmt(reg[ctx.key].n, year)} emessa`);
+}
+function revokeNoteNumber(ctxKey) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const reg = noteRegistry();
+  const note = reg[ctxKey];
+  if (!note) return;
+  openModal({
+    title: 'Annullare la numerazione?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Revocare il numero <span class="font-bold">${esc(noteNumFmt(note.n, note.year))}</span> da questa nota? Il numero non verrà riassegnato automaticamente e potrebbe creare un buco nella sequenza.</p>`,
+    confirmText: 'Annulla numero',
+    onConfirm: async () => {
+      delete reg[ctxKey];
+      await dbPut('settings', state.settings);
+      renderPayment();
+      cloudPush();
+      toast('Numerazione annullata');
+    }
+  });
+}
+
+function paymentsForContext(key) {
+  return state.payments
+    .filter(p => p.ctx === key)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+function openPaymentModal(ctx, residual, total) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const suggested = residual > 0 ? residual : total;
+  openModal({
+    title: 'Registra Pagamento',
+    bodyHTML: `
+      <p class="text-[12px] text-ink-faint mb-3">${esc(ctx.projLabel)} · ${esc(ctx.label)}</p>
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo ricevuto (€)</label>
+      <input id="fp-amount" type="number" min="0" step="0.01" class="field mb-1" value="${suggested > 0 ? suggested.toFixed(2) : ''}" />
+      <p class="text-[11px] text-ink-faint mb-3">Residuo attuale: <span class="font-bold">${esc(eur(Math.max(0, residual)))}</span> su ${esc(eur(total))}</p>
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di versamento</label>
+      <div class="seg gap-0 text-[13px] font-semibold mb-3" id="fp-type">
+        <button type="button" data-type="acconto" aria-selected="true" class="py-2">Acconto</button>
+        <button type="button" data-type="saldo" aria-selected="false" class="py-2">Saldo</button>
+      </div>
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data versamento</label>
+      <input id="fp-date" type="date" class="field mb-3" value="${todayIso()}" />
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nota (opzionale)</label>
+      <input id="fp-note" class="field" placeholder="Es. Bonifico, acconto 30%" />
+    `,
+    onMount: (card) => {
+      const seg = $('#fp-type', card);
+      const amount = $('#fp-amount', card);
+      const setType = (t) => $$('button[data-type]', seg).forEach(x => x.setAttribute('aria-selected', String(x.dataset.type === t)));
+      if (seg) $$('button[data-type]', seg).forEach(b => b.addEventListener('click', () => setType(b.dataset.type)));
+      // Suggerisce automaticamente "Saldo" se l'importo copre l'intero residuo.
+      if (amount) amount.addEventListener('input', () => {
+        const v = Number(amount.value) || 0;
+        setType(residual > 0 && v >= residual - 0.005 ? 'saldo' : 'acconto');
+      });
+    },
+    confirmText: 'Registra Pagamento',
+    onConfirm: async (card) => {
+      const amount = Number($('#fp-amount', card).value);
+      if (!(amount > 0)) { showError(card, 'Specificare un importo maggiore di 0.'); return false; }
+      const typeBtn = $('#fp-type button[aria-selected="true"]', card);
+      const pay = {
+        id: genId(),
+        ctx: ctx.key,
+        ctxLabel: `${ctx.projLabel} · ${ctx.label}`,
+        amount,
+        type: typeBtn ? typeBtn.dataset.type : 'acconto',
+        date: $('#fp-date', card).value || todayIso(),
+        note: $('#fp-note', card).value.trim(),
+        total
+      };
+      await dbPut('payments', pay);
+      state.payments.push(pay);
+      renderPayment();
+      cloudPush();
+      toast('Pagamento registrato');
+    }
+  });
+}
+
+function settleResidual(ctx, residual, total) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  if (!(residual > 0)) return;
+  const pay = {
+    id: genId(), ctx: ctx.key, ctxLabel: `${ctx.projLabel} · ${ctx.label}`,
+    amount: Math.round(residual * 100) / 100, type: 'saldo',
+    date: todayIso(), note: 'Saldo residuo', total
+  };
+  dbPut('payments', pay).then(() => {
+    state.payments.push(pay);
+    renderPayment();
+    cloudPush();
+    toast('Residuo saldato');
+  });
+}
+
+function deletePayment(id) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const pay = state.payments.find(p => p.id === id);
+  if (!pay) return;
+  openModal({
+    title: 'Eliminare il pagamento?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Rimuovere il pagamento di <span class="font-bold">${esc(eur(pay.amount))}</span> del ${esc(dateIt(pay.date))}? L'operazione non è reversibile.</p>`,
+    confirmText: 'Elimina',
+    onConfirm: async () => {
+      await dbDel('payments', id);
+      state.payments = state.payments.filter(p => p.id !== id);
+      renderPayment();
+      cloudPush();
+      toast('Pagamento eliminato');
+    }
+  });
+}
+
 function renderPayment() {
   const root = $('#view-payment');
   if (!root) return;
   const s = state.settings;
-  const editable = canEdit();
   
-  const flat = allEntriesFlat().filter(entry => {
-    if (state.filters.project !== 'all' && entry.projectId !== state.filters.project) return false;
-    
-    if (state.filters.period === 'current-month') {
-      const d = new Date();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()).padStart(2, '0');
-      const isoStart = `${d.getFullYear()}-${mm}-01`;
-      const isoEnd = `${d.getFullYear()}-${mm}-${dd}`;
-      return entry.date >= isoStart && entry.date <= isoEnd;
-    }
-    if (state.filters.period === 'custom') {
-      if (state.filters.startDate && entry.date < state.filters.startDate) return false;
-      if (state.filters.endDate && entry.date > state.filters.endDate) return false;
-    }
-    return true;
-  });
+  // La nota usa lo STESSO filtro canonico della Dashboard (progetto + tutti i
+  // periodi: mese corrente/precedente, anno corrente, intervallo personalizzato),
+  // così totali, stato pagamento e numerazione restano coerenti con la vista.
+  const filteredIds = new Set(getFilteredEntries().map(e => e.id));
+  const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
 
   const tH = flat.reduce((acc, current) => acc + Number(current.hours || 0), 0);
   const baseCompensation = flat.reduce((acc, entry) => acc + (Number(entry.hours || 0) * Number(entry.rate || 0)), 0);
@@ -1851,51 +2287,92 @@ function renderPayment() {
   const wTaxValue = (subtotalWithTax * wTaxPercentage) / 100;
   const grandTotal = subtotalWithTax + vatValue - wTaxValue;
 
-  let statusBadgeHTML = '';
-  const statesInEntries = new Set(flat.map(e => e.paymentStatus || 'unpaid'));
-  
-  if (flat.length > 0) {
-    if (statesInEntries.has('unpaid') && !statesInEntries.has('paid') && !statesInEntries.has('advance')) {
-      statusBadgeHTML = `
-        <span class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-          <svg class="w-3.5 h-3.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-          Da Pagare
-        </span>`;
-    } else if (statesInEntries.has('paid') && !statesInEntries.has('unpaid') && !statesInEntries.has('advance')) {
-      statusBadgeHTML = `
-        <span class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-          <svg class="w-3.5 h-3.5 shrink-0 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-          Pagata
-        </span>`;
-    } else if (statesInEntries.has('advance')) {
-      statusBadgeHTML = `
-        <span class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-          <svg class="w-3.5 h-3.5 shrink-0 text-blue-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12h10V2z"></path><circle cx="12" cy="12" r="10" stroke-dasharray="3 3"></circle></svg>
-          Acconto
-        </span>`;
-    } else {
-      statusBadgeHTML = `
-        <span class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-gray-500/10 text-gray-600 dark:text-gray-400 border border-gray-500/20">
-          <svg class="w-3.5 h-3.5 shrink-0 text-gray-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-dasharray="4 4"></circle><path d="M8 12h8"></path></svg>
-          Stato Misto
-        </span>`;
-    }
-  }
+  // Stato pagamento per il contesto di fatturazione corrente.
+  const ctx = paymentContext();
+  const note = getNote(ctx.key);
+  // Marca da bollo: 2 € sulle note esenti IVA sopra 77,47 € (se abilitata).
+  const stampDuty = (vatPercentage === 0 && s.stampDuty && grandTotal > 77.47) ? 2 : 0;
+  const payable = grandTotal + stampDuty;
+  const ctxPayments = paymentsForContext(ctx.key);
+  const paid = ctxPayments.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  const residual = payable - paid;
+  const hasTotal = payable > 0.005;
+  const payStatus = !hasTotal ? null : (residual <= 0.005 && paid > 0 ? 'paid' : (paid > 0 ? 'acconto' : 'due'));
+  const statusMap = {
+    paid:    { t: 'PAGATA',            cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+    acconto: { t: 'ACCONTO RICEVUTO',  cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' },
+    due:     { t: 'DA SALDARE',        cls: 'bg-black/5 dark:bg-white/5 text-ink-soft dark:text-zinc-400 border-black/10 dark:border-white/10' }
+  };
+  const statusBadge = payStatus
+    ? `<span class="inline-block mt-2 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${statusMap[payStatus].cls}">${statusMap[payStatus].t}</span>`
+    : '';
+
+  const payTypeChip = (t) => t === 'saldo'
+    ? '<span class="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Saldo</span>'
+    : '<span class="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">Acconto</span>';
+  const paymentsListHTML = ctxPayments.length
+    ? ctxPayments.map(p => `
+        <div class="flex items-center gap-2 py-2 border-t border-black/5 dark:border-white/5 text-[12px]">
+          <div class="flex-1 min-w-0">
+            <span class="font-bold text-ink dark:text-zinc-200 tabular-nums">${esc(eur(p.amount))}</span>
+            <span class="ml-1.5">${payTypeChip(p.type)}</span>
+            <span class="ml-1.5 text-ink-faint">${esc(dateIt(p.date))}</span>
+            ${p.note ? `<div class="text-ink-faint mt-0.5 truncate">${esc(p.note)}</div>` : ''}
+          </div>
+          ${canManagePayment() ? `<button data-pay-action="del" data-id="${esc(p.id)}" title="Elimina pagamento" class="w-7 h-7 rounded-full hover:bg-red-500/10 text-ink-faint hover:text-red-500 flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>` : ''}
+        </div>`).join('')
+    : `<p class="text-[12px] text-ink-faint py-2">Nessun pagamento registrato per questo contesto.</p>`;
+
+  const paymentsCard = `
+    <div class="no-print bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm mb-5">
+      <div class="flex items-center justify-between gap-2 mb-0.5">
+        <h3 class="text-[13px] font-bold text-ink dark:text-zinc-200">Stato pagamento</h3>
+        ${payStatus ? `<span class="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${statusMap[payStatus].cls}">${statusMap[payStatus].t}</span>` : ''}
+      </div>
+      <p class="text-[11px] text-ink-soft dark:text-zinc-400 mb-3">${esc(ctx.projLabel)} · ${esc(ctx.label)}</p>
+      <div class="flex items-center justify-between gap-2 mb-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] px-3 py-2">
+        <div class="text-[11px] text-ink-soft dark:text-zinc-400">
+          ${note
+            ? `Numero nota: <span class="font-extrabold text-ink dark:text-white tabular-nums">N. ${esc(noteNumFmt(note.n, note.year))}</span> <span class="text-ink-faint">· emessa il ${esc(dateIt(note.issuedAt))}</span>`
+            : `<span class="text-ink-faint">Nessun numero progressivo assegnato a questa nota.</span>`}
+        </div>
+        ${canManagePayment()
+          ? (note
+              ? `<button id="btn-revoke-note" class="text-[11px] font-bold text-ink-faint hover:text-red-500 transition-soft shrink-0">Annulla</button>`
+              : `<button id="btn-assign-note" class="text-[11px] font-bold text-accent hover:text-accent-hover transition-soft shrink-0 whitespace-nowrap">Assegna numero</button>`)
+          : ''}
+      </div>
+      <div class="grid grid-cols-3 gap-2 text-center mb-3">
+        <div class="rounded-xl bg-black/[0.02] dark:bg-white/[0.02] py-2">
+          <div class="text-[10px] uppercase tracking-wide text-ink-faint font-bold">Totale</div>
+          <div class="text-[14px] font-extrabold text-ink dark:text-white tabular-nums">${esc(eur(payable))}</div>
+        </div>
+        <div class="rounded-xl bg-black/[0.02] dark:bg-white/[0.02] py-2">
+          <div class="text-[10px] uppercase tracking-wide text-ink-faint font-bold">Versato</div>
+          <div class="text-[14px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">${esc(eur(paid))}</div>
+        </div>
+        <div class="rounded-xl bg-black/[0.02] dark:bg-white/[0.02] py-2">
+          <div class="text-[10px] uppercase tracking-wide text-ink-faint font-bold">Residuo</div>
+          <div class="text-[14px] font-extrabold ${residual > 0.005 ? 'text-accent' : 'text-emerald-600 dark:text-emerald-400'} tabular-nums">${esc(eur(Math.max(0, residual)))}</div>
+        </div>
+      </div>
+      ${canManagePayment()
+        ? `<div class="flex flex-wrap gap-2">
+             <button id="btn-add-payment" ${hasTotal ? '' : 'disabled'} class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed text-white text-[12px] font-bold transition-soft">+ Registra pagamento</button>
+             ${hasTotal && residual > 0.005 ? `<button id="btn-settle-payment" class="px-4 py-1.5 rounded-full border border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 text-[12px] font-bold transition-soft">Salda residuo (${esc(eur(residual))})</button>` : ''}
+           </div>`
+        : `<p class="text-[11px] text-ink-faint">Accesso in sola lettura: la registrazione dei pagamenti non è disponibile.</p>`}
+      <div class="mt-2">${paymentsListHTML}</div>
+    </div>`;
 
   const rows = flat.length
-    ? flat.map(e => {
-        let entryStatusIndicator = '';
-        if (e.paymentStatus === 'paid') entryStatusIndicator = ' <span class="text-[10px] text-emerald-500 font-bold">(Saldato)</span>';
-        if (e.paymentStatus === 'advance') entryStatusIndicator = ' <span class="text-[10px] text-blue-500 font-bold">(Acconto)</span>';
-        
-        return `
+    ? flat.map(e => `
         <tr class="border-b border-black/5 dark:border-white/5">
           <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400 whitespace-nowrap font-medium">${esc(dateIt(e.date))}</td>
-          <td class="py-2.5 pr-3 text-ink dark:text-zinc-200 font-semibold">${esc(e.project)} <span class="text-[10px] text-ink-faint tabular-nums">(${eur(e.rate)}/h)</span>${entryStatusIndicator}</td>
+          <td class="py-2.5 pr-3 text-ink dark:text-zinc-200 font-semibold">${esc(e.project)} <span class="text-[10px] text-ink-faint tabular-nums">(${eur(e.rate)}/h)</span></td>
           <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400 font-medium">${esc(e.spec)}</td>
           <td class="py-2.5 text-right tabular-nums text-ink dark:text-zinc-200 font-bold">${esc(hrs(e.hours))}</td>
-        </tr>`;
-      }).join('')
+        </tr>`).join('')
     : `<tr><td colspan="4" class="py-6 text-center text-ink-faint font-medium">Nessuna voce corrisponde ai filtri di ricerca impostati.</td></tr>`;
 
   const clientNames = [...new Set(flat.map(x => x.clientName).filter(Boolean))];
@@ -1913,76 +2390,38 @@ function renderPayment() {
     clientDisplay = `<strong>Fatturazione Multi-cliente</strong><br><span class="text-[11px] text-ink-soft dark:text-zinc-400 font-medium">Ripartita su ${clientNames.length} posizioni</span>`;
   }
 
-  window.__updateActiveNoteStatus = async (newStatus) => {
-    if (!flat.length) return;
-    sync.applyingRemote = true;
-    try {
-      for (const entry of flat) {
-        entry.paymentStatus = newStatus;
-        const originalEntry = state.entries.find(x => x.id === entry.id);
-        if (originalEntry) {
-          originalEntry.paymentStatus = newStatus;
-          await dbPut('entries', originalEntry);
-        }
-      }
-      toast(`Stato nota aggiornato a: ${newStatus.toUpperCase()}`);
-      cloudPush();
-    } finally {
-      sync.applyingRemote = false;
-      renderPayment();
-    }
-  };
-
   root.innerHTML = `
     <div class="no-print bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm mb-5">
-      <div class="flex flex-col md:flex-row justify-between md:items-center gap-4">
+      <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
         <div>
-          <h3 class="text-[13px] font-bold text-ink dark:text-zinc-200">Filtri di fatturazione ed Azioni</h3>
-          <p class="text-[11px] text-ink-soft dark:text-zinc-400 mt-0.5">Gestisci lo stato amministrativo delle sessioni visualizzate.</p>
+          <h3 class="text-[13px] font-bold text-ink dark:text-zinc-200">Filtri di fatturazione attivi</h3>
+          <p class="text-[11px] text-ink-soft dark:text-zinc-400 mt-0.5">La nota mostrerà solo le voci filtrate nella Dashboard.</p>
         </div>
-        
-        ${editable && flat.length > 0 ? `
-          <div class="flex flex-wrap items-center gap-1.5 bg-gray-100 dark:bg-zinc-900 p-1.5 rounded-xl border border-black/5 dark:border-white/5">
-            <button onclick="window.__updateActiveNoteStatus('unpaid')" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg hover:bg-white dark:hover:bg-zinc-800 transition-soft text-amber-600 flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-              Da Pagare
-            </button>
-            <button onclick="window.__updateActiveNoteStatus('advance')" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg hover:bg-white dark:hover:bg-zinc-800 transition-soft text-blue-500 flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12h10V2z"></path><circle cx="12" cy="12" r="10" stroke-dasharray="3 3"></circle></svg>
-              Acconto
-            </button>
-            <button onclick="window.__updateActiveNoteStatus('paid')" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg hover:bg-white dark:hover:bg-zinc-800 transition-soft text-emerald-500 flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              Pagata
-            </button>
-          </div>` : ''}
-
-        <div class="flex items-center gap-2 self-end md:self-auto">
-          <button id="btn-sync-dashboard-filters" class="no-print px-3.5 py-1.5 rounded-full border border-black/15 dark:border-white/10 text-[12px] font-bold transition-soft flex items-center gap-1.5 hover:bg-black/5 dark:hover:bg-white/5">
-            <svg class="w-3.5 h-3.5 text-ink-soft dark:text-zinc-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
-            Filtra ora
+        <div class="flex items-center gap-2 no-print">
+          <button id="btn-sync-dashboard-filters" type="button" aria-label="Filtra le voci della nota" title="Filtra voci" class="w-9 h-9 rounded-full border border-black/10 dark:border-white/10 text-ink-soft dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center">
+            <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
           </button>
-          <button id="btn-print" type="button" class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[12px] font-bold transition-soft flex items-center gap-1.5 shadow-sm">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-            Stampa PDF
+          <button id="btn-print" type="button" aria-label="Stampa la nota in PDF" title="Stampa PDF" class="w-9 h-9 rounded-full bg-accent hover:bg-accent-hover text-white transition-soft flex items-center justify-center shadow-sm">
+            <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><path d="M7 18H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2"/><rect x="7" y="14" width="10" height="7" rx="1"/></svg>
           </button>
         </div>
       </div>
     </div>
 
+    ${paymentsCard}
+
     <div class="print-area bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder shadow-sm p-4 sm:p-8 dark:text-zinc-100 overflow-x-auto">
       
       <div class="flex flex-col sm:flex-row justify-between items-start gap-4 pb-5 border-b border-black/10 dark:border-white/10">
         <div>
-          <div class="flex items-center gap-3">
-            <div class="text-[20px] font-extrabold tracking-tight text-accent">NOTA DI PAGAMENTO</div>
-            <div>${statusBadgeHTML}</div>
-          </div>
+          <div class="text-[20px] font-extrabold tracking-tight text-accent">NOTA DI PAGAMENTO</div>
           <div class="text-[11px] font-bold text-ink-faint dark:text-zinc-500 uppercase tracking-wider mt-2">Mittente:</div>
           <div class="text-[14px] font-bold text-ink dark:text-white">${esc(s.holderName || '—')}</div>
         </div>
         <div class="text-left sm:text-right text-[12px] text-ink-soft dark:text-zinc-400">
-          <div>Emissione: <strong class="text-ink dark:text-white">${esc(dateIt(todayIso()))}</strong></div>
+          ${note ? `<div class="text-[14px] font-extrabold text-ink dark:text-white tabular-nums">Nota N. ${esc(noteNumFmt(note.n, note.year))}</div>` : ''}
+          <div>Emissione: <strong class="text-ink dark:text-white">${esc(dateIt(note ? note.issuedAt : todayIso()))}</strong></div>
+          ${statusBadge}
           <div class="mt-3 text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0">
             <div class="text-[10px] font-bold uppercase tracking-wide text-ink-faint">Destinatario Cliente:</div>
             <div class="text-ink dark:text-white mt-1 leading-normal">${clientDisplay}</div>
@@ -2004,6 +2443,8 @@ function renderPayment() {
         </table>
       </div>
 
+      ${s.causale ? `<div class="mt-5 text-[12px] text-ink-soft dark:text-zinc-400"><span class="text-[10px] uppercase tracking-wide text-ink-faint font-bold">Causale:</span> <span class="font-semibold text-ink dark:text-zinc-200">${esc(s.causale)}</span></div>` : ''}
+
       <div class="mt-6 flex justify-end print-keep">
         <div class="w-full sm:w-80 text-[13px] space-y-2">
           <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Prestazioni Orarie</span><span class="tabular-nums">${esc(eur(baseCompensation))}</span></div>
@@ -2013,23 +2454,37 @@ function renderPayment() {
             <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold">
               <span>Rivalsa Previdenziale (${taxPercentage}%)</span>
               <span class="tabular-nums">${esc(eur(taxValue))}</span>
-            </div>` : ''}
+            </div>
+          ` : ''}
 
           ${vatPercentage > 0 ? `
             <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold">
               <span>I.V.A. (${vatPercentage}%)</span>
               <span class="tabular-nums">${esc(eur(vatValue))}</span>
-            </div>` : ''}
+            </div>
+          ` : ''}
 
           ${wTaxPercentage > 0 ? `
             <div class="flex justify-between text-red-500 font-semibold">
               <span>Ritenuta d'Acconto (${wTaxPercentage}%)</span>
               <span class="tabular-nums">-${esc(eur(wTaxValue))}</span>
-            </div>` : ''}
+            </div>
+          ` : ''}
 
-          <div class="flex justify-between pt-2.5 mt-1 border-t border-black/10 dark:border-white/10 text-[16px] font-extrabold">
-            <span>Netto a pagare</span><span class="tabular-nums text-accent">${esc(eur(grandTotal))}</span>
-          </div>
+          ${stampDuty > 0 ? `
+            <div class="flex justify-between pt-2.5 mt-1 border-t border-black/10 dark:border-white/10 text-ink-soft dark:text-zinc-400 font-semibold"><span>Subtotale</span><span class="tabular-nums">${esc(eur(grandTotal))}</span></div>
+            <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Marca da bollo</span><span class="tabular-nums">${esc(eur(stampDuty))}</span></div>
+            <div class="flex justify-between text-[16px] font-extrabold"><span>Totale documento</span><span class="tabular-nums text-accent">${esc(eur(payable))}</span></div>
+          ` : `
+            <div class="flex justify-between pt-2.5 mt-1 border-t border-black/10 dark:border-white/10 text-[16px] font-extrabold">
+              <span>Netto a pagare</span><span class="tabular-nums text-accent">${esc(eur(payable))}</span>
+            </div>
+          `}
+
+          ${paid > 0 ? `
+            <div class="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold pt-1.5"><span>Già versato</span><span class="tabular-nums">-${esc(eur(paid))}</span></div>
+            <div class="flex justify-between text-[15px] font-extrabold ${residual <= 0.005 ? 'text-emerald-600 dark:text-emerald-400' : 'text-ink dark:text-white'}"><span>${residual <= 0.005 ? 'Saldato' : 'Residuo da pagare'}</span><span class="tabular-nums">${esc(eur(Math.max(0, residual)))}</span></div>
+          ` : ''}
         </div>
       </div>
 
@@ -2067,7 +2522,19 @@ function renderPayment() {
     </div>`;
 
   const prtBtn = $('#btn-print');
-  if (prtBtn) prtBtn.addEventListener('click', () => printNote());
+  if (prtBtn) prtBtn.addEventListener('click', () => exportNotePDF());
+
+  const addPayBtn = $('#btn-add-payment');
+  if (addPayBtn) addPayBtn.addEventListener('click', () => openPaymentModal(ctx, residual, payable));
+  const settleBtn = $('#btn-settle-payment');
+  if (settleBtn) settleBtn.addEventListener('click', () => settleResidual(ctx, residual, payable));
+  const assignNoteBtn = $('#btn-assign-note');
+  if (assignNoteBtn) assignNoteBtn.addEventListener('click', () => assignNoteNumber(ctx));
+  const revokeNoteBtn = $('#btn-revoke-note');
+  if (revokeNoteBtn) revokeNoteBtn.addEventListener('click', () => revokeNoteNumber(ctx.key));
+  root.querySelectorAll('[data-pay-action="del"]').forEach(btn => {
+    btn.addEventListener('click', () => deletePayment(btn.dataset.id));
+  });
 
   const syncFiltBtn = $('#btn-sync-dashboard-filters');
   if (syncFiltBtn) syncFiltBtn.addEventListener('click', () => setView('dashboard'));
@@ -2087,13 +2554,7 @@ function renderPayment() {
   const ibanCopy = $('#iban-copy');
   if (ibanCopy && s.iban) {
     ibanCopy.addEventListener('click', () => {
-      const el = document.createElement('textarea');
-      el.value = s.iban.replace(/\s+/g, '');
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
-      toast('IBAN copiato negli appunti');
+      copyText(s.iban.replace(/\s+/g, '')).then(() => toast('IBAN copiato negli appunti'));
     });
   }
 
@@ -2106,6 +2567,9 @@ function renderPayment() {
   }
 }
 
+/* ---------------------------------------------------------------------
+   IMPOSTAZIONI E DATI FISCALI AVANZATI
+--------------------------------------------------------------------- */
 function renderSettings() {
   const root = $('#view-settings');
   if (!root) return;
@@ -2230,6 +2694,18 @@ function renderSettings() {
       </div>
     </div>
 
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4 space-y-4">
+      <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Dati del Documento</div>
+      <div>
+        <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Causale predefinita</label>
+        <input id="s-causale" class="field" value="${esc(s.causale || '')}" placeholder="Es. Prestazione professionale" />
+      </div>
+      <label class="flex items-start gap-3 cursor-pointer select-none">
+        <input id="s-stampduty" type="checkbox" ${s.stampDuty ? 'checked' : ''} class="mt-0.5 w-4 h-4 accent-accent" />
+        <span class="text-[13px] text-ink-soft dark:text-zinc-300 leading-snug">Applica <strong class="text-ink dark:text-white">marca da bollo 2,00 €</strong> sulle note esenti IVA con importo superiore a 77,47 € (regime forfettario / prestazione occasionale).</span>
+      </label>
+    </div>
+
     ${paymentPanel}
 
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4">
@@ -2273,15 +2749,60 @@ function renderSettings() {
   $('#exp-csv').addEventListener('click', exportCSV);
   $('#exp-json').addEventListener('click', exportJSON);
   
-  const pImpJson = $('#imp-json');
-  const pImpFile = $('#imp-file');
-  if (pImpJson && pImpFile) {
-    pImpJson.addEventListener('click', () => pImpFile.click());
-    pImpFile.addEventListener('change', importJSON);
+  const impJson = $('#imp-json');
+  const impFile = $('#imp-file');
+  if (impJson && impFile) {
+    impJson.addEventListener('click', () => impFile.click());
+    impFile.addEventListener('change', importJSON);
   }
   bindAccountPanel();
 }
 
+async function saveSettings() {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const rate = Number($('#s-rate').value);
+  const extra = Number($('#s-extra').value);
+  const tax = Number($('#s-tax').value);
+  const vat = Number($('#s-vat').value);
+  const withholding = Number($('#s-withholding').value);
+  const theme = $('#s-theme').value;
+
+  if (isNaN(rate) || rate < 0) { toast('Tariffa oraria non corretta', 'error'); return; }
+  if (isNaN(extra) || extra < 0) { toast('Valore extra forfettario non valido', 'error'); return; }
+  if (isNaN(tax) || tax < 0 || tax > 100) { toast('Rivalsa fiscale non corretta', 'error'); return; }
+  if (isNaN(vat) || vat < 0 || vat > 100) { toast('IVA non valida', 'error'); return; }
+  if (isNaN(withholding) || withholding < 0 || withholding > 100) { toast('Ritenuta d\'acconto non corretta', 'error'); return; }
+
+  const holderEl = $('#s-holder'), ibanEl = $('#s-iban'), bicEl = $('#s-bic');
+  const causaleEl = $('#s-causale'), stampDutyEl = $('#s-stampduty');
+
+  // Spread dei settings esistenti per non perdere campi non presenti nel form
+  // (es. noteRegistry della numerazione note).
+  state.settings = {
+    ...state.settings,
+    id: 'app',
+    hourlyRate: rate,
+    extra: extra,
+    taxRate: tax,
+    vatRate: vat,
+    withholdingTaxRate: withholding,
+    holderName: holderEl ? holderEl.value.trim() : (state.settings.holderName || ''),
+    iban: ibanEl ? ibanEl.value.trim() : (state.settings.iban || ''),
+    bic: bicEl ? bicEl.value.trim() : (state.settings.bic || ''),
+    causale: causaleEl ? causaleEl.value.trim() : (state.settings.causale || ''),
+    stampDuty: stampDutyEl ? !!stampDutyEl.checked : !!state.settings.stampDuty,
+    theme: theme
+  };
+  
+  await dbPut('settings', state.settings);
+  syncTheme(theme);
+  cloudPush();
+  toast('Configurazione applicata con successo');
+}
+
+/* ---------------------------------------------------------------------
+   EXPORTS CORE
+--------------------------------------------------------------------- */
 function download(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -2322,7 +2843,8 @@ function exportJSON() {
     settings: state.settings,
     projects: state.projects,
     entries: state.entries,
-    clients: state.clients
+    clients: state.clients,
+    payments: state.payments
   };
   download(`hourflow_db_${todayIso()}.json`, JSON.stringify(dump, null, 2), 'application/json');
   toast('Archivio esportato in formato JSON');
@@ -2362,7 +2884,10 @@ function importJSON(ev) {
           await dbClear('projects');
           await dbClear('entries');
           await dbClear('clients');
+          await dbClear('payments');
           await dbPut('settings', d.settings);
+          // Import difensivo: scarta record non-oggetto e garantisce un id,
+          // così un singolo record corrotto non interrompe l'intero ripristino.
           for (const p of d.projects) {
             if (p && typeof p === 'object') { if (!p.id) p.id = genId(); await dbPut('projects', p); }
           }
@@ -2371,6 +2896,9 @@ function importJSON(ev) {
           }
           for (const c of (d.clients || [])) {
             if (c && typeof c === 'object') { if (!c.id) c.id = genId(); await dbPut('clients', c); }
+          }
+          for (const pay of (d.payments || [])) {
+            if (pay && typeof pay === 'object') { if (!pay.id) pay.id = genId(); await dbPut('payments', pay); }
           }
           await loadState();
           state.expanded.clear();
@@ -2387,75 +2915,220 @@ function importJSON(ev) {
 }
 
 /* ---------------------------------------------------------------------
-   GUIDE VIEW (Manuale Integrato Con Icone Apple-Style)
+   REPORT MENSILI
 --------------------------------------------------------------------- */
-function guideSection(iconSVG, title, bodyHTML) {
+const MONTH_NAMES = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+function monthLabel(key) {
+  const [y, mm] = key.split('-');
+  return `${MONTH_NAMES[Number(mm) - 1] || mm} ${y}`;
+}
+
+function monthlyAggregate() {
+  const flat = allEntriesFlat();
+  const map = new Map();
+  for (const e of flat) {
+    const key = String(e.date || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(key)) continue;
+    if (!map.has(key)) map.set(key, { hours: 0, comp: 0, count: 0 });
+    const m = map.get(key);
+    m.hours += Number(e.hours) || 0;
+    m.comp += (Number(e.hours) || 0) * (Number(e.rate) || 0);
+    m.count += 1;
+  }
+  return map;
+}
+
+function renderReports() {
+  const root = $('#view-report');
+  if (!root) return;
+  const map = monthlyAggregate();
+  const months = [...map.keys()].sort().reverse();
+
+  if (!months.length) {
+    root.innerHTML = `
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-4">Report Mensili</h2>
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
+        <div class="text-3xl mb-3">📅</div>
+        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Ancora nessuna sessione da aggregare.</p>
+      </div>`;
+    return;
+  }
+
+  const totHours = months.reduce((a, k) => a + map.get(k).hours, 0);
+  const totComp = months.reduce((a, k) => a + map.get(k).comp, 0);
+  const maxComp = Math.max(...months.map(k => map.get(k).comp), 1);
+  const avgComp = totComp / months.length;
+
+  const rows = months.map(k => {
+    const m = map.get(k);
+    const pct = Math.max(2, Math.round((m.comp / maxComp) * 100));
+    return `
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm">
+        <div class="flex items-baseline justify-between gap-3">
+          <div class="text-[15px] font-bold tracking-tight dark:text-white">${esc(monthLabel(k))}</div>
+          <div class="text-[15px] font-extrabold text-accent tabular-nums">${esc(eur(m.comp))}</div>
+        </div>
+        <div class="mt-2 h-2 rounded-full bg-black/[0.05] dark:bg-white/[0.06] overflow-hidden">
+          <div class="h-full rounded-full bg-accent" style="width:${pct}%"></div>
+        </div>
+        <div class="mt-2 text-[11px] text-ink-faint dark:text-zinc-500 font-medium flex items-center gap-2 flex-wrap">
+          <span>${m.count} session${m.count === 1 ? 'e' : 'i'}</span><span>·</span>
+          <span class="font-bold text-ink-soft dark:text-zinc-400">${esc(hrs(m.hours))}</span><span>·</span>
+          <span>media ${esc(eur(m.hours > 0 ? m.comp / m.hours : 0))}/h</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="flex items-center justify-between mb-4 gap-3">
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">Report Mensili</h2>
+      <button id="rep-export" class="text-[13px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"/><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/></svg>
+        Esporta CSV
+      </button>
+    </div>
+
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      ${summaryCard('Mesi attivi', String(months.length), 'text-ink dark:text-white')}
+      ${summaryCard('Ore totali', hrs(totHours), 'text-ink dark:text-white')}
+      ${summaryCard('Media mensile', eur(avgComp), 'text-accent')}
+    </div>
+
+    <div class="space-y-3">${rows}</div>
+
+    <div class="mt-6 bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm flex items-center justify-between">
+      <span class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">Totale complessivo</span>
+      <span class="text-[16px] font-extrabold text-accent tabular-nums">${esc(eur(totComp))}</span>
+    </div>`;
+
+  const exp = $('#rep-export', root);
+  if (exp) exp.addEventListener('click', exportMonthlyCSV);
+}
+
+function exportMonthlyCSV() {
+  const map = monthlyAggregate();
+  const months = [...map.keys()].sort().reverse();
+  if (!months.length) { toast('Nessun dato da esportare', 'error'); return; }
+  const sep = ';';
+  const header = ['Mese', 'Sessioni', 'Ore', 'Compensazione'].join(sep);
+  const lines = months.map(k => {
+    const m = map.get(k);
+    return [monthLabel(k), m.count, String(m.hours).replace('.', ','), String(m.comp.toFixed(2)).replace('.', ',')].join(sep);
+  });
+  download(`hourflow_report_mensile_${todayIso()}.csv`, '\uFEFF' + [header, ...lines].join('\r\n'), 'text/csv;charset=utf-8');
+  toast('Report mensile esportato');
+}
+
+/* ---------------------------------------------------------------------
+   GUIDE VIEW (Manuale Integrato)
+--------------------------------------------------------------------- */
+// Badge icona in stile iOS: quadrato arrotondato a tinta unita con glifo bianco.
+function gIcon(bg, glyph) {
+  return `<span class="w-7 h-7 shrink-0 rounded-[7px] ${bg} flex items-center justify-center shadow-sm">` +
+         `<svg class="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
+}
+
+function guideSection(icon, title, bodyHTML) {
+  // Converte **grassetto** in <strong> (la sintassi markdown non sarebbe interpretata).
+  const body = String(bodyHTML).replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-ink dark:text-zinc-200">$1</strong>');
   return `
     <details class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-sm group">
-      <summary class="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft">
-        <div class="flex items-center gap-3">
-          <div class="text-accent shrink-0">
-            ${iconSVG}
-          </div>
-          <span class="text-[15px] font-bold tracking-tight dark:text-zinc-100">${esc(title)}</span>
-        </div>
-        <span class="text-ink-faint dark:text-zinc-600 text-[13px] transition-transform group-open:rotate-90">▶</span>
+      <summary class="cursor-pointer select-none list-none px-5 py-4 flex items-center gap-3 hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft">
+        ${icon}
+        <span class="flex-1 text-[15px] font-bold tracking-tight dark:text-zinc-100">${esc(title)}</span>
+        <svg class="w-4 h-4 shrink-0 text-ink-faint dark:text-zinc-600 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
       </summary>
-      <div class="px-5 pb-5 pt-1 text-[13px] text-ink-soft dark:text-zinc-400 leading-relaxed space-y-2.5 border-t border-black/[0.02] dark:border-white/[0.02]">${bodyHTML}</div>
+      <div class="px-5 pb-5 pt-1 text-[13px] text-ink-soft dark:text-zinc-400 leading-relaxed space-y-2.5 border-t border-black/[0.02] dark:border-white/[0.02]">${body}</div>
     </details>`;
 }
 
 function renderGuide() {
   const root = $('#view-guide');
   if (!root) return;
-
-  const svgChart = `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v5.25c0 .621-.504 1.125-1.125 1.125h-2.25A1.125 1.125 0 013 18.375v-5.25zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125v-9.75zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v14.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>`;
-  const svgStopwatch = `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"></circle><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4l2.5 1.5M12 2v3M10 2h4"/></svg>`;
-  const svgReceipt = `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`;
-  const svgWallet = `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" ry="2"></rect><line x1="3" y1="10" x2="21" y2="10"></line><circle cx="17" cy="15" r="1"></circle></svg>`;
-
   root.innerHTML = `
     <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-2">Manuale di Utilizzo Professionale</h2>
     <p class="text-[14px] text-ink-soft dark:text-zinc-400 mb-4 leading-relaxed font-medium">Tutte le potenzialità di HourFlow spiegate nel dettaglio.</p>
     <div class="space-y-3">
 
-      ${guideSection(svgChart, 'Dashboard & Filtri Avanzati', `
+      ${guideSection(gIcon('bg-blue-500', '<path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/>'), 'Dashboard & Filtri Avanzati', `
         <p>La **Dashboard** è la tua centrale di controllo operativa. Da qui puoi tenere sotto controllo le ore totali registrate, la tariffa di base e la compensazione finanziaria calcolata.</p>
-        <p>Grazie ai nuovi **Filtri di Visualizzazione**, puoi segmentare istantaneamente il tuo lavoro per:</p>
+        <p>Grazie ai **Filtri di Visualizzazione**, puoi segmentare istantaneamente il tuo lavoro per:</p>
         <ul class="list-disc pl-5 space-y-1">
           <li>**Periodo Temporale:** Visualizza solo le ore del mese in corso, del mese precedente, dell'anno corrente o imposta un intervallo di date "dal / al" personalizzato.</li>
           <li>**Filtro Progetto:** Isola un singolo progetto per analizzarne i guadagni e la ripartizione finanziaria.</li>
         </ul>
         <p>Tutti gli indicatori, il grafico analitico e la Nota di pagamento si aggiornano in tempo reale rispettando fedelmente i filtri impostati.</p>`)}
 
-      ${guideSection(svgStopwatch, 'Cronometro di precisione real-time', `
-        <p>Avvia una sessione di lavoro in tempo reale toccando il pulsante **⏱** situato su qualsiasi riga di progetto.</p>
+      ${guideSection(gIcon('bg-orange-500', '<circle cx="12" cy="13" r="8"/><path d="M12 13V9"/><path d="M9 2h6"/><path d="M18.5 6.5l1.2-1.2"/>'), 'Cronometro di precisione real-time', `
+        <p>Avvia una sessione di lavoro in tempo reale toccando il pulsante **cronometro** situato su qualsiasi riga di progetto.</p>
         <p>Il cronometro di HourFlow è stato progettato per massimizzare le prestazioni del dispositivo:</p>
         <ul class="list-disc pl-5 space-y-1">
           <li>**Risparmio Batteria:** Quando la scheda del browser è ridotta a icona o in background, il motore riduce i consumi ricalcolando il tempo al millisecondo solo quando ritorni visibile.</li>
           <li>**Uscita Sicura:** Anche se rinfreschi la pagina o spegni il browser, il cronometro riprenderà la conta dall'istante esatto di avvio.</li>
         </ul>`)}
 
-      ${guideSection(svgReceipt, 'Nota Pro, Rivalsa, IVA e Ritenuta', `
+      ${guideSection(gIcon('bg-indigo-500', '<path d="M3 7a2 2 0 012-2h3.5l2 2H19a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>'), 'Progetti & Sessioni', `
+        <p>Crea un nuovo incarico con **+ Nuovo progetto**: assegni un nome, una **tariffa oraria dedicata** (se la lasci vuota usa quella globale) e il **cliente** dall'anagrafica.</p>
+        <p>Per ogni progetto puoi:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Aggiungere sessioni** manualmente — data, descrizione dell'attività e ore — oltre che tramite il cronometro.</li>
+          <li>**Modificare** nome e tariffa con l'icona matita, oppure **eliminare** il progetto e le singole sessioni con l'icona cestino.</li>
+          <li>**Espandere** la riga del progetto per consultare l'elenco completo delle sessioni registrate, con ore e importi.</li>
+        </ul>`)}
+
+      ${guideSection(gIcon('bg-emerald-500', '<path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/>'), 'Nota Pro, Rivalsa, IVA e Ritenuta', `
         <p>La sezione **Nota Pro** compila istantaneamente una fattura/ricevuta intestata al cliente selezionato.</p>
         <p>Dalle **Impostazioni** puoi calibrare il calcolo fiscale a seconda della tua posizione contributiva:</p>
         <ul class="list-disc pl-5 space-y-1">
           <li>**Rivalsa INPS:** Solitamente impostata al 4% per i professionisti iscritti alla Gestione Separata. Viene calcolata sull'imponibile base.</li>
           <li>**I.V.A.:** Imposta l'aliquota di legge (es. 22%). Viene calcolata sulla somma di imponibile base e rivalsa.</li>
           <li>**Ritenuta d'Acconto:** Imposta la ritenuta (es. 20%). Viene calcolata sulla somma di imponibile base e rivalsa e sottratta automaticamente per determinare il Netto a Pagare.</li>
+        </ul>
+        <p>Sopra la nota trovi il riquadro **Stato pagamento**: puoi assegnare un **numero progressivo** alla nota (sequenziale per anno, es. N. 0007/2026, riportato anche in stampa) e registrare un **acconto** (versamento parziale) o un **saldo**, con importo, data e nota. La nota mostra **Totale**, **Versato** e **Residuo** e passa automaticamente da **Da saldare** ad **Acconto ricevuto** fino a **Pagata**; lo stato compare anche in stampa. Numero e pagamenti sono agganciati al contesto di fatturazione corrente (cliente/progetto e periodo selezionati nei filtri).</p>
+        <p>Dalle **Impostazioni** puoi definire una **Causale predefinita** (riportata in nota) e attivare la **marca da bollo da 2,00 €**, applicata automaticamente alle note esenti IVA sopra 77,47 €.</p>`)}
+
+      ${guideSection(gIcon('bg-teal-500', '<path d="M3 4h18v4H3z"/><path d="M3 8v12h18V8"/><path d="M8 12v5"/><path d="M12 11v6"/><path d="M16 13v4"/>'), 'Report Mensili', `
+        <p>La sezione **Report** aggrega automaticamente il lavoro **mese per mese**: ore, numero di sessioni, compensazione e tariffa media oraria, con una barra di confronto tra i mesi e i totali complessivi.</p>
+        <p>Con **Esporta CSV** scarichi il riepilogo mensile pronto per Excel o Numbers, utile per dichiarazioni e consuntivi.</p>`)}
+
+      ${guideSection(gIcon('bg-violet-500', '<circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0111 0"/><path d="M16 5.5a3 3 0 010 5.4"/><path d="M18.5 20a5.5 5.5 0 00-3-4.9"/>'), 'Anagrafica Clienti', `
+        <p>La sezione **Clienti** raccoglie le anagrafiche complete dei tuoi committenti: denominazione, **P.IVA / Codice Fiscale**, indirizzo della sede, email e telefono.</p>
+        <p>Ogni cliente può essere associato a uno o più progetti e i suoi dati vengono richiamati automaticamente nell'intestazione della **Nota Pro**. Per proteggere lo storico di fatturazione, un cliente collegato a progetti attivi non è eliminabile finché non lo scolleghi.</p>`)}
+
+      ${guideSection(gIcon('bg-sky-500', '<path d="M7 18A4 4 0 016.5 10a5.5 5.5 0 0110.7 1.3A3.4 3.4 0 0117 18z"/><path d="M9.5 14.5L12 12l2.5 2.5"/><path d="M12 12v6"/>'), 'Account & Sincronizzazione Cloud', `
+        <p>Con l'accesso tramite **email e password** i tuoi dati vengono sincronizzati in tempo reale su tutti i dispositivi, con allineamento per **singola voce**: progetti, sessioni e clienti restano coerenti anche lavorando offline su più dispositivi, senza sovrascritture accidentali.</p>
+        <p>Sono previsti due livelli di accesso:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Proprietario:** pieno controllo su modifiche, tariffe e coordinate di pagamento.</li>
+          <li>**Cliente:** consultazione protetta della nota, in **sola lettura**, senza poter modificare o eliminare nulla.</li>
+        </ul>
+        <p>Il badge in alto a destra indica in ogni momento se sei **Sincronizzato**, in sincronia o non connesso.</p>`)}
+
+      ${guideSection(gIcon('bg-zinc-500', '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="white" stroke="none"/>'), "Privacy dell'IBAN", `
+        <p>A schermo l'IBAN è mostrato **mascherato** — prime e ultime 4 cifre visibili — per proteggerlo da sguardi indiscreti. Con **Mostra** lo riveli temporaneamente, con **Copia** lo trasferisci negli appunti.</p>
+        <p>In **stampa** l'IBAN viene sempre riportato per intero e raggruppato in blocchi da 4, così la nota resta valida per il pagamento. Per gli account **Cliente** le coordinate restano riservate.</p>`)}
+
+      ${guideSection(gIcon('bg-rose-500', '<path d="M7 9V3h10v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v6H7z"/><circle cx="16.5" cy="12" r="0.8" fill="white" stroke="none"/>'), 'Stampa & Esportazione PDF', `
+        <p>Dalla **Nota Pro**, il pulsante **Stampa PDF** apre il dialogo di stampa con un'impaginazione A4 pulita, ottimizzata anche per **iPhone e Safari**.</p>
+        <p>Su iOS, per salvare in PDF scegli "Salva su File" dal pannello di condivisione. Se compaiono URL e data ai bordi del foglio, disattiva "Intestazioni e piè di pagina" dalle opzioni di stampa di Safari: li aggiunge il browser, non HourFlow.</p>`)}
+
+      ${guideSection(gIcon('bg-amber-500', '<path d="M4 14v3.5A1.5 1.5 0 005.5 19h13a1.5 1.5 0 001.5-1.5V14"/><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/>'), 'Backup & Ripristino', `
+        <p>Dalle **Impostazioni** proteggi e trasferisci il tuo archivio:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Esporta Database JSON:** un backup completo — progetti, sessioni, clienti e impostazioni — da conservare o ripristinare.</li>
+          <li>**Esporta Tabella CSV:** l'elenco delle sessioni in formato foglio di calcolo, pronto per Excel o Numbers.</li>
+          <li>**Ripristino:** reimporta un file JSON per riportare l'archivio a uno stato salvato. L'import è difensivo: un singolo record corrotto non interrompe l'intera operazione.</li>
         </ul>`)}
 
-      ${guideSection(svgWallet, 'Nuova Tracciabilità Pagamenti & Scorciatoie', `
-        <p>Le nuove funzionalità introdotte ottimizzano il flusso di lavoro finanziario dell'utente:</p>
-        <ul class="list-disc pl-5 space-y-1">
-          <li>**Stati delle Note:** Ogni sessione può essere contrassegnata massivamente o singolarmente come *Da Pagare*, *Acconto* o *Pagata*.</li>
-          <li>**Esclusione Ore Saldate:** Attivando l'opzione *"Fatturabile: escludi le ore già saldate"* nel widget filtri, escluderai automaticamente le ore pagate per concentrarti solo su quello che devi ancora riscuotere.</li>
-          <li>**Associazione Rapida:** All'interno della Rubrica Clienti puoi avviare istantaneamente la creazione di un progetto dedicato, pre-collegando direttamente l'anagrafica selezionata.</li>
-        </ul>`)}
+      ${guideSection(gIcon('bg-slate-700', '<path d="M20 14.5A8 8 0 119.5 4a6.5 6.5 0 0010.5 10.5z"/>'), 'Tema & Aspetto', `
+        <p>L'icona **luna / sole** in alto inverte all'istante il tema **chiaro** o **scuro**. La preferenza viene salvata e sincronizzata; è disponibile anche la modalità **automatica**, che segue le impostazioni di sistema del dispositivo.</p>`)}
 
     </div>`;
 }
 
+/* ---------------------------------------------------------------------
+   GESTIONE EVENTI ACCOUNT PANEL (BINDACOUNTOPANEL)
+--------------------------------------------------------------------- */
 function bindAccountPanel() {
   if (!sync.enabled) return;
   if (sync.user) {
@@ -2505,8 +3178,13 @@ function bindAccountPanel() {
   if (passEl) passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = readCreds(); if (guard(c, false)) doSignIn(c.email, c.password); } });
 }
 
+/* ---------------------------------------------------------------------
+   CLOUD ENGINE (Firebase & Real-time Integration)
+--------------------------------------------------------------------- */
+// Schema cloud: 2 = sottocollezioni per-record (users/{uid}/{store}/{id}).
+// 1 = vecchio documento unico con array (migrato automaticamente al primo accesso).
 const CLOUD_SCHEMA = 2;
-const SYNC_STORES = ['projects', 'entries', 'clients'];
+const SYNC_STORES = ['projects', 'entries', 'clients', 'payments'];
 
 const sync = {
   enabled: false,
@@ -2516,14 +3194,19 @@ const sync = {
   user: null,
   role: null,        
   pendingRole: null, 
-  unsub: null,          
-  colUnsubs: [],        
+  unsub: null,          // listener documento padre (settings/ruolo)
+  colUnsubs: [],        // listener delle sottocollezioni
   applyingRemote: false,
   pushTimer: null,
   reloadTimer: null,
   status: 'off',
-  server: { projects: new Map(), entries: new Map(), clients: new Map() },
-  hydrated: { projects: false, entries: false, clients: false },
+  // "Ombra" delle versioni note sul server: store -> Map(id -> updatedAt).
+  // Serve a calcolare il diff in push (cosa creare/aggiornare/eliminare).
+  server: { projects: new Map(), entries: new Map(), clients: new Map(), payments: new Map() },
+  // Idratazione: una sottocollezione e' "idratata" dopo il primo snapshot.
+  // Finche' non lo e', NON si propagano eliminazioni (evita di azzerare il
+  // server prima di aver letto cosa contiene).
+  hydrated: { projects: false, entries: false, clients: false, payments: false },
   serverSettingsAt: 0
 };
 
@@ -2550,6 +3233,7 @@ function userDocRef() {
   return sync.db.collection('users').doc(sync.user.uid);
 }
 
+// Riferimento alla sottocollezione per-record: users/{uid}/{store}
 function colRef(store) {
   if (!sync.user) return null;
   return sync.db.collection('users').doc(sync.user.uid).collection(store);
@@ -2570,7 +3254,7 @@ function updateSyncBadge() {
     signedout: { t: 'Non Connesso', c: 'bg-black/5 dark:bg-white/5 text-ink-soft', dot: '○' },
     syncing:   { t: 'In Sincronia…', c: 'bg-accent-soft text-accent', dot: '⟳' },
     synced:    { t: 'Sincronizzato', c: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', dot: '●' },
-    error:     { t: 'Errore cloud', c: 'bg-[#ff3b30]/10 text-[#ff3b30]', dot: '⚠️' },
+    error:     { t: 'Errore cloud', c: 'bg-[#ff3b30]/10 text-[#ff3b30]', dot: '⚠' },
     off:       { t: '', c: '', dot: '' }
   };
   const m = map[sync.status] || map.signedout;
@@ -2585,6 +3269,10 @@ function initSync() {
     firebase.initializeApp(window.FIREBASE_CONFIG);
     sync.auth = firebase.auth();
     sync.db = firebase.firestore();
+    // Safari/WebKit blocca il trasporto WebChannel di Firestore ("access control
+    // checks"). Forzare il long-polling (anziche' il solo auto-detect) e' la
+    // configurazione piu' robusta per Safari. Va impostato PRIMA di ogni altra
+    // operazione (enablePersistence, onSnapshot, ecc.).
     try { sync.db.settings({ experimentalForceLongPolling: true }); } catch (_) {}
     sync.enabled = true;
     sync.ready = true;
@@ -2612,6 +3300,7 @@ function onAuthChanged(user) {
   render();
 }
 
+// Svuota l'ombra del server e i flag di idratazione (al logout o cambio utente).
 function resetSyncShadow() {
   for (const s of SYNC_STORES) { sync.server[s] = new Map(); sync.hydrated[s] = false; }
   sync.serverSettingsAt = 0;
@@ -2623,13 +3312,13 @@ async function startCloudListener() {
   stopCloudListener();
   resetSyncShadow();
   try {
-    await initialHydrate();        
+    await initialHydrate();        // caricamento iniziale deterministico (one-shot .get)
   } catch (err) {
     setSyncStatus('error');
     toast(syncErrorMsg(err), 'error');
     return;
   }
-  attachRealtimeListeners();       
+  attachRealtimeListeners();       // merge per-record realtime sui cambiamenti successivi
   setSyncStatus('synced');
 }
 
@@ -2640,12 +3329,17 @@ function stopCloudListener() {
   clearTimeout(sync.reloadTimer);
 }
 
+// Caricamento iniziale deterministico via .get() (l'ordine d'arrivo tra documento
+// padre e sottocollezioni nei listener NON e' garantito, quindi non ci si appoggia
+// ad esso). Account inesistente -> push dello stato locale. Account esistente ->
+// il cloud e' autoritativo: si sostituiscono i record locali (inclusi i dati demo
+// di un'installazione nuova), coerentemente col comportamento storico.
 async function initialHydrate() {
   const snap = await userDocRef().get();
 
   if (!snap.exists) {
-    for (const s of SYNC_STORES) sync.hydrated[s] = true; 
-    await pushNow();                                       
+    for (const s of SYNC_STORES) sync.hydrated[s] = true; // niente sul cloud da leggere
+    await pushNow();                                       // carica lo stato locale
     return;
   }
 
@@ -2653,19 +3347,20 @@ async function initialHydrate() {
   if (data.accountRole === 'client' || data.accountRole === 'owner') sync.role = data.accountRole;
   else if (!sync.role) sync.role = 'owner';
 
+  // Migrazione una-tantum dal vecchio documento unico con array.
   if ((!data.schema || data.schema < CLOUD_SCHEMA) && hasLegacyArrays(data)) {
     await migrateLegacyDoc(data);
   }
 
   sync.applyingRemote = true;
   try {
-    await dbClear('projects'); await dbClear('entries'); await dbClear('clients');
+    await dbClear('projects'); await dbClear('entries'); await dbClear('clients'); await dbClear('payments');
     for (const store of SYNC_STORES) {
       const qs = await colRef(store).get();
       for (const doc of qs.docs) {
         const at = typeof doc.data().updatedAt === 'number' ? doc.data().updatedAt : 0;
         sync.server[store].set(doc.id, at);
-        await dbPut(store, { ...doc.data(), id: doc.id }); 
+        await dbPut(store, { ...doc.data(), id: doc.id }); // applyingRemote=true: updatedAt preservato
       }
       sync.hydrated[store] = true;
     }
@@ -2681,6 +3376,7 @@ async function initialHydrate() {
 }
 
 function attachRealtimeListeners() {
+  // Documento padre: ruolo + impostazioni in tempo reale.
   sync.unsub = userDocRef().onSnapshot(
     (snap) => {
       if (!snap.exists) return;
@@ -2689,6 +3385,7 @@ function attachRealtimeListeners() {
     },
     (err) => { setSyncStatus('error'); toast(syncErrorMsg(err), 'error'); }
   );
+  // Sottocollezioni record: merge per-record in tempo reale.
   for (const store of SYNC_STORES) {
     const unsub = colRef(store).onSnapshot(
       (qs) => handleColSnapshot(store, qs),
@@ -2698,6 +3395,8 @@ function attachRealtimeListeners() {
   }
 }
 
+// Documento padre in tempo reale: solo ruolo + impostazioni (oggetto singolo,
+// last-write-wins per timestamp). I record viaggiano nelle sottocollezioni.
 async function applyParentDoc(data) {
   if (!data) return;
   sync.applyingRemote = true;
@@ -2726,6 +3425,9 @@ function hasLegacyArrays(data) {
   return Array.isArray(data.projects) || Array.isArray(data.entries) || Array.isArray(data.clients);
 }
 
+// Migrazione: copia gli array del vecchio documento nelle sottocollezioni e
+// ripulisce il documento padre. Idempotente (gira solo finche' schema < CLOUD_SCHEMA).
+// Lo stato locale viene poi ripopolato da initialHydrate via .get().
 async function migrateLegacyDoc(data) {
   const ts = Date.now();
   const FieldValue = firebase.firestore.FieldValue;
@@ -2749,6 +3451,7 @@ async function migrateLegacyDoc(data) {
     }
   }
 
+  // Rimuove gli array legacy dal documento padre e segna lo schema nuovo.
   batch.set(userDocRef(), {
     schema: CLOUD_SCHEMA,
     projects: FieldValue.delete(),
@@ -2762,6 +3465,8 @@ async function migrateLegacyDoc(data) {
   toast('Sincronizzazione aggiornata al nuovo modello per-record.');
 }
 
+// Pull per-record: applica i cambiamenti remoti con confronto updatedAt.
+// Il remoto vince solo se non e' piu' vecchio del locale.
 function handleColSnapshot(store, qs) {
   sync.applyingRemote = true;
   const tasks = [];
@@ -2770,14 +3475,14 @@ function handleColSnapshot(store, qs) {
     const pending = chg.doc.metadata && chg.doc.metadata.hasPendingWrites;
     if (chg.type === 'removed') {
       sync.server[store].delete(id);
-      if (pending) return;                 
+      if (pending) return;                 // eco della nostra eliminazione
       tasks.push(removeRecordLocally(store, id));
       return;
     }
     const data = chg.doc.data() || {};
     const remoteAt = typeof data.updatedAt === 'number' ? data.updatedAt : 0;
     sync.server[store].set(id, remoteAt);
-    if (pending) return;                   
+    if (pending) return;                   // eco della nostra scrittura
     const local = state[store].find(x => x.id === id);
     if (!local || remoteAt > (local.updatedAt || 0)) {
       tasks.push(dbPut(store, { ...data, id }));
@@ -2795,6 +3500,7 @@ async function removeRecordLocally(store, id) {
   await dbDel(store, id);
 }
 
+// Ricarica lo stato e ridisegna, accorpando i molti snapshot del caricamento iniziale.
 function scheduleReload() {
   clearTimeout(sync.reloadTimer);
   sync.reloadTimer = setTimeout(async () => {
@@ -2803,12 +3509,15 @@ function scheduleReload() {
   }, 150);
 }
 
+// Push diff-based: documento padre (impostazioni/ruolo) + un upsert/delete per
+// ogni record cambiato rispetto all'ombra del server.
 async function pushNow() {
   if (!sync.user) return;
   setSyncStatus('syncing');
   try {
     const FieldValue = firebase.firestore.FieldValue;
 
+    // (1) Documento padre: impostazioni come oggetto singolo (LWW per timestamp).
     sync.serverSettingsAt = Date.now();
     await userDocRef().set({
       accountRole: sync.role || 'owner',
@@ -2818,11 +3527,13 @@ async function pushNow() {
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
 
+    // (2) Record: diff contro l'ombra del server (sync.server).
     for (const store of SYNC_STORES) {
       const seen = new Set();
       let batch = sync.db.batch(); let ops = 0;
       const commit = async () => { if (ops > 0) { await batch.commit(); batch = sync.db.batch(); ops = 0; } };
 
+      // Upsert: record assenti sul server o piu' recenti del server.
       for (const rec of state[store]) {
         if (!rec || !rec.id) continue;
         const id = String(rec.id);
@@ -2836,6 +3547,8 @@ async function pushNow() {
         }
       }
 
+      // Eliminazioni: presenti sul server ma non piu' in locale. Solo a
+      // sottocollezione idratata, per non cancellare dati non ancora letti.
       if (sync.hydrated[store]) {
         for (const id of Array.from(sync.server[store].keys())) {
           if (!seen.has(id)) {
@@ -2988,20 +3701,9 @@ function accountPanelHTML() {
     </div>`;
 }
 
-function getLocalStorageItem(key) {
-  try {
-    return (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(key) : null;
-  } catch (e) { return null; }
-}
-
-function setLocalStorageItem(key, value) {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem(key, value);
-    }
-  } catch (e) { console.warn("Impossibile salvare nel localStorage: ", e); }
-}
-
+/* ---------------------------------------------------------------------
+   BOOTSTRAP PROCEDURAL (Auto-Recovery & Setup)
+--------------------------------------------------------------------- */
 async function boot() {
   try {
     try { _db = await openDB(); } catch (dbErr) { initFallbackStorage(); }
@@ -3010,6 +3712,10 @@ async function boot() {
     await loadState();
     
     $$('#nav button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+    const navC = navScrollContainer();
+    if (navC) navC.addEventListener('scroll', updateNavFade, { passive: true });
+    window.addEventListener('resize', syncNavScroll);
+    syncNavScroll();
     
     const themeBtn = $('#theme-toggle');
     if (themeBtn) {
@@ -3023,8 +3729,10 @@ async function boot() {
     }
 
     syncTheme(state.settings.theme || 'auto');
+    bindAutoTheme();
     setView('dashboard');
     initSync();
+    registerServiceWorker();
     
     if (_useFallback) {
       setTimeout(() => { toast('Esecuzione locale protetta attiva.', 'warning'); }, 800);
@@ -3043,10 +3751,10 @@ async function boot() {
       { id: 'c3', name: 'Sony Fans', address: 'Piazza Duomo 3, Torino', vatCode: '', email: '', phone: '' }
     ];
     state.entries = [
-      { id: 'e1', projectId: 'p1', spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5, paymentStatus: 'unpaid' },
-      { id: 'e2', projectId: 'p2', spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5, paymentStatus: 'unpaid' },
-      { id: 'e3', projectId: 'p2', spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25, paymentStatus: 'unpaid' },
-      { id: 'e4', projectId: 'p3', spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75, paymentStatus: 'unpaid' }
+      { id: 'e1', projectId: 'p1', spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5 },
+      { id: 'e2', projectId: 'p2', spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5 },
+      { id: 'e3', projectId: 'p2', spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25 },
+      { id: 'e4', projectId: 'p3', spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75 }
     ];
     state.activeTimer = null;
     
