@@ -1083,7 +1083,22 @@ function scrollNavActiveIntoView() {
 }
 function syncNavScroll() { scrollNavActiveIntoView(); updateNavFade(); }
 
+// Viste riservate al Proprietario: un account Cliente non deve accedervi né
+// vederne il tab (l'anagrafica Clienti contiene dati di altri committenti).
+const OWNER_ONLY_VIEWS = ['clients'];
+
+// Nasconde/mostra i tab riservati in base al ruolo corrente.
+function applyRoleVisibility() {
+  const client = isClient();
+  OWNER_ONLY_VIEWS.forEach(v => {
+    const tab = $('#nav button[data-view="' + v + '"]');
+    if (tab) tab.classList.toggle('hidden', client);
+  });
+}
+
 function setView(view) {
+  // Blocco di sicurezza: un Cliente non può aprire viste riservate.
+  if (isClient() && OWNER_ONLY_VIEWS.indexOf(view) !== -1) view = 'dashboard';
   state.view = view;
   ['dashboard', 'payment', 'report', 'clients', 'settings', 'guide'].forEach(v => {
     const target = $('#view-' + v);
@@ -1096,6 +1111,9 @@ function setView(view) {
 }
 
 function render() {
+  // Se il ruolo Cliente arriva mentre si è su una vista riservata, si reindirizza.
+  if (isClient() && OWNER_ONLY_VIEWS.indexOf(state.view) !== -1) { setView('dashboard'); return; }
+  applyRoleVisibility();
   try {
     if (state.view === 'dashboard') renderDashboard();
     else if (state.view === 'payment') renderPayment();
