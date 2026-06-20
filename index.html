@@ -315,6 +315,7 @@ const DEFAULT_SETTINGS = {
   bic: 'NTSBITM1XXX',
   causale: 'Prestazione professionale',
   stampDuty: false,
+  clientProfile: { name: '', vat: '', address: '', email: '', phone: '' },
   theme: 'auto'
 };
 
@@ -2646,11 +2647,44 @@ function renderSettings() {
   const manage = canManagePayment();
 
   if (client) {
+    const cp = s.clientProfile || {};
     root.innerHTML = `
       <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-4">Profilo e Sicurezza</h2>
       ${accountPanelHTML()}
 
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-4">
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">I Miei Dati</div>
+          <p class="text-[12px] text-ink-soft dark:text-zinc-400 mt-1 leading-relaxed">Questi recapiti sono salvati nel tuo account e sincronizzati sui tuoi dispositivi.</p>
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Nome / Ragione sociale</label>
+          <input id="cp-name" class="field" value="${esc(cp.name || '')}" placeholder="Es. Mario Rossi / Acme S.r.l." />
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">P.IVA / Codice Fiscale</label>
+          <input id="cp-vat" class="field tabular-nums" value="${esc(cp.vat || '')}" placeholder="IT01234567890" />
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Indirizzo</label>
+          <input id="cp-address" class="field" value="${esc(cp.address || '')}" placeholder="Via, civico, CAP, città" />
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Email</label>
+            <input id="cp-email" type="email" autocomplete="email" class="field" value="${esc(cp.email || '')}" placeholder="nome@email.it" />
+          </div>
+          <div>
+            <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Telefono</label>
+            <input id="cp-phone" class="field" value="${esc(cp.phone || '')}" placeholder="+39 ..." />
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <button id="cp-save" class="px-5 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-bold transition-soft shadow-sm">Salva i miei dati</button>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-4 mt-4">
         <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Dati per i Versamenti (Sola Lettura)</div>
         <div>
           <div class="text-[11px] text-ink-faint font-semibold">Titolare Beneficiario</div>
@@ -2677,6 +2711,9 @@ function renderSettings() {
           <option value="dark" ${s.theme === 'dark' ? 'selected' : ''}>Tema Scuro</option>
         </select>
       </div>`;
+
+    const cpSave = $('#cp-save');
+    if (cpSave) cpSave.addEventListener('click', saveClientProfile);
 
     const rev = $('#s-iban-reveal');
     const scr = $('#s-iban-screen');
@@ -2866,6 +2903,32 @@ async function saveSettings() {
   syncTheme(theme);
   cloudPush();
   toast('Configurazione applicata con successo');
+}
+
+// Salvataggio del profilo personale del Cliente: sono i SUOI recapiti, archiviati
+// nel suo account e sincronizzati. Non passa dal gate canEdit() (che protegge i
+// dati del Proprietario): un Cliente può sempre gestire i propri dati.
+async function saveClientProfile() {
+  const val = (id) => { const el = $('#' + id); return el ? el.value.trim() : ''; };
+  const email = val('cp-email');
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('Formato email non valido', 'error'); return; }
+
+  // Spread per preservare ogni altro campo delle impostazioni.
+  state.settings = {
+    ...state.settings,
+    id: 'app',
+    clientProfile: {
+      name: val('cp-name'),
+      vat: val('cp-vat'),
+      address: val('cp-address'),
+      email: email,
+      phone: val('cp-phone')
+    }
+  };
+
+  await dbPut('settings', state.settings);
+  cloudPush();
+  toast('I tuoi dati sono stati salvati');
 }
 
 /* ---------------------------------------------------------------------
@@ -3255,6 +3318,8 @@ function bindAccountPanel() {
     if (out) out.addEventListener('click', doSignOut);
     const ver = $('#a-verify');
     if (ver) ver.addEventListener('click', doSendVerification);
+    const pr = $('#a-passreset');
+    if (pr) pr.addEventListener('click', doSendPasswordReset);
     return;
   }
   const emailEl = $('#a-email');
@@ -3751,6 +3816,16 @@ async function doSendVerification() {
   }
 }
 
+async function doSendPasswordReset() {
+  if (!(sync.auth && sync.user && sync.user.email)) { toast('Nessun account connesso', 'error'); return; }
+  try {
+    await sync.auth.sendPasswordResetEmail(sync.user.email);
+    toast('Email per reimpostare la password inviata a ' + sync.user.email);
+  } catch (err) {
+    toast(authError(err.code), 'error');
+  }
+}
+
 function showAuthError(message) {
   const box = $('#a-error');
   if (box) { box.textContent = message; box.classList.remove('hidden'); }
@@ -3795,6 +3870,10 @@ function accountPanelHTML() {
         </div>
         ${verifyRow}
         ${roleNote}
+        <div class="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+          <button id="a-passreset" class="text-[12px] font-bold text-accent hover:text-accent-hover transition-soft">Cambia password</button>
+          <span class="text-[11px] text-ink-faint dark:text-zinc-500 ml-2">— riceverai un'email per reimpostarla</span>
+        </div>
       </div>`;
   }
   return `
