@@ -248,6 +248,47 @@
     };
   </script>
 
+  <script>
+  /* Rete di sicurezza diagnostica (ES5): cattura errori di parsing/runtime
+     dello script principale e li mostra a schermo invece di lasciare la pagina
+     vuota. Utile soprattutto su Safari, dove un errore silenzioso azzera la vista. */
+  (function () {
+    function showFatal(msg) {
+      try {
+        var host = document.getElementById('view-dashboard') || document.getElementById('app-shell') || document.body;
+        if (!host) return;
+        var box = document.getElementById('fatal-error-box');
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'fatal-error-box';
+          box.style.cssText = 'margin:16px;padding:16px 18px;border:1px solid #ff3b30;background:#fff3f2;color:#7a1c16;border-radius:14px;font:13px/1.5 -apple-system,system-ui,sans-serif;white-space:pre-wrap;word-break:break-word;';
+          host.appendChild(box);
+        }
+        box.textContent = 'Errore di avvio:\n' + msg;
+      } catch (e) {}
+    }
+    window.__hfShowFatal = showFatal;
+    window.addEventListener('error', function (ev) {
+      var m = (ev && ev.message) ? ev.message : 'errore sconosciuto';
+      if (ev && ev.filename) m += '\n@ ' + ev.filename + ':' + ev.lineno + ':' + ev.colno;
+      if (ev && ev.error && ev.error.stack) m += '\n' + String(ev.error.stack).split('\n').slice(0, 3).join('\n');
+      showFatal(m);
+    });
+    window.addEventListener('unhandledrejection', function (ev) {
+      var r = ev && ev.reason;
+      showFatal('Promise non gestita: ' + ((r && r.message) ? r.message : String(r)));
+    });
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        var dash = document.getElementById('view-dashboard');
+        if (dash && dash.children.length === 0 && !document.getElementById('fatal-error-box')) {
+          showFatal('Avvio non completato: il contenuto non e\' stato generato e nessun errore e\' stato intercettato. Probabile sintassi non eseguita da Safari nello script principale.');
+        }
+      }, 1500);
+    });
+  })();
+  </script>
+
 <script>
 "use strict";
 
@@ -1052,12 +1093,18 @@ function setView(view) {
 }
 
 function render() {
-  if (state.view === 'dashboard') renderDashboard();
-  else if (state.view === 'payment') renderPayment();
-  else if (state.view === 'report') renderReports();
-  else if (state.view === 'clients') renderClients();
-  else if (state.view === 'settings') renderSettings();
-  else if (state.view === 'guide') renderGuide();
+  try {
+    if (state.view === 'dashboard') renderDashboard();
+    else if (state.view === 'payment') renderPayment();
+    else if (state.view === 'report') renderReports();
+    else if (state.view === 'clients') renderClients();
+    else if (state.view === 'settings') renderSettings();
+    else if (state.view === 'guide') renderGuide();
+  } catch (err) {
+    const msg = (err && err.message ? err.message : String(err)) +
+      (err && err.stack ? '\n' + String(err.stack).split('\n').slice(0, 4).join('\n') : '');
+    if (window.__hfShowFatal) window.__hfShowFatal(msg); else throw err;
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -3045,11 +3092,22 @@ function guideSection(icon, title, bodyHTML) {
 function renderGuide() {
   const root = $('#view-guide');
   if (!root) return;
+  const client = isClient();
+  const title = client ? 'Manuale di Consultazione — Cliente' : 'Manuale di Utilizzo Professionale';
+  const intro = client
+    ? 'La tua guida per consultare le note di pagamento, verificare lo stato dei versamenti e accedere ai tuoi dati in sicurezza.'
+    : 'Tutte le potenzialità di HourFlow spiegate nel dettaglio.';
   root.innerHTML = `
-    <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-2">Manuale di Utilizzo Professionale</h2>
-    <p class="text-[14px] text-ink-soft dark:text-zinc-400 mb-4 leading-relaxed font-medium">Tutte le potenzialità di HourFlow spiegate nel dettaglio.</p>
+    <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-2">${title}</h2>
+    <p class="text-[14px] text-ink-soft dark:text-zinc-400 mb-4 leading-relaxed font-medium">${intro}</p>
     <div class="space-y-3">
+      ${client ? clientGuideSections() : ownerGuideSections()}
+    </div>`;
+}
 
+// Manuale completo per l'account Proprietario.
+function ownerGuideSections() {
+  return `
       ${guideSection(gIcon('bg-blue-500', '<path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/>'), 'Dashboard & Filtri Avanzati', `
         <p>La **Dashboard** è la tua centrale di controllo operativa. Da qui puoi tenere sotto controllo le ore totali registrate, la tariffa di base e la compensazione finanziaria calcolata.</p>
         <p>Grazie ai **Filtri di Visualizzazione**, puoi segmentare istantaneamente il tuo lavoro per:</p>
@@ -3057,7 +3115,7 @@ function renderGuide() {
           <li>**Periodo Temporale:** Visualizza solo le ore del mese in corso, del mese precedente, dell'anno corrente o imposta un intervallo di date "dal / al" personalizzato.</li>
           <li>**Filtro Progetto:** Isola un singolo progetto per analizzarne i guadagni e la ripartizione finanziaria.</li>
         </ul>
-        <p>Tutti gli indicatori, il grafico analitico e la Nota di pagamento si aggiornano in tempo reale rispettando fedelmente i filtri impostati.</p>`)}
+        <p>Usa la **barra di ricerca** per trovare al volo un progetto o un'attività per nome. Tutti gli indicatori, il grafico analitico e la Nota di pagamento si aggiornano in tempo reale rispettando fedelmente i filtri impostati.</p>`)}
 
       ${guideSection(gIcon('bg-orange-500', '<circle cx="12" cy="13" r="8"/><path d="M12 13V9"/><path d="M9 2h6"/><path d="M18.5 6.5l1.2-1.2"/>'), 'Cronometro di precisione real-time', `
         <p>Avvia una sessione di lavoro in tempo reale toccando il pulsante **cronometro** situato su qualsiasi riga di progetto.</p>
@@ -3109,8 +3167,8 @@ function renderGuide() {
         <p>In **stampa** l'IBAN viene sempre riportato per intero e raggruppato in blocchi da 4, così la nota resta valida per il pagamento. Per gli account **Cliente** le coordinate restano riservate.</p>`)}
 
       ${guideSection(gIcon('bg-rose-500', '<path d="M7 9V3h10v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v6H7z"/><circle cx="16.5" cy="12" r="0.8" fill="white" stroke="none"/>'), 'Stampa & Esportazione PDF', `
-        <p>Dalla **Nota Pro**, il pulsante **Stampa PDF** apre il dialogo di stampa con un'impaginazione A4 pulita, ottimizzata anche per **iPhone e Safari**.</p>
-        <p>Su iOS, per salvare in PDF scegli "Salva su File" dal pannello di condivisione. Se compaiono URL e data ai bordi del foglio, disattiva "Intestazioni e piè di pagina" dalle opzioni di stampa di Safari: li aggiunge il browser, non HourFlow.</p>`)}
+        <p>Dalla **Nota Pro**, il pulsante con l'icona stampante genera un **PDF nativo** scaricabile con impaginazione A4 pulita, completo di numero nota, dati, totali, stato pagamento e coordinate.</p>
+        <p>Su iOS il PDF viene salvato tra i file/condivisione. Se il modulo PDF non fosse disponibile, HourFlow ripiega automaticamente sulla stampa del browser.</p>`)}
 
       ${guideSection(gIcon('bg-amber-500', '<path d="M4 14v3.5A1.5 1.5 0 005.5 19h13a1.5 1.5 0 001.5-1.5V14"/><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/>'), 'Backup & Ripristino', `
         <p>Dalle **Impostazioni** proteggi e trasferisci il tuo archivio:</p>
@@ -3121,9 +3179,49 @@ function renderGuide() {
         </ul>`)}
 
       ${guideSection(gIcon('bg-slate-700', '<path d="M20 14.5A8 8 0 119.5 4a6.5 6.5 0 0010.5 10.5z"/>'), 'Tema & Aspetto', `
-        <p>L'icona **luna / sole** in alto inverte all'istante il tema **chiaro** o **scuro**. La preferenza viene salvata e sincronizzata; è disponibile anche la modalità **automatica**, che segue le impostazioni di sistema del dispositivo.</p>`)}
+        <p>L'icona **luna / sole** in alto inverte all'istante il tema **chiaro** o **scuro**. La preferenza viene salvata e sincronizzata; è disponibile anche la modalità **automatica**, che segue le impostazioni di sistema del dispositivo.</p>`)}`;
+}
 
-    </div>`;
+// Manuale dedicato all'account Cliente: sola consultazione, niente operazioni
+// di modifica (cronometro, creazione progetti, fiscalità, backup, pagamenti).
+function clientGuideSections() {
+  return `
+      ${guideSection(gIcon('bg-sky-500', '<path d="M7 18A4 4 0 016.5 10a5.5 5.5 0 0110.7 1.3A3.4 3.4 0 0117 18z"/><path d="M9.5 14.5L12 12l2.5 2.5"/><path d="M12 12v6"/>'), 'Il tuo accesso Cliente', `
+        <p>Hai effettuato l'accesso come **Cliente**: una modalità di **sola consultazione**, pensata per permetterti di seguire il lavoro svolto e le note di pagamento in totale sicurezza.</p>
+        <p>Puoi **visualizzare** progetti, ore, note e report, ma non puoi modificare o eliminare dati: l'archivio resta sotto il pieno controllo del professionista. I tuoi dati si **sincronizzano** automaticamente su tutti i tuoi dispositivi.</p>`)}
+
+      ${guideSection(gIcon('bg-blue-500', '<path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/>'), 'Dashboard & Filtri', `
+        <p>La **Dashboard** riepiloga le ore registrate, la tariffa applicata e la compensazione complessiva.</p>
+        <p>Con i **Filtri** puoi consultare il lavoro per **periodo** (mese corrente, mese precedente, anno o intervallo personalizzato) o isolare un singolo **progetto**. La **ricerca** ti aiuta a trovare rapidamente un progetto o un'attività. Indicatori e grafico si aggiornano in tempo reale.</p>`)}
+
+      ${guideSection(gIcon('bg-emerald-500', '<path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/>'), 'Leggere la Nota di Pagamento', `
+        <p>La sezione **Nota Pro** mostra la nota a te intestata, con il dettaglio delle prestazioni, le eventuali voci fiscali (rivalsa, IVA, ritenuta, marca da bollo) e il **Netto a pagare**.</p>
+        <p>Il riquadro **Stato pagamento** ti dice a colpo d'occhio la situazione:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Da saldare:** nessun versamento ancora registrato.</li>
+          <li>**Acconto ricevuto:** è stato versato un importo parziale; trovi **Versato** e **Residuo**.</li>
+          <li>**Pagata:** la nota risulta saldata per intero.</li>
+        </ul>
+        <p>La registrazione dei pagamenti è gestita dal professionista; tu la vedi sempre aggiornata in tempo reale.</p>`)}
+
+      ${guideSection(gIcon('bg-teal-500', '<path d="M3 4h18v4H3z"/><path d="M3 8v12h18V8"/><path d="M8 12v5"/><path d="M12 11v6"/><path d="M16 13v4"/>'), 'Report Mensili', `
+        <p>La sezione **Report** riepiloga il lavoro **mese per mese**: ore, numero di sessioni e compensazione, con un confronto visivo tra i periodi.</p>
+        <p>Con **Esporta CSV** puoi scaricare il riepilogo per i tuoi archivi.</p>`)}
+
+      ${guideSection(gIcon('bg-zinc-500', '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="white" stroke="none"/>'), 'Coordinate di pagamento', `
+        <p>Le coordinate per il pagamento sono riportate sulla nota. A schermo l'**IBAN** è mostrato **mascherato** per riservatezza: usa **Mostra** per rivelarlo e **Copia** per inserirlo nel bonifico.</p>
+        <p>Nel **PDF/stampa** della nota l'IBAN compare per intero e raggruppato in blocchi da 4, pronto per effettuare il versamento.</p>`)}
+
+      ${guideSection(gIcon('bg-rose-500', '<path d="M7 9V3h10v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v6H7z"/><circle cx="16.5" cy="12" r="0.8" fill="white" stroke="none"/>'), 'Scaricare la Nota in PDF', `
+        <p>Dalla **Nota Pro**, il pulsante con l'icona stampante genera un **PDF nativo** della nota, con impaginazione A4 pulita: comodo da archiviare o allegare alla disposizione di pagamento.</p>
+        <p>Su iOS il PDF viene salvato tramite il pannello di condivisione (“Salva su File”).</p>`)}
+
+      ${guideSection(gIcon('bg-slate-600', '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>'), 'Account & Sicurezza', `
+        <p>Accedi con **email e password**. Il tuo livello **Cliente** è in sola lettura e i dati restano sincronizzati e protetti sul cloud.</p>
+        <p>Dalle **Impostazioni** puoi gestire la tua sessione, verificare l'email e disconnetterti in sicurezza dal dispositivo.</p>`)}
+
+      ${guideSection(gIcon('bg-slate-700', '<path d="M20 14.5A8 8 0 119.5 4a6.5 6.5 0 0010.5 10.5z"/>'), 'Tema & Aspetto', `
+        <p>L'icona **luna / sole** in alto inverte all'istante il tema **chiaro** o **scuro**. È disponibile anche la modalità **automatica**, che segue le impostazioni del tuo dispositivo.</p>`)}`;
 }
 
 /* ---------------------------------------------------------------------
