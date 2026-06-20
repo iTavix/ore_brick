@@ -113,7 +113,20 @@
       box-shadow: none !important; border: none !important; border-radius: 0 !important;
       margin: 0 !important; padding: 0 !important;
       overflow: visible !important;
+      background: #fff !important;
     }
+
+    /* Leggibilità su Safari: WebKit in stampa schiarisce i colori e, se è attiva
+       la modalità scura, lascia il testo chiaro su sfondo bianco. Forzo colori
+       esatti, sfondo bianco e testo scuro leggibile. */
+    .print-area, .print-area * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color: #1d1d1f !important;
+    }
+    .print-area * { background: transparent !important; }
+    .print-area .text-accent { color: #FF9500 !important; }   /* titolo nota */
+    .print-area .text-red-500 { color: #c81e1e !important; }  /* ritenuta d'acconto */
     .print-area .overflow-x-auto { overflow: visible !important; }
     .print-table { width: 100% !important; min-width: 0 !important; }
     .print-table th, .print-table td { padding: 8px 10px !important; border-bottom: 1px solid #e2e2e6 !important; }
@@ -1779,9 +1792,12 @@ function renderPayment() {
 
   const prtBtn = $('#btn-print');
   if (prtBtn) prtBtn.addEventListener('click', () => {
-    // Safari a volte ignora window.print() chiamato in modo sincrono dentro
-    // l'handler del click: rimandarlo di un tick e' il workaround documentato.
-    setTimeout(() => { try { window.print(); } catch (e) { console.error('print failed', e); } }, 0);
+    // Safari avvia window.print() in modo inaffidabile se chiamato subito nel
+    // click: attendo un ciclo di paint (rAF) + un breve timeout così il dialogo
+    // di stampa parte in modo costante.
+    requestAnimationFrame(() => {
+      setTimeout(() => { try { window.print(); } catch (e) { console.error('print failed', e); } }, 50);
+    });
   });
 
   const syncFiltBtn = $('#btn-sync-dashboard-filters');
