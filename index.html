@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#ffffff" />
 <title>HourFlow — Smart Freelance Suite</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGwpxIm5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -96,13 +96,7 @@
 
   /* Impaginazione ottimale per stampa */
   @media print {
-    /* Margine reale: @page margin:0 fa produrre stampe bianche su Safari.
-       La rimozione di URL/data/numero pagina del browser va fatta dalla
-       finestra di stampa (vedi note), non azzerando il margine. */
     @page { size: A4; margin: 14mm; }
-
-    /* Fix 2ª pagina: senza questo, min-height:100vh del body forza l'altezza
-       dell'intera pagina e il contenuto trabocca su una seconda pagina. */
     html, body { height: auto !important; min-height: 0 !important; }
     body { display: block !important; background: #fff !important; color: #000 !important; }
 
@@ -117,22 +111,18 @@
       background: #fff !important;
     }
 
-    /* Leggibilità su Safari: WebKit in stampa schiarisce i colori e, se è attiva
-       la modalità scura, lascia il testo chiaro su sfondo bianco. Forzo colori
-       esatti, sfondo bianco e testo scuro leggibile. */
     .print-area, .print-area * {
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
       color: #1d1d1f !important;
     }
     .print-area * { background: transparent !important; }
-    .print-area .text-accent { color: #FF9500 !important; }   /* titolo nota */
-    .print-area .text-red-500 { color: #c81e1e !important; }  /* ritenuta d'acconto */
+    .print-area .text-accent { color: #FF9500 !important; }
+    .print-area .text-red-500 { color: #c81e1e !important; }
     .print-area .overflow-x-auto { overflow: visible !important; }
     .print-table { width: 100% !important; min-width: 0 !important; }
     .print-table th, .print-table td { padding: 8px 10px !important; border-bottom: 1px solid #e2e2e6 !important; }
 
-    /* non spezzare a metà i blocchi chiave se il contenuto cresce */
     .print-table tr, .print-table thead { break-inside: avoid; }
     .print-keep { break-inside: avoid; }
   }
@@ -183,13 +173,9 @@
 
   <main id="app-shell" class="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-6">
     <section id="view-dashboard" class="fade"></section>
-    
     <section id="view-payment" class="fade hidden"></section>
-    
     <section id="view-clients" class="fade hidden"></section>
-    
     <section id="view-settings" class="fade hidden"></section>
-    
     <section id="view-guide" class="fade hidden"></section>
   </main>
 
@@ -219,14 +205,9 @@
 <script>
 "use strict";
 
-/* =====================================================================
-   HourFlow Premium Edition - Core Scripting
-   ===================================================================== */
-
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-// Definizione globale posizionata prima del caricamento dello stato dell'app
 const DEFAULT_SETTINGS = {
   id: 'app',
   hourlyRate: 25,
@@ -283,17 +264,11 @@ function maskIban(iban) {
   return out.replace(/(.{4})/g, '$1 ').trim();
 }
 
-// Raggruppa l'IBAN in blocchi da 4 per la stampa leggibile
 function groupIban(iban) {
   const v = String(iban == null ? '' : iban).replace(/\s+/g, '');
   return v ? v.replace(/(.{4})/g, '$1 ').trim() : '';
 }
 
-// Stampa robusta cross-browser, in particolare iOS/Safari. La nota viene stampata
-// dentro un iframe ISOLATO con gli stili della pagina clonati. Cosi' si evitano gli
-// ostacoli che mandano in tilt l'anteprima di Safari (header sticky + backdrop blur,
-// body a 100vh, contenitori overflow-x-auto, dark mode) e non si dipende dal rinvio
-// post-gesto che iOS ignora. Fallback su window.print() se qualcosa fallisce.
 function printNote() {
   const area = document.querySelector('.print-area');
   if (!area) { try { window.print(); } catch (_) {} return; }
@@ -304,13 +279,9 @@ function printNote() {
   const iframe = document.createElement('iframe');
   iframe.id = 'print-frame';
   iframe.setAttribute('aria-hidden', 'true');
-  // Fuori schermo ma con dimensioni reali (A4 a 96dpi): display:none/size 0 non
-  // verrebbe impaginato e alcuni browser lo stampano vuoto.
   iframe.style.cssText = 'position:fixed; left:-9999px; top:0; width:794px; height:1123px; border:0;';
   document.body.appendChild(iframe);
 
-  // Clona tutti gli stili della pagina, incluse le utility generate da Tailwind
-  // (iniettate come <style>): nell'iframe le classi rendono identiche allo schermo.
   let headStyles = '';
   document.querySelectorAll('style, link[rel="stylesheet"]').forEach((node) => {
     headStyles += node.outerHTML;
@@ -348,36 +319,15 @@ function printNote() {
       console.error('print failed', e);
       try { window.print(); } catch (_) {}
     }
-    // afterprint non e' garantito su iOS: pulizia a tempo.
     setTimeout(() => { const f = document.getElementById('print-frame'); if (f) f.remove(); }, 1500);
   };
 
-  // Se il documento e' gia' pronto, stampo SUBITO (resto dentro il gesto del tap,
-  // requisito di iOS). Altrimenti attendo onload, con timeout di sicurezza perche'
-  // i documenti creati via document.write spesso non emettono onload.
   if (doc.readyState === 'complete') {
     fire();
   } else {
     iframe.onload = fire;
     setTimeout(fire, 300);
   }
-}
-
-/* ---------------------------------------------------------------------
-   Secure Storage Helper & Fallback Engine
---------------------------------------------------------------------- */
-function getLocalStorageItem(key) {
-  try {
-    return (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(key) : null;
-  } catch (e) { return null; }
-}
-
-function setLocalStorageItem(key, value) {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem(key, value);
-    }
-  } catch (e) { console.warn("Impossibile salvare nel localStorage: ", e); }
 }
 
 const DB_NAME = 'hourflow-prm';
@@ -489,10 +439,6 @@ const dbGetAll = async (store) => {
 };
 
 const dbPut = async (store, value) => {
-  // Per-record sync: ogni scrittura LOCALE di un record timbra updatedAt (epoch ms)
-  // così il merge cloud puo' decidere chi vince per singolo record (last-write-wins
-  // a livello di documento, non dell'intero archivio). Durante applyingRemote NON
-  // si timbra, per conservare il timestamp originale arrivato dal cloud.
   if (value && typeof value === 'object' &&
       (store === 'projects' || store === 'entries' || store === 'clients') &&
       !sync.applyingRemote) {
@@ -550,9 +496,6 @@ function dbClear(store) {
   }
 }
 
-/* ---------------------------------------------------------------------
-   State Management & Seed Data
---------------------------------------------------------------------- */
 const state = {
   settings: { ...DEFAULT_SETTINGS },
   projects: [],
@@ -561,7 +504,6 @@ const state = {
   view: 'dashboard',
   expanded: new Set(),
   activeTimer: null,
-  
   filters: {
     period: 'all',
     startDate: '',
@@ -582,10 +524,10 @@ async function seedIfEmpty() {
   for (const p of [p1, p2, p3]) await dbPut('projects', p);
 
   const seedEntries = [
-    { id: genId(), projectId: p1.id, spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5 },
-    { id: genId(), projectId: p2.id, spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5 },
-    { id: genId(), projectId: p2.id, spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25 },
-    { id: genId(), projectId: p3.id, spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75 }
+    { id: genId(), projectId: p1.id, spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5, paymentStatus: 'unpaid' },
+    { id: genId(), projectId: p2.id, spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5, paymentStatus: 'unpaid' },
+    { id: genId(), projectId: p2.id, spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25, paymentStatus: 'unpaid' },
+    { id: genId(), projectId: p3.id, spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75, paymentStatus: 'unpaid' }
   ];
   for (const e of seedEntries) await dbPut('entries', e);
 }
@@ -602,7 +544,6 @@ async function loadState() {
   if (!Array.isArray(state.entries)) state.entries = [];
   if (!Array.isArray(state.clients)) state.clients = [];
 
-  // Procedura di Auto-migrazione (Crea record anagrafici dai vecchi testi dei clienti)
   let migrated = false;
   for (const p of state.projects) {
     if (!p.clientId && p.clientName) {
@@ -635,9 +576,6 @@ async function loadState() {
   state.clients.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 }
 
-/* ---------------------------------------------------------------------
-   Calcoli Fiscali Relazionali e Filtri
---------------------------------------------------------------------- */
 function getFilteredEntries() {
   let filtered = state.entries;
 
@@ -706,9 +644,6 @@ function totalCompensation() {
   return baseSum + (baseSum > 0 ? extra : 0);
 }
 
-/* ---------------------------------------------------------------------
-   System Toasts & Theme control
---------------------------------------------------------------------- */
 function toast(message, kind = 'ok') {
   const root = $('#toast-root');
   if (!root) return;
@@ -730,9 +665,6 @@ function syncTheme(themeName) {
   document.body.classList.toggle('dark', isDark);
 }
 
-/* ---------------------------------------------------------------------
-   Modal Manager
---------------------------------------------------------------------- */
 function closeModal() {
   const root = $('#modal-root');
   if (root) root.innerHTML = '';
@@ -798,9 +730,6 @@ function showError(card, msg) {
   box.textContent = msg;
 }
 
-/* ---------------------------------------------------------------------
-   SISTEMA DI ROUTING E ROUTER (SETVIEW & RENDER)
---------------------------------------------------------------------- */
 function setView(view) {
   state.view = view;
   ['dashboard', 'payment', 'clients', 'settings', 'guide'].forEach(v => {
@@ -820,9 +749,6 @@ function render() {
   else if (state.view === 'guide') renderGuide();
 }
 
-/* ---------------------------------------------------------------------
-   DASHBOARD / CONTROLLI FILTRI / ANALYTICS
---------------------------------------------------------------------- */
 function buildFilterWidgetHTML() {
   const p = state.filters;
   const projectOptions = state.projects.map(proj => 
@@ -954,8 +880,7 @@ function buildVisualAnalyticsChart() {
         </div>
         <div class="text-[10px] font-semibold text-ink-soft dark:text-zinc-400 mt-2 truncate w-full text-center" title="${esc(p.name)}">${esc(p.name)}</div>
         <div class="text-[9px] font-bold text-ink-faint tabular-nums">${eur(comp)}</div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 
   return `
@@ -1037,9 +962,6 @@ function projectCard(p) {
     </div>`;
 }
 
-/* ---------------------------------------------------------------------
-   GESTIONE EVENTI VELOCE (Event Delegation)
---------------------------------------------------------------------- */
 function bindDashboardEvents(root) {
   const filtPeriod = $('#filt-period', root);
   const filtProject = $('#filt-project', root);
@@ -1074,11 +996,8 @@ function bindDashboardEvents(root) {
   });
 
   const addProjBtn = $('#add-project', root);
-  if (addProjBtn) addProjBtn.addEventListener('click', addProject);
+  if (addProjBtn) addProjBtn.addEventListener('click', () => addProject());
 
-  // La delega va agganciata UNA SOLA VOLTA al nodo persistente #view-dashboard:
-  // renderDashboard() ne sostituisce solo l'innerHTML, quindi senza questa guardia
-  // ogni render aggiungerebbe un nuovo listener (azioni eseguite più volte / toggle "bloccato").
   if (!root.dataset.delegated) {
     root.dataset.delegated = '1';
 
@@ -1100,7 +1019,6 @@ function bindDashboardEvents(root) {
       if (headerRow) toggleProject(headerRow.dataset.projId);
     });
 
-    // Accessibilità da tastiera: Invio/Spazio sulle intestazioni progetto
     root.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
       if (e.target.closest('[data-action]')) return;
@@ -1133,9 +1051,6 @@ function handleDashboardAction(action, id) {
   }
 }
 
-/* ---------------------------------------------------------------------
-   CRONOMETRO / WORK MONITORING (Precision Updates)
---------------------------------------------------------------------- */
 function buildStopwatchWidgetHTML() {
   if (!state.activeTimer) return '';
   const p = state.projects.find(x => x.id === state.activeTimer.projectId);
@@ -1257,7 +1172,8 @@ async function stopAndSaveTimer() {
         projectId,
         spec,
         date: date || todayIso(),
-        hours
+        hours,
+        paymentStatus: 'unpaid'
       };
       
       await dbPut('entries', newEntry);
@@ -1289,10 +1205,6 @@ async function discardTimer() {
   });
 }
 
-/* ---------------------------------------------------------------------
-   HIGH-PERFORMANCE TARGETED TIMER WRITER
-   Aggiorna direttamente i nodi interessati senza toccare il DOM circostante.
---------------------------------------------------------------------- */
 let _lastTickTime = 0;
 function updateTimerUI() {
   if (!state.activeTimer) {
@@ -1333,24 +1245,20 @@ function updateTimerUI() {
   }
 }
 
-// Precision clock cycle
 setInterval(updateTimerUI, 500);
 
-/* Gestione risparmio energetico se la pagina non è visibile */
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === 'visible') {
     updateTimerUI();
   }
 });
 
-/* ---------------------------------------------------------------------
-   PROJECTS & CRUD DELLE SESSIONI
---------------------------------------------------------------------- */
-function addProject() {
+function addProject(preSelectedClientId = null) {
+  if (preSelectedClientId && typeof preSelectedClientId !== 'string') preSelectedClientId = null;
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
   
   const clientOptions = state.clients.map(c => 
-    `<option value="${c.id}">${esc(c.name)}</option>`
+    `<option value="${c.id}" ${preSelectedClientId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`
   ).join('');
 
   openModal({
@@ -1363,7 +1271,7 @@ function addProject() {
       <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
 
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
-      <select id="f-client-select" class="field mb-3">
+      <select id="f-client-select" class="field mb-3" ${preSelectedClientId ? 'disabled' : ''}>
         <option value="">-- Nessun Cliente Associato --</option>
         ${clientOptions}
         <option value="__NEW__" class="text-accent font-bold">+ Crea Nuovo Cliente…</option>
@@ -1390,7 +1298,7 @@ function addProject() {
       const name = $('#f-name', card).value.trim();
       if (!name) { showError(card, 'Nome progetto obbligatorio.'); return false; }
       const customRate = $('#f-rate', card).value;
-      const selectVal = $('#f-client-select', card).value;
+      const selectVal = preSelectedClientId ? preSelectedClientId : $('#f-client-select', card).value;
 
       let clientId = null;
       if (selectVal === '__NEW__') {
@@ -1424,7 +1332,7 @@ function addProject() {
       await dbPut('projects', p);
       state.projects.push(p);
       state.expanded.add(p.id);
-      renderDashboard();
+      setView('dashboard');
       cloudPush();
       toast('Progetto configurato con successo');
     }
@@ -1512,9 +1420,6 @@ function renameProject(id) {
   });
 }
 
-/* ---------------------------------------------------------------------
-   GESTIONE COMPONENTI ANAGRAFICA CLIENTI
---------------------------------------------------------------------- */
 function renderClients() {
   const root = $('#view-clients');
   if (!root) return;
@@ -1586,6 +1491,12 @@ function clientCardHTML(c) {
         <div>Progetti: <span class="text-ink dark:text-white font-extrabold">${associatedProjects.length}</span></div>
         <div>Totale: <span class="text-accent font-extrabold">${eur(totalBilled)} (${hrs(totalClientHours)})</span></div>
       </div>
+      ${editable ? `
+        <button data-client-action="new-project" data-id="${c.id}" class="mt-3 w-full py-1.5 text-center bg-gray-100 dark:bg-zinc-800 hover:bg-accent/10 dark:hover:bg-accent/20 hover:text-accent rounded-lg text-[12px] font-bold transition-soft no-print flex items-center justify-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Nuovo Progetto per Cliente
+        </button>
+      ` : ''}
     </div>`;
 }
 
@@ -1599,6 +1510,8 @@ function handleClientAction(e) {
     editClientModal(id);
   } else if (action === 'delete') {
     deleteClient(id);
+  } else if (action === 'new-project') {
+    addProject(id);
   }
 }
 
@@ -1676,9 +1589,6 @@ function deleteClient(id) {
   });
 }
 
-/* ---------------------------------------------------------------------
-   AGGIORNAMENTO NOTA DI PAGAMENTO RELAZIONALE
---------------------------------------------------------------------- */
 function allEntriesFlat() {
   const projectMap = new Map(state.projects.map(p => [p.id, p]));
   const clientMap = new Map(state.clients.map(c => [c.id, c]));
@@ -1703,6 +1613,7 @@ function renderPayment() {
   const root = $('#view-payment');
   if (!root) return;
   const s = state.settings;
+  const editable = canEdit();
   
   const flat = allEntriesFlat().filter(entry => {
     if (state.filters.project !== 'all' && entry.projectId !== state.filters.project) return false;
@@ -1735,14 +1646,35 @@ function renderPayment() {
   const wTaxValue = (subtotalWithTax * wTaxPercentage) / 100;
   const grandTotal = subtotalWithTax + vatValue - wTaxValue;
 
+  let statusBadgeHTML = '';
+  const statesInEntries = new Set(flat.map(e => e.paymentStatus || 'unpaid'));
+  
+  if (flat.length > 0) {
+    if (statesInEntries.has('unpaid') && !statesInEntries.has('paid') && !statesInEntries.has('advance')) {
+      statusBadgeHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">Da Pagare</span>`;
+    } else if (statesInEntries.has('paid') && !statesInEntries.has('unpaid') && !statesInEntries.has('advance')) {
+      statusBadgeHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Pagata Interamente</span>`;
+    } else if (statesInEntries.has('advance')) {
+      statusBadgeHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">Acconto Ricevuto</span>`;
+    } else {
+      statusBadgeHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-gray-500/10 text-gray-600 dark:text-gray-400 border border-gray-500/20">Stato Misto</span>`;
+    }
+  }
+
   const rows = flat.length
-    ? flat.map(e => `
+    ? flat.map(e => {
+        let entryStatusIndicator = '';
+        if (e.paymentStatus === 'paid') entryStatusIndicator = ' <span class="text-[10px] text-emerald-500 font-bold">(Saldato)</span>';
+        if (e.paymentStatus === 'advance') entryStatusIndicator = ' <span class="text-[10px] text-blue-500 font-bold">(Acconto)</span>';
+        
+        return `
         <tr class="border-b border-black/5 dark:border-white/5">
           <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400 whitespace-nowrap font-medium">${esc(dateIt(e.date))}</td>
-          <td class="py-2.5 pr-3 text-ink dark:text-zinc-200 font-semibold">${esc(e.project)} <span class="text-[10px] text-ink-faint tabular-nums">(${eur(e.rate)}/h)</span></td>
+          <td class="py-2.5 pr-3 text-ink dark:text-zinc-200 font-semibold">${esc(e.project)} <span class="text-[10px] text-ink-faint tabular-nums">(${eur(e.rate)}/h)</span>${entryStatusIndicator}</td>
           <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400 font-medium">${esc(e.spec)}</td>
           <td class="py-2.5 text-right tabular-nums text-ink dark:text-zinc-200 font-bold">${esc(hrs(e.hours))}</td>
-        </tr>`).join('')
+        </tr>`;
+      }).join('')
     : `<tr><td colspan="4" class="py-6 text-center text-ink-faint font-medium">Nessuna voce corrisponde ai filtri di ricerca impostati.</td></tr>`;
 
   const clientNames = [...new Set(flat.map(x => x.clientName).filter(Boolean))];
@@ -1760,14 +1692,43 @@ function renderPayment() {
     clientDisplay = `<strong>Fatturazione Multi-cliente</strong><br><span class="text-[11px] text-ink-soft dark:text-zinc-400 font-medium">Ripartita su ${clientNames.length} posizioni</span>`;
   }
 
+  window.__updateActiveNoteStatus = async (newStatus) => {
+    if (!flat.length) return;
+    sync.applyingRemote = true;
+    try {
+      for (const entry of flat) {
+        entry.paymentStatus = newStatus;
+        const originalEntry = state.entries.find(x => x.id === entry.id);
+        if (originalEntry) {
+          originalEntry.paymentStatus = newStatus;
+          await dbPut('entries', originalEntry);
+        }
+      }
+      toast(`Stato nota aggiornato a: ${newStatus.toUpperCase()}`);
+      cloudPush();
+    } finally {
+      sync.applyingRemote = false;
+      renderPayment();
+    }
+  };
+
   root.innerHTML = `
     <div class="no-print bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm mb-5">
-      <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+      <div class="flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
-          <h3 class="text-[13px] font-bold text-ink dark:text-zinc-200">Filtri di fatturazione attivi</h3>
-          <p class="text-[11px] text-ink-soft dark:text-zinc-400 mt-0.5">La nota mostrerà solo le voci filtrate nella Dashboard.</p>
+          <h3 class="text-[13px] font-bold text-ink dark:text-zinc-200">Filtri di fatturazione ed Azioni</h3>
+          <p class="text-[11px] text-ink-soft dark:text-zinc-400 mt-0.5">Gestisci lo stato amministrativo delle sessioni visualizzate.</p>
         </div>
-        <div class="flex items-center gap-2">
+        
+        ${editable && flat.length > 0 ? `
+          <div class="flex flex-wrap items-center gap-1.5 bg-gray-100 dark:bg-zinc-900 p-1 rounded-xl">
+            <button onclick="window.__updateActiveNoteStatus('unpaid')" class="px-2.5 py-1 text-[11px] font-bold rounded hover:bg-white dark:hover:bg-zinc-800 transition-soft text-amber-600">Da Pagare</button>
+            <button onclick="window.__updateActiveNoteStatus('advance')" class="px-2.5 py-1 text-[11px] font-bold rounded hover:bg-white dark:hover:bg-zinc-800 transition-soft text-blue-500">Acconto</button>
+            <button onclick="window.__updateActiveNoteStatus('paid')" class="px-2.5 py-1 text-[11px] font-bold rounded hover:bg-white dark:hover:bg-zinc-800 transition-soft text-emerald-500">Pagata</button>
+          </div>
+        ` : ''}
+
+        <div class="flex items-center gap-2 self-end md:self-auto">
           <button id="btn-sync-dashboard-filters" class="no-print px-3.5 py-1.5 rounded-full border border-black/15 dark:border-white/10 text-[12px] font-bold transition-soft flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/5">
             ✏️ Filtra ora
           </button>
@@ -1782,7 +1743,10 @@ function renderPayment() {
       
       <div class="flex flex-col sm:flex-row justify-between items-start gap-4 pb-5 border-b border-black/10 dark:border-white/10">
         <div>
-          <div class="text-[20px] font-extrabold tracking-tight text-accent">NOTA DI PAGAMENTO</div>
+          <div class="flex items-center gap-3">
+            <div class="text-[20px] font-extrabold tracking-tight text-accent">NOTA DI PAGAMENTO</div>
+            <div>${statusBadgeHTML}</div>
+          </div>
           <div class="text-[11px] font-bold text-ink-faint dark:text-zinc-500 uppercase tracking-wider mt-2">Mittente:</div>
           <div class="text-[14px] font-bold text-ink dark:text-white">${esc(s.holderName || '—')}</div>
         </div>
@@ -1831,7 +1795,7 @@ function renderPayment() {
           ${wTaxPercentage > 0 ? `
             <div class="flex justify-between text-red-500 font-semibold">
               <span>Ritenuta d'Acconto (${wTaxPercentage}%)</span>
-              <span class="tabular-nums">-${esc(eur(wTaxValue))}</span>
+              <span class="tabular-nums">-{esc(eur(wTaxValue))}</span>
             </div>
           ` : ''}
 
@@ -1914,9 +1878,6 @@ function renderPayment() {
   }
 }
 
-/* ---------------------------------------------------------------------
-   IMPOSTAZIONI E DATI FISCALI AVANZATI
---------------------------------------------------------------------- */
 function renderSettings() {
   const root = $('#view-settings');
   if (!root) return;
@@ -2084,11 +2045,11 @@ function renderSettings() {
   $('#exp-csv').addEventListener('click', exportCSV);
   $('#exp-json').addEventListener('click', exportJSON);
   
-  const impJson = $('#imp-json');
-  const impFile = $('#imp-file');
-  if (impJson && impFile) {
-    impJson.addEventListener('click', () => impFile.click());
-    impFile.addEventListener('change', importJSON);
+  const pImpJson = $('#imp-json');
+  const pImpFile = $('#imp-file');
+  if (pImpJson && pImpFile) {
+    pImpJson.addEventListener('click', () => pImpFile.click());
+    pImpFile.addEventListener('change', importJSON);
   }
   bindAccountPanel();
 }
@@ -2129,9 +2090,6 @@ async function saveSettings() {
   toast('Configurazione applicata con successo');
 }
 
-/* ---------------------------------------------------------------------
-   EXPORTS CORE
---------------------------------------------------------------------- */
 function download(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -2205,7 +2163,7 @@ function importJSON(ev) {
     openModal({
       title: 'Confermare Ripristino?',
       danger: true,
-      bodyHTML: `<p class="text-[14px]">Ripristinando questo pacchetto verranno importati <span class="font-bold text-accent">${d.projects.length}</span> progetti, <span class="font-bold text-accent">${d.entries.length}</span> sessioni e <span class="font-bold text-accent">${(d.clients || []).length}</span> clienti. Tutti i dati correnti verranno persi definitivamente.</p>`,
+      bodyHTML: `<p class="text-[14px]">Ripristinando questo pacchetto verranno importati <span class="font-bold text-accent">${d.projects.length}</span> progetti, <span class="font-bold text-accent">${d.entries.length}</span> sessioni e <span class="font-bold text-accent">${(d.clients || []).length}</span> clienti. Tutti i dati corrents verranno persi definitivamente.</p>`,
       confirmText: 'Sì, Sovrascrivi database',
       onConfirm: async () => {
         try {
@@ -2213,8 +2171,6 @@ function importJSON(ev) {
           await dbClear('entries');
           await dbClear('clients');
           await dbPut('settings', d.settings);
-          // Import difensivo: scarta record non-oggetto e garantisce un id,
-          // così un singolo record corrotto non interrompe l'intero ripristino.
           for (const p of d.projects) {
             if (p && typeof p === 'object') { if (!p.id) p.id = genId(); await dbPut('projects', p); }
           }
@@ -2238,9 +2194,6 @@ function importJSON(ev) {
   reader.readAsText(file);
 }
 
-/* ---------------------------------------------------------------------
-   GUIDE VIEW (Manuale Integrato)
---------------------------------------------------------------------- */
 function guideSection(title, bodyHTML) {
   return `
     <details class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-sm group">
@@ -2289,9 +2242,6 @@ function renderGuide() {
     </div>`;
 }
 
-/* ---------------------------------------------------------------------
-   GESTIONE EVENTI ACCOUNT PANEL (BINDACOUNTOPANEL)
---------------------------------------------------------------------- */
 function bindAccountPanel() {
   if (!sync.enabled) return;
   if (sync.user) {
@@ -2341,11 +2291,6 @@ function bindAccountPanel() {
   if (passEl) passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = readCreds(); if (guard(c, false)) doSignIn(c.email, c.password); } });
 }
 
-/* ---------------------------------------------------------------------
-   CLOUD ENGINE (Firebase & Real-time Integration)
---------------------------------------------------------------------- */
-// Schema cloud: 2 = sottocollezioni per-record (users/{uid}/{store}/{id}).
-// 1 = vecchio documento unico con array (migrato automaticamente al primo accesso).
 const CLOUD_SCHEMA = 2;
 const SYNC_STORES = ['projects', 'entries', 'clients'];
 
@@ -2357,18 +2302,13 @@ const sync = {
   user: null,
   role: null,        
   pendingRole: null, 
-  unsub: null,          // listener documento padre (settings/ruolo)
-  colUnsubs: [],        // listener delle sottocollezioni
+  unsub: null,          
+  colUnsubs: [],        
   applyingRemote: false,
   pushTimer: null,
   reloadTimer: null,
   status: 'off',
-  // "Ombra" delle versioni note sul server: store -> Map(id -> updatedAt).
-  // Serve a calcolare il diff in push (cosa creare/aggiornare/eliminare).
   server: { projects: new Map(), entries: new Map(), clients: new Map() },
-  // Idratazione: una sottocollezione e' "idratata" dopo il primo snapshot.
-  // Finche' non lo e', NON si propagano eliminazioni (evita di azzerare il
-  // server prima di aver letto cosa contiene).
   hydrated: { projects: false, entries: false, clients: false },
   serverSettingsAt: 0
 };
@@ -2396,7 +2336,6 @@ function userDocRef() {
   return sync.db.collection('users').doc(sync.user.uid);
 }
 
-// Riferimento alla sottocollezione per-record: users/{uid}/{store}
 function colRef(store) {
   if (!sync.user) return null;
   return sync.db.collection('users').doc(sync.user.uid).collection(store);
@@ -2417,7 +2356,7 @@ function updateSyncBadge() {
     signedout: { t: 'Non Connesso', c: 'bg-black/5 dark:bg-white/5 text-ink-soft', dot: '○' },
     syncing:   { t: 'In Sincronia…', c: 'bg-accent-soft text-accent', dot: '⟳' },
     synced:    { t: 'Sincronizzato', c: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', dot: '●' },
-    error:     { t: 'Errore cloud', c: 'bg-[#ff3b30]/10 text-[#ff3b30]', dot: '⚠' },
+    error:     { t: 'Errore cloud', c: 'bg-[#ff3b30]/10 text-[#ff3b30]', dot: '⚠️' },
     off:       { t: '', c: '', dot: '' }
   };
   const m = map[sync.status] || map.signedout;
@@ -2432,10 +2371,6 @@ function initSync() {
     firebase.initializeApp(window.FIREBASE_CONFIG);
     sync.auth = firebase.auth();
     sync.db = firebase.firestore();
-    // Safari/WebKit blocca il trasporto WebChannel di Firestore ("access control
-    // checks"). Forzare il long-polling (anziche' il solo auto-detect) e' la
-    // configurazione piu' robusta per Safari. Va impostato PRIMA di ogni altra
-    // operazione (enablePersistence, onSnapshot, ecc.).
     try { sync.db.settings({ experimentalForceLongPolling: true }); } catch (_) {}
     sync.enabled = true;
     sync.ready = true;
@@ -2463,7 +2398,6 @@ function onAuthChanged(user) {
   render();
 }
 
-// Svuota l'ombra del server e i flag di idratazione (al logout o cambio utente).
 function resetSyncShadow() {
   for (const s of SYNC_STORES) { sync.server[s] = new Map(); sync.hydrated[s] = false; }
   sync.serverSettingsAt = 0;
@@ -2475,13 +2409,13 @@ async function startCloudListener() {
   stopCloudListener();
   resetSyncShadow();
   try {
-    await initialHydrate();        // caricamento iniziale deterministico (one-shot .get)
+    await initialHydrate();        
   } catch (err) {
     setSyncStatus('error');
     toast(syncErrorMsg(err), 'error');
     return;
   }
-  attachRealtimeListeners();       // merge per-record realtime sui cambiamenti successivi
+  attachRealtimeListeners();       
   setSyncStatus('synced');
 }
 
@@ -2492,17 +2426,12 @@ function stopCloudListener() {
   clearTimeout(sync.reloadTimer);
 }
 
-// Caricamento iniziale deterministico via .get() (l'ordine d'arrivo tra documento
-// padre e sottocollezioni nei listener NON e' garantito, quindi non ci si appoggia
-// ad esso). Account inesistente -> push dello stato locale. Account esistente ->
-// il cloud e' autoritativo: si sostituiscono i record locali (inclusi i dati demo
-// di un'installazione nuova), coerentemente col comportamento storico.
 async function initialHydrate() {
   const snap = await userDocRef().get();
 
   if (!snap.exists) {
-    for (const s of SYNC_STORES) sync.hydrated[s] = true; // niente sul cloud da leggere
-    await pushNow();                                       // carica lo stato locale
+    for (const s of SYNC_STORES) sync.hydrated[s] = true; 
+    await pushNow();                                       
     return;
   }
 
@@ -2510,7 +2439,6 @@ async function initialHydrate() {
   if (data.accountRole === 'client' || data.accountRole === 'owner') sync.role = data.accountRole;
   else if (!sync.role) sync.role = 'owner';
 
-  // Migrazione una-tantum dal vecchio documento unico con array.
   if ((!data.schema || data.schema < CLOUD_SCHEMA) && hasLegacyArrays(data)) {
     await migrateLegacyDoc(data);
   }
@@ -2523,7 +2451,7 @@ async function initialHydrate() {
       for (const doc of qs.docs) {
         const at = typeof doc.data().updatedAt === 'number' ? doc.data().updatedAt : 0;
         sync.server[store].set(doc.id, at);
-        await dbPut(store, { ...doc.data(), id: doc.id }); // applyingRemote=true: updatedAt preservato
+        await dbPut(store, { ...doc.data(), id: doc.id }); 
       }
       sync.hydrated[store] = true;
     }
@@ -2539,7 +2467,6 @@ async function initialHydrate() {
 }
 
 function attachRealtimeListeners() {
-  // Documento padre: ruolo + impostazioni in tempo reale.
   sync.unsub = userDocRef().onSnapshot(
     (snap) => {
       if (!snap.exists) return;
@@ -2548,7 +2475,6 @@ function attachRealtimeListeners() {
     },
     (err) => { setSyncStatus('error'); toast(syncErrorMsg(err), 'error'); }
   );
-  // Sottocollezioni record: merge per-record in tempo reale.
   for (const store of SYNC_STORES) {
     const unsub = colRef(store).onSnapshot(
       (qs) => handleColSnapshot(store, qs),
@@ -2558,8 +2484,6 @@ function attachRealtimeListeners() {
   }
 }
 
-// Documento padre in tempo reale: solo ruolo + impostazioni (oggetto singolo,
-// last-write-wins per timestamp). I record viaggiano nelle sottocollezioni.
 async function applyParentDoc(data) {
   if (!data) return;
   sync.applyingRemote = true;
@@ -2588,9 +2512,6 @@ function hasLegacyArrays(data) {
   return Array.isArray(data.projects) || Array.isArray(data.entries) || Array.isArray(data.clients);
 }
 
-// Migrazione: copia gli array del vecchio documento nelle sottocollezioni e
-// ripulisce il documento padre. Idempotente (gira solo finche' schema < CLOUD_SCHEMA).
-// Lo stato locale viene poi ripopolato da initialHydrate via .get().
 async function migrateLegacyDoc(data) {
   const ts = Date.now();
   const FieldValue = firebase.firestore.FieldValue;
@@ -2614,7 +2535,6 @@ async function migrateLegacyDoc(data) {
     }
   }
 
-  // Rimuove gli array legacy dal documento padre e segna lo schema nuovo.
   batch.set(userDocRef(), {
     schema: CLOUD_SCHEMA,
     projects: FieldValue.delete(),
@@ -2628,8 +2548,6 @@ async function migrateLegacyDoc(data) {
   toast('Sincronizzazione aggiornata al nuovo modello per-record.');
 }
 
-// Pull per-record: applica i cambiamenti remoti con confronto updatedAt.
-// Il remoto vince solo se non e' piu' vecchio del locale.
 function handleColSnapshot(store, qs) {
   sync.applyingRemote = true;
   const tasks = [];
@@ -2638,14 +2556,14 @@ function handleColSnapshot(store, qs) {
     const pending = chg.doc.metadata && chg.doc.metadata.hasPendingWrites;
     if (chg.type === 'removed') {
       sync.server[store].delete(id);
-      if (pending) return;                 // eco della nostra eliminazione
+      if (pending) return;                 
       tasks.push(removeRecordLocally(store, id));
       return;
     }
     const data = chg.doc.data() || {};
     const remoteAt = typeof data.updatedAt === 'number' ? data.updatedAt : 0;
     sync.server[store].set(id, remoteAt);
-    if (pending) return;                   // eco della nostra scrittura
+    if (pending) return;                   
     const local = state[store].find(x => x.id === id);
     if (!local || remoteAt > (local.updatedAt || 0)) {
       tasks.push(dbPut(store, { ...data, id }));
@@ -2663,7 +2581,6 @@ async function removeRecordLocally(store, id) {
   await dbDel(store, id);
 }
 
-// Ricarica lo stato e ridisegna, accorpando i molti snapshot del caricamento iniziale.
 function scheduleReload() {
   clearTimeout(sync.reloadTimer);
   sync.reloadTimer = setTimeout(async () => {
@@ -2672,15 +2589,12 @@ function scheduleReload() {
   }, 150);
 }
 
-// Push diff-based: documento padre (impostazioni/ruolo) + un upsert/delete per
-// ogni record cambiato rispetto all'ombra del server.
 async function pushNow() {
   if (!sync.user) return;
   setSyncStatus('syncing');
   try {
     const FieldValue = firebase.firestore.FieldValue;
 
-    // (1) Documento padre: impostazioni come oggetto singolo (LWW per timestamp).
     sync.serverSettingsAt = Date.now();
     await userDocRef().set({
       accountRole: sync.role || 'owner',
@@ -2690,13 +2604,11 @@ async function pushNow() {
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
 
-    // (2) Record: diff contro l'ombra del server (sync.server).
     for (const store of SYNC_STORES) {
       const seen = new Set();
       let batch = sync.db.batch(); let ops = 0;
       const commit = async () => { if (ops > 0) { await batch.commit(); batch = sync.db.batch(); ops = 0; } };
 
-      // Upsert: record assenti sul server o piu' recenti del server.
       for (const rec of state[store]) {
         if (!rec || !rec.id) continue;
         const id = String(rec.id);
@@ -2710,8 +2622,6 @@ async function pushNow() {
         }
       }
 
-      // Eliminazioni: presenti sul server ma non piu' in locale. Solo a
-      // sottocollezione idratata, per non cancellare dati non ancora letti.
       if (sync.hydrated[store]) {
         for (const id of Array.from(sync.server[store].keys())) {
           if (!seen.has(id)) {
@@ -2864,9 +2774,20 @@ function accountPanelHTML() {
     </div>`;
 }
 
-/* ---------------------------------------------------------------------
-   BOOTSTRAP PROCEDURAL (Auto-Recovery & Setup)
---------------------------------------------------------------------- */
+function getLocalStorageItem(key) {
+  try {
+    return (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(key) : null;
+  } catch (e) { return null; }
+}
+
+function setLocalStorageItem(key, value) {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(key, value);
+    }
+  } catch (e) { console.warn("Impossibile salvare nel localStorage: ", e); }
+}
+
 async function boot() {
   try {
     try { _db = await openDB(); } catch (dbErr) { initFallbackStorage(); }
@@ -2908,10 +2829,10 @@ async function boot() {
       { id: 'c3', name: 'Sony Fans', address: 'Piazza Duomo 3, Torino', vatCode: '', email: '', phone: '' }
     ];
     state.entries = [
-      { id: 'e1', projectId: 'p1', spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5 },
-      { id: 'e2', projectId: 'p2', spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5 },
-      { id: 'e3', projectId: 'p2', spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25 },
-      { id: 'e4', projectId: 'p3', spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75 }
+      { id: 'e1', projectId: 'p1', spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5, paymentStatus: 'unpaid' },
+      { id: 'e2', projectId: 'p2', spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5, paymentStatus: 'unpaid' },
+      { id: 'e3', projectId: 'p2', spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25, paymentStatus: 'unpaid' },
+      { id: 'e4', projectId: 'p3', spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75, paymentStatus: 'unpaid' }
     ];
     state.activeTimer = null;
     
