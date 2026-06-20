@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#ffffff" />
 <title>HourFlow — Smart Freelance Suite</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGwpxIm5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -508,7 +508,8 @@ const state = {
     period: 'all',
     startDate: '',
     endDate: '',
-    project: 'all'
+    project: 'all',
+    unpaidOnly: false
   }
 };
 
@@ -581,6 +582,11 @@ function getFilteredEntries() {
 
   if (state.filters.project !== 'all') {
     filtered = filtered.filter(e => e.projectId === state.filters.project);
+  }
+
+  // Nuova funzionalità: Filtro di esclusione delle ore saldate ("Pagate")
+  if (state.filters.unpaidOnly) {
+    filtered = filtered.filter(e => (e.paymentStatus || 'unpaid') !== 'paid');
   }
 
   const now = new Date();
@@ -789,6 +795,16 @@ function buildFilterWidgetHTML() {
             <input id="filt-end" type="date" class="field py-1.5 px-2 text-[12px]" value="${p.endDate}" />
           </div>
         </div>
+        
+        <!-- Nuova feature: Filtro rapido di esclusione per sessioni saldate -->
+        <div class="col-span-1 sm:col-span-3 border-t border-black/5 dark:border-white/5 pt-3 mt-1 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <input type="checkbox" id="filt-unpaid-only" class="w-4 h-4 rounded border-gray-300 text-accent focus:ring-accent dark:bg-zinc-800 dark:border-zinc-700" ${p.unpaidOnly ? 'checked' : ''} />
+            <label for="filt-unpaid-only" class="text-[12px] font-bold text-ink-soft dark:text-zinc-400 cursor-pointer select-none">
+              Fatturabile: escludi le ore già saldate ("Pagate")
+            </label>
+          </div>
+        </div>
       </div>
     </div>`;
 }
@@ -904,10 +920,15 @@ function projectCard(p) {
   const clientName = client ? client.name : '';
 
   const itemsHTML = items.length
-    ? items.map(e => `
+    ? items.map(e => {
+        let entryStatusIndicator = '';
+        if (e.paymentStatus === 'paid') entryStatusIndicator = ' <span class="text-[10px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">Saldato</span>';
+        if (e.paymentStatus === 'advance') entryStatusIndicator = ' <span class="text-[10px] text-blue-500 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded">Acconto</span>';
+        
+        return `
         <div class="group flex items-center gap-3 px-4 py-3 border-t border-black/5 dark:border-white/5 hover:bg-black/[0.01] dark:hover:bg-white/[0.005]">
           <div class="flex-1 min-w-0">
-            <div class="text-[14px] text-ink dark:text-zinc-200 truncate font-semibold">${esc(e.spec)}</div>
+            <div class="text-[14px] text-ink dark:text-zinc-200 truncate font-semibold">${esc(e.spec)}${entryStatusIndicator}</div>
             <div class="text-[11px] text-ink-faint dark:text-zinc-500 mt-0.5 font-medium">${esc(dateIt(e.date))}</div>
           </div>
           <div class="text-[13px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0 mr-1">${esc(hrs(e.hours))}</div>
@@ -919,7 +940,8 @@ function projectCard(p) {
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
             </button>
           </div>` : ''}
-        </div>`).join('')
+        </div>`;
+      }).join('')
     : `<div class="px-4 py-5 border-t border-black/5 dark:border-white/5 text-center text-[13px] text-ink-faint font-medium">${editable ? 'Nessuna voce per questo filtro. Premi "+" per iniziare.' : 'Nessuna voce registrata.'}</div>`;
 
   return `
@@ -967,6 +989,7 @@ function bindDashboardEvents(root) {
   const filtProject = $('#filt-project', root);
   const filtStart = $('#filt-start', root);
   const filtEnd = $('#filt-end', root);
+  const filtUnpaidOnly = $('#filt-unpaid-only', root);
   const btnReset = $('#btn-reset-filters', root);
 
   if (filtPeriod) filtPeriod.addEventListener('change', () => {
@@ -990,8 +1013,13 @@ function bindDashboardEvents(root) {
     renderDashboard();
   });
 
+  if (filtUnpaidOnly) filtUnpaidOnly.addEventListener('change', () => {
+    state.filters.unpaidOnly = filtUnpaidOnly.checked;
+    renderDashboard();
+  });
+
   if (btnReset) btnReset.addEventListener('click', () => {
-    state.filters = { period: 'all', startDate: '', endDate: '', project: 'all' };
+    state.filters = { period: 'all', startDate: '', endDate: '', project: 'all', unpaidOnly: false };
     renderDashboard();
   });
 
@@ -1253,6 +1281,9 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+/* ---------------------------------------------------------------------
+   GESTIONE PROGETTI & CRUD MANUALE COMPLETATO
+--------------------------------------------------------------------- */
 function addProject(preSelectedClientId = null) {
   if (preSelectedClientId && typeof preSelectedClientId !== 'string') preSelectedClientId = null;
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
@@ -1420,6 +1451,180 @@ function renameProject(id) {
   });
 }
 
+async function deleteProject(projectId) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const p = state.projects.find(x => x.id === projectId);
+  if (!p) return;
+
+  const associatedEntries = state.entries.filter(x => x.projectId === projectId);
+  let warningHTML = `<p class="text-[14px]">Rimuovere definitivamente il progetto <span class="font-bold">"${esc(p.name)}"</span>?</p>`;
+  if (associatedEntries.length > 0) {
+    warningHTML += `<p class="text-[13px] text-red-500 bg-red-500/10 rounded-lg p-3 mt-3 font-semibold">⚠️ Attenzione: verranno rimosse anche tutte le <span class="font-extrabold">${associatedEntries.length} sessioni di lavoro</span> associate!</p>`;
+  }
+
+  openModal({
+    title: 'Eliminare Progetto?',
+    danger: true,
+    bodyHTML: warningHTML,
+    confirmText: 'Elimina Progetto',
+    onConfirm: async () => {
+      await dbDel('projects', projectId);
+      state.projects = state.projects.filter(x => x.id !== projectId);
+
+      for (const entry of associatedEntries) {
+        await dbDel('entries', entry.id);
+      }
+      state.entries = state.entries.filter(x => x.projectId !== projectId);
+
+      renderDashboard();
+      cloudPush();
+      toast('Progetto e sessioni collegate rimossi');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   CRUD COMPLETO PER SESSIONI DI LAVORO (ENTRIES)
+--------------------------------------------------------------------- */
+async function addEntry(projectId) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const p = state.projects.find(x => x.id === projectId);
+  if (!p) return;
+
+  openModal({
+    title: 'Aggiungi Sessione Manuale',
+    bodyHTML: `
+      <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Registra manualmente ore per il progetto: <span class="font-bold text-ink dark:text-white">${esc(p.name)}</span>.</p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione Attività</label>
+          <input id="fe-spec" class="field" placeholder="Es. Sviluppo UI, consulenza Skype" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+            <input id="fe-date" type="date" class="field" value="${todayIso()}" />
+          </div>
+          <div>
+            <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore impiegate</label>
+            <input id="fe-hours" type="number" min="0.05" step="0.05" class="field" placeholder="Es. 2.5" />
+          </div>
+        </div>
+      </div>
+    `,
+    confirmText: 'Registra Ore',
+    onConfirm: async (card) => {
+      const spec = $('#fe-spec', card).value.trim();
+      const date = $('#fe-date', card).value;
+      const hours = Number($('#fe-hours', card).value);
+
+      if (!spec) { showError(card, 'Specificare la descrizione dell\'attività.'); return false; }
+      if (!date) { showError(card, 'Selezionare una data valida.'); return false; }
+      if (isNaN(hours) || hours <= 0) { showError(card, 'Specificare un numero di ore maggiore di 0.'); return false; }
+
+      const newEntry = {
+        id: genId(),
+        projectId,
+        spec,
+        date,
+        hours,
+        paymentStatus: 'unpaid'
+      };
+
+      await dbPut('entries', newEntry);
+      state.entries.push(newEntry);
+      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      renderDashboard();
+      cloudPush();
+      toast('Sessione registrata manualmente');
+    }
+  });
+}
+
+async function editEntry(entryId) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const e = state.entries.find(x => x.id === entryId);
+  if (!e) return;
+  const p = state.projects.find(x => x.id === e.projectId);
+  const pName = p ? p.name : 'Progetto sconosciuto';
+
+  openModal({
+    title: 'Modifica Sessione di Lavoro',
+    bodyHTML: `
+      <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Modifica riga per il progetto: <span class="font-bold text-ink dark:text-white">${esc(pName)}</span>.</p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione Attività</label>
+          <input id="fe-spec" class="field" value="${esc(e.spec)}" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+            <input id="fe-date" type="date" class="field" value="${e.date}" />
+          </div>
+          <div>
+            <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore</label>
+            <input id="fe-hours" type="number" min="0.05" step="0.05" class="field" value="${e.hours}" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Stato di Pagamento</label>
+          <select id="fe-paystatus" class="field">
+            <option value="unpaid" ${e.paymentStatus === 'unpaid' || !e.paymentStatus ? 'selected' : ''}>Da Pagare</option>
+            <option value="advance" ${e.paymentStatus === 'advance' ? 'selected' : ''}>Acconto</option>
+            <option value="paid" ${e.paymentStatus === 'paid' ? 'selected' : ''}>Pagata</option>
+          </select>
+        </div>
+      </div>
+    `,
+    confirmText: 'Salva Sessione',
+    onConfirm: async (card) => {
+      const spec = $('#fe-spec', card).value.trim();
+      const date = $('#fe-date', card).value;
+      const hours = Number($('#fe-hours', card).value);
+      const payStatus = $('#fe-paystatus', card).value;
+
+      if (!spec) { showError(card, 'Specificare la descrizione dell\'attività.'); return false; }
+      if (!date) { showError(card, 'Selezionare una data valida.'); return false; }
+      if (isNaN(hours) || hours <= 0) { showError(card, 'Specificare un numero di ore maggiore di 0.'); return false; }
+
+      e.spec = spec;
+      e.date = date;
+      e.hours = hours;
+      e.paymentStatus = payStatus;
+
+      await dbPut('entries', e);
+      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      renderDashboard();
+      cloudPush();
+      toast('Sessione aggiornata correttamente');
+    }
+  });
+}
+
+async function deleteEntry(entryId) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const e = state.entries.find(x => x.id === entryId);
+  if (!e) return;
+
+  openModal({
+    title: 'Eliminare questa sessione?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Rimuovere definitivamente la sessione <span class="font-bold">"${esc(e.spec)}"</span> del ${esc(dateIt(e.date))}? Questa operazione è irreversibile.</p>`,
+    confirmText: 'Elimina Sessione',
+    onConfirm: async () => {
+      await dbDel('entries', entryId);
+      state.entries = state.entries.filter(x => x.id !== entryId);
+      renderDashboard();
+      cloudPush();
+      toast('Sessione rimossa');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   GESTIONE CLIENTI & ASSOCIAZIONE RAPIDA
+--------------------------------------------------------------------- */
 function renderClients() {
   const root = $('#view-clients');
   if (!root) return;
@@ -1447,8 +1652,7 @@ function renderClients() {
         <button id="btn-add-client" class="text-[14px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
           Nuovo Cliente
-        </button>
-      ` : ''}
+        </button>` : ''}
     </div>
     ${listHTML}`;
 
@@ -1478,8 +1682,7 @@ function clientCardHTML(c) {
               <button data-client-action="delete" data-id="${c.id}" class="w-8 h-8 rounded-full hover:bg-red-500/10 flex items-center justify-center text-ink-faint hover:text-red-500 transition-soft" title="Elimina">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
               </button>
-            </div>
-          ` : ''}
+            </div>` : ''}
         </div>
         <div class="mt-2 space-y-1 text-[12px] text-ink-soft dark:text-zinc-400 font-medium">
           ${c.vatCode ? `<div><span class="text-ink-faint">P.IVA / CF:</span> ${esc(c.vatCode)}</div>` : ''}
@@ -1495,8 +1698,7 @@ function clientCardHTML(c) {
         <button data-client-action="new-project" data-id="${c.id}" class="mt-3 w-full py-1.5 text-center bg-gray-100 dark:bg-zinc-800 hover:bg-accent/10 dark:hover:bg-accent/20 hover:text-accent rounded-lg text-[12px] font-bold transition-soft no-print flex items-center justify-center gap-1">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
           Nuovo Progetto per Cliente
-        </button>
-      ` : ''}
+        </button>` : ''}
     </div>`;
 }
 
@@ -1589,6 +1791,9 @@ function deleteClient(id) {
   });
 }
 
+/* ---------------------------------------------------------------------
+   GESTIONE NOTA DI PAGAMENTO CON ICONE IN STILE APPLE
+--------------------------------------------------------------------- */
 function allEntriesFlat() {
   const projectMap = new Map(state.projects.map(p => [p.id, p]));
   const clientMap = new Map(state.clients.map(c => [c.id, c]));
@@ -1651,13 +1856,29 @@ function renderPayment() {
   
   if (flat.length > 0) {
     if (statesInEntries.has('unpaid') && !statesInEntries.has('paid') && !statesInEntries.has('advance')) {
-      statusBadgeHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">Da Pagare</span>`;
+      statusBadgeHTML = `
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+          <svg class="w-3.5 h-3.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          Da Pagare
+        </span>`;
     } else if (statesInEntries.has('paid') && !statesInEntries.has('unpaid') && !statesInEntries.has('advance')) {
-      statusBadgeHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Pagata Interamente</span>`;
+      statusBadgeHTML = `
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+          <svg class="w-3.5 h-3.5 shrink-0 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          Pagata
+        </span>`;
     } else if (statesInEntries.has('advance')) {
-      statusBadgeHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">Acconto Ricevuto</span>`;
+      statusBadgeHTML = `
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+          <svg class="w-3.5 h-3.5 shrink-0 text-blue-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12h10V2z"></path><circle cx="12" cy="12" r="10" stroke-dasharray="3 3"></circle></svg>
+          Acconto
+        </span>`;
     } else {
-      statusBadgeHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-gray-500/10 text-gray-600 dark:text-gray-400 border border-gray-500/20">Stato Misto</span>`;
+      statusBadgeHTML = `
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded bg-gray-500/10 text-gray-600 dark:text-gray-400 border border-gray-500/20">
+          <svg class="w-3.5 h-3.5 shrink-0 text-gray-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-dasharray="4 4"></circle><path d="M8 12h8"></path></svg>
+          Stato Misto
+        </span>`;
     }
   }
 
@@ -1721,19 +1942,29 @@ function renderPayment() {
         </div>
         
         ${editable && flat.length > 0 ? `
-          <div class="flex flex-wrap items-center gap-1.5 bg-gray-100 dark:bg-zinc-900 p-1 rounded-xl">
-            <button onclick="window.__updateActiveNoteStatus('unpaid')" class="px-2.5 py-1 text-[11px] font-bold rounded hover:bg-white dark:hover:bg-zinc-800 transition-soft text-amber-600">Da Pagare</button>
-            <button onclick="window.__updateActiveNoteStatus('advance')" class="px-2.5 py-1 text-[11px] font-bold rounded hover:bg-white dark:hover:bg-zinc-800 transition-soft text-blue-500">Acconto</button>
-            <button onclick="window.__updateActiveNoteStatus('paid')" class="px-2.5 py-1 text-[11px] font-bold rounded hover:bg-white dark:hover:bg-zinc-800 transition-soft text-emerald-500">Pagata</button>
-          </div>
-        ` : ''}
+          <div class="flex flex-wrap items-center gap-1.5 bg-gray-100 dark:bg-zinc-900 p-1.5 rounded-xl border border-black/5 dark:border-white/5">
+            <button onclick="window.__updateActiveNoteStatus('unpaid')" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg hover:bg-white dark:hover:bg-zinc-800 transition-soft text-amber-600 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Da Pagare
+            </button>
+            <button onclick="window.__updateActiveNoteStatus('advance')" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg hover:bg-white dark:hover:bg-zinc-800 transition-soft text-blue-500 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12h10V2z"></path><circle cx="12" cy="12" r="10" stroke-dasharray="3 3"></circle></svg>
+              Acconto
+            </button>
+            <button onclick="window.__updateActiveNoteStatus('paid')" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg hover:bg-white dark:hover:bg-zinc-800 transition-soft text-emerald-500 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Pagata
+            </button>
+          </div>` : ''}
 
         <div class="flex items-center gap-2 self-end md:self-auto">
-          <button id="btn-sync-dashboard-filters" class="no-print px-3.5 py-1.5 rounded-full border border-black/15 dark:border-white/10 text-[12px] font-bold transition-soft flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/5">
-            ✏️ Filtra ora
+          <button id="btn-sync-dashboard-filters" class="no-print px-3.5 py-1.5 rounded-full border border-black/15 dark:border-white/10 text-[12px] font-bold transition-soft flex items-center gap-1.5 hover:bg-black/5 dark:hover:bg-white/5">
+            <svg class="w-3.5 h-3.5 text-ink-soft dark:text-zinc-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+            Filtra ora
           </button>
-          <button id="btn-print" type="button" class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[12px] font-bold transition-soft flex items-center gap-1">
-            ⎙ Stampa PDF
+          <button id="btn-print" type="button" class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[12px] font-bold transition-soft flex items-center gap-1.5 shadow-sm">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            Stampa PDF
           </button>
         </div>
       </div>
@@ -1782,22 +2013,19 @@ function renderPayment() {
             <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold">
               <span>Rivalsa Previdenziale (${taxPercentage}%)</span>
               <span class="tabular-nums">${esc(eur(taxValue))}</span>
-            </div>
-          ` : ''}
+            </div>` : ''}
 
           ${vatPercentage > 0 ? `
             <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold">
               <span>I.V.A. (${vatPercentage}%)</span>
               <span class="tabular-nums">${esc(eur(vatValue))}</span>
-            </div>
-          ` : ''}
+            </div>` : ''}
 
           ${wTaxPercentage > 0 ? `
             <div class="flex justify-between text-red-500 font-semibold">
               <span>Ritenuta d'Acconto (${wTaxPercentage}%)</span>
-              <span class="tabular-nums">-{esc(eur(wTaxValue))}</span>
-            </div>
-          ` : ''}
+              <span class="tabular-nums">-${esc(eur(wTaxValue))}</span>
+            </div>` : ''}
 
           <div class="flex justify-between pt-2.5 mt-1 border-t border-black/10 dark:border-white/10 text-[16px] font-extrabold">
             <span>Netto a pagare</span><span class="tabular-nums text-accent">${esc(eur(grandTotal))}</span>
@@ -2054,42 +2282,6 @@ function renderSettings() {
   bindAccountPanel();
 }
 
-async function saveSettings() {
-  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
-  const rate = Number($('#s-rate').value);
-  const extra = Number($('#s-extra').value);
-  const tax = Number($('#s-tax').value);
-  const vat = Number($('#s-vat').value);
-  const withholding = Number($('#s-withholding').value);
-  const theme = $('#s-theme').value;
-
-  if (isNaN(rate) || rate < 0) { toast('Tariffa oraria non corretta', 'error'); return; }
-  if (isNaN(extra) || extra < 0) { toast('Valore extra forfettario non valido', 'error'); return; }
-  if (isNaN(tax) || tax < 0 || tax > 100) { toast('Rivalsa fiscale non corretta', 'error'); return; }
-  if (isNaN(vat) || vat < 0 || vat > 100) { toast('IVA non valida', 'error'); return; }
-  if (isNaN(withholding) || withholding < 0 || withholding > 100) { toast('Ritenuta d\'acconto non corretta', 'error'); return; }
-
-  const holderEl = $('#s-holder'), ibanEl = $('#s-iban'), bicEl = $('#s-bic');
-
-  state.settings = {
-    id: 'app',
-    hourlyRate: rate,
-    extra: extra,
-    taxRate: tax,
-    vatRate: vat,
-    withholdingTaxRate: withholding,
-    holderName: holderEl ? holderEl.value.trim() : (state.settings.holderName || ''),
-    iban: ibanEl ? ibanEl.value.trim() : (state.settings.iban || ''),
-    bic: bicEl ? bicEl.value.trim() : (state.settings.bic || ''),
-    theme: theme
-  };
-  
-  await dbPut('settings', state.settings);
-  syncTheme(theme);
-  cloudPush();
-  toast('Configurazione applicata con successo');
-}
-
 function download(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -2163,7 +2355,7 @@ function importJSON(ev) {
     openModal({
       title: 'Confermare Ripristino?',
       danger: true,
-      bodyHTML: `<p class="text-[14px]">Ripristinando questo pacchetto verranno importati <span class="font-bold text-accent">${d.projects.length}</span> progetti, <span class="font-bold text-accent">${d.entries.length}</span> sessioni e <span class="font-bold text-accent">${(d.clients || []).length}</span> clienti. Tutti i dati corrents verranno persi definitivamente.</p>`,
+      bodyHTML: `<p class="text-[14px]">Ripristinando questo pacchetto verranno importati <span class="font-bold text-accent">${d.projects.length}</span> progetti, <span class="font-bold text-accent">${d.entries.length}</span> sessioni e <span class="font-bold text-accent">${(d.clients || []).length}</span> clienti. Tutti i dati correnti verranno persi definitivamente.</p>`,
       confirmText: 'Sì, Sovrascrivi database',
       onConfirm: async () => {
         try {
@@ -2194,11 +2386,19 @@ function importJSON(ev) {
   reader.readAsText(file);
 }
 
-function guideSection(title, bodyHTML) {
+/* ---------------------------------------------------------------------
+   GUIDE VIEW (Manuale Integrato Con Icone Apple-Style)
+--------------------------------------------------------------------- */
+function guideSection(iconSVG, title, bodyHTML) {
   return `
     <details class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-sm group">
       <summary class="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft">
-        <span class="text-[15px] font-bold tracking-tight dark:text-zinc-100">${esc(title)}</span>
+        <div class="flex items-center gap-3">
+          <div class="text-accent shrink-0">
+            ${iconSVG}
+          </div>
+          <span class="text-[15px] font-bold tracking-tight dark:text-zinc-100">${esc(title)}</span>
+        </div>
         <span class="text-ink-faint dark:text-zinc-600 text-[13px] transition-transform group-open:rotate-90">▶</span>
       </summary>
       <div class="px-5 pb-5 pt-1 text-[13px] text-ink-soft dark:text-zinc-400 leading-relaxed space-y-2.5 border-t border-black/[0.02] dark:border-white/[0.02]">${bodyHTML}</div>
@@ -2208,12 +2408,18 @@ function guideSection(title, bodyHTML) {
 function renderGuide() {
   const root = $('#view-guide');
   if (!root) return;
+
+  const svgChart = `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v5.25c0 .621-.504 1.125-1.125 1.125h-2.25A1.125 1.125 0 013 18.375v-5.25zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125v-9.75zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v14.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>`;
+  const svgStopwatch = `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"></circle><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4l2.5 1.5M12 2v3M10 2h4"/></svg>`;
+  const svgReceipt = `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`;
+  const svgWallet = `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" ry="2"></rect><line x1="3" y1="10" x2="21" y2="10"></line><circle cx="17" cy="15" r="1"></circle></svg>`;
+
   root.innerHTML = `
     <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-2">Manuale di Utilizzo Professionale</h2>
     <p class="text-[14px] text-ink-soft dark:text-zinc-400 mb-4 leading-relaxed font-medium">Tutte le potenzialità di HourFlow spiegate nel dettaglio.</p>
     <div class="space-y-3">
 
-      ${guideSection('📈 Dashboard & Filtri Avanzati', `
+      ${guideSection(svgChart, 'Dashboard & Filtri Avanzati', `
         <p>La **Dashboard** è la tua centrale di controllo operativa. Da qui puoi tenere sotto controllo le ore totali registrate, la tariffa di base e la compensazione finanziaria calcolata.</p>
         <p>Grazie ai nuovi **Filtri di Visualizzazione**, puoi segmentare istantaneamente il tuo lavoro per:</p>
         <ul class="list-disc pl-5 space-y-1">
@@ -2222,7 +2428,7 @@ function renderGuide() {
         </ul>
         <p>Tutti gli indicatori, il grafico analitico e la Nota di pagamento si aggiornano in tempo reale rispettando fedelmente i filtri impostati.</p>`)}
 
-      ${guideSection('⏱️ Cronometro di precisione real-time', `
+      ${guideSection(svgStopwatch, 'Cronometro di precisione real-time', `
         <p>Avvia una sessione di lavoro in tempo reale toccando il pulsante **⏱** situato su qualsiasi riga di progetto.</p>
         <p>Il cronometro di HourFlow è stato progettato per massimizzare le prestazioni del dispositivo:</p>
         <ul class="list-disc pl-5 space-y-1">
@@ -2230,13 +2436,21 @@ function renderGuide() {
           <li>**Uscita Sicura:** Anche se rinfreschi la pagina o spegni il browser, il cronometro riprenderà la conta dall'istante esatto di avvio.</li>
         </ul>`)}
 
-      ${guideSection('🧾 Nota Pro, Rivalsa, IVA e Ritenuta', `
+      ${guideSection(svgReceipt, 'Nota Pro, Rivalsa, IVA e Ritenuta', `
         <p>La sezione **Nota Pro** compila istantaneamente una fattura/ricevuta intestata al cliente selezionato.</p>
         <p>Dalle **Impostazioni** puoi calibrare il calcolo fiscale a seconda della tua posizione contributiva:</p>
         <ul class="list-disc pl-5 space-y-1">
           <li>**Rivalsa INPS:** Solitamente impostata al 4% per i professionisti iscritti alla Gestione Separata. Viene calcolata sull'imponibile base.</li>
           <li>**I.V.A.:** Imposta l'aliquota di legge (es. 22%). Viene calcolata sulla somma di imponibile base e rivalsa.</li>
           <li>**Ritenuta d'Acconto:** Imposta la ritenuta (es. 20%). Viene calcolata sulla somma di imponibile base e rivalsa e sottratta automaticamente per determinare il Netto a Pagare.</li>
+        </ul>`)}
+
+      ${guideSection(svgWallet, 'Nuova Tracciabilità Pagamenti & Scorciatoie', `
+        <p>Le nuove funzionalità introdotte ottimizzano il flusso di lavoro finanziario dell'utente:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Stati delle Note:** Ogni sessione può essere contrassegnata massivamente o singolarmente come *Da Pagare*, *Acconto* o *Pagata*.</li>
+          <li>**Esclusione Ore Saldate:** Attivando l'opzione *"Fatturabile: escludi le ore già saldate"* nel widget filtri, escluderai automaticamente le ore pagate per concentrarti solo su quello che devi ancora riscuotere.</li>
+          <li>**Associazione Rapida:** All'interno della Rubrica Clienti puoi avviare istantaneamente la creazione di un progetto dedicato, pre-collegando direttamente l'anagrafica selezionata.</li>
         </ul>`)}
 
     </div>`;
