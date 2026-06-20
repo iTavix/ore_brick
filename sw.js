@@ -1,7 +1,7 @@
 /* HourFlow Service Worker — app shell offline + runtime cache.
    Path relativi per funzionare anche in sottocartella di GitHub Pages. */
-const CACHE = 'hourflow-v1';
-const SHELL = ['./', './index.html', './manifest.json', './apple-touch-icon.png'];
+const CACHE = 'hourflow-v2';
+const SHELL = ['./', './index.html', './manifest.json', './apple-touch-icon.png', './favicon.ico', './favicon-32.png', './favicon-16.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
