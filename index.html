@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#ffffff" />
 <title>HourFlow — Smart Freelance Suite</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -286,6 +287,80 @@ function maskIban(iban) {
 function groupIban(iban) {
   const v = String(iban == null ? '' : iban).replace(/\s+/g, '');
   return v ? v.replace(/(.{4})/g, '$1 ').trim() : '';
+}
+
+// Stampa robusta cross-browser, in particolare iOS/Safari. La nota viene stampata
+// dentro un iframe ISOLATO con gli stili della pagina clonati. Cosi' si evitano gli
+// ostacoli che mandano in tilt l'anteprima di Safari (header sticky + backdrop blur,
+// body a 100vh, contenitori overflow-x-auto, dark mode) e non si dipende dal rinvio
+// post-gesto che iOS ignora. Fallback su window.print() se qualcosa fallisce.
+function printNote() {
+  const area = document.querySelector('.print-area');
+  if (!area) { try { window.print(); } catch (_) {} return; }
+
+  const old = document.getElementById('print-frame');
+  if (old) old.remove();
+
+  const iframe = document.createElement('iframe');
+  iframe.id = 'print-frame';
+  iframe.setAttribute('aria-hidden', 'true');
+  // Fuori schermo ma con dimensioni reali (A4 a 96dpi): display:none/size 0 non
+  // verrebbe impaginato e alcuni browser lo stampano vuoto.
+  iframe.style.cssText = 'position:fixed; left:-9999px; top:0; width:794px; height:1123px; border:0;';
+  document.body.appendChild(iframe);
+
+  // Clona tutti gli stili della pagina, incluse le utility generate da Tailwind
+  // (iniettate come <style>): nell'iframe le classi rendono identiche allo schermo.
+  let headStyles = '';
+  document.querySelectorAll('style, link[rel="stylesheet"]').forEach((node) => {
+    headStyles += node.outerHTML;
+  });
+
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(
+    '<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">' +
+    headStyles +
+    '<style>' +
+      '@page { size: A4; margin: 14mm; }' +
+      'html,body{ margin:0!important; padding:0!important; background:#fff!important; }' +
+      '*{ -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }' +
+      '.no-print{ display:none!important; }' +
+      '.print\\:inline{ display:inline!important; }' +
+      '.print-area{ box-shadow:none!important; border:none!important; border-radius:0!important; margin:0!important; padding:0!important; overflow:visible!important; background:#fff!important; }' +
+      '.overflow-x-auto{ overflow:visible!important; }' +
+      '.print-table{ width:100%!important; min-width:0!important; }' +
+      '.print-table th,.print-table td{ padding:8px 10px!important; border-bottom:1px solid #e2e2e6!important; }' +
+      '.print-table tr,.print-table thead,.print-keep{ break-inside:avoid; }' +
+    '</style></head><body>' +
+    area.outerHTML +
+    '</body></html>'
+  );
+  doc.close();
+
+  let printed = false;
+  const fire = () => {
+    if (printed) return; printed = true;
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (e) {
+      console.error('print failed', e);
+      try { window.print(); } catch (_) {}
+    }
+    // afterprint non e' garantito su iOS: pulizia a tempo.
+    setTimeout(() => { const f = document.getElementById('print-frame'); if (f) f.remove(); }, 1500);
+  };
+
+  // Se il documento e' gia' pronto, stampo SUBITO (resto dentro il gesto del tap,
+  // requisito di iOS). Altrimenti attendo onload, con timeout di sicurezza perche'
+  // i documenti creati via document.write spesso non emettono onload.
+  if (doc.readyState === 'complete') {
+    fire();
+  } else {
+    iframe.onload = fire;
+    setTimeout(fire, 300);
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -1800,14 +1875,7 @@ function renderPayment() {
     </div>`;
 
   const prtBtn = $('#btn-print');
-  if (prtBtn) prtBtn.addEventListener('click', () => {
-    // Safari avvia window.print() in modo inaffidabile se chiamato subito nel
-    // click: attendo un ciclo di paint (rAF) + un breve timeout così il dialogo
-    // di stampa parte in modo costante.
-    requestAnimationFrame(() => {
-      setTimeout(() => { try { window.print(); } catch (e) { console.error('print failed', e); } }, 50);
-    });
-  });
+  if (prtBtn) prtBtn.addEventListener('click', () => printNote());
 
   const syncFiltBtn = $('#btn-sync-dashboard-filters');
   if (syncFiltBtn) syncFiltBtn.addEventListener('click', () => setView('dashboard'));
