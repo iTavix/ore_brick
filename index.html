@@ -59,7 +59,7 @@
   .seg-container::-webkit-scrollbar { display: none; }
   .seg { background: #e9e9eb; border-radius: 12px; padding: 3px; display: flex; width: 100%; min-width: max-content; }
   .dark .seg { background: #2c2c2e; }
-  .seg button { border-radius: 9px; padding: 6px 12px; font-size: 13px; font-weight: 500; transition: all .2s ease; white-space: nowrap; flex: 1 1 auto; text-align: center; }
+  .seg button { border-radius: 9px; padding: 6px 12px; font-size: 13px; font-weight: 500; transition: all .2s ease; white-space: nowrap; flex: 1 1 auto; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   .seg button[aria-selected="true"] {
     background: #fff;
     box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 .5px rgba(0,0,0,.04);
@@ -76,7 +76,9 @@
   /* Menu mobile: SOLO la barra di navigazione (#nav) scorre orizzontalmente con i
      tab a larghezza naturale; gli altri segmented control restano a riempimento. */
   .seg-container { scroll-behavior: smooth; scroll-snap-type: x proximity; }
-  #nav button { flex: 0 0 auto; scroll-snap-align: center; }
+  #nav button { flex: 1 1 0; scroll-snap-align: center; padding: 7px 4px; }
+  .nav-ico { width: 18px; height: 18px; flex: 0 0 auto; }
+  .nav-label { display: none; }
   .nav-scroll-wrap { position: relative; }
   .nav-fade {
     position: absolute; top: 0; right: 0; bottom: 0; width: 34px;
@@ -87,7 +89,8 @@
   .dark .nav-fade { background: linear-gradient(to right, rgba(44,44,46,0), rgba(44,44,46,.96)); }
   .nav-fade.hide { opacity: 0; }
   @media (min-width: 640px) {
-    #nav button { flex: 1 1 auto; }
+    #nav button { flex: 1 1 auto; padding: 6px 12px; }
+    .nav-label { display: inline; }
     .nav-fade { display: none; }
   }
 
@@ -195,6 +198,14 @@
         <span id="nav-timer-clock" class="tabular-nums font-mono">00:00:00</span>
       </div>
 
+      <button id="open-welcome" onclick="location.href='welcome.html'" class="shrink-0 w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Rivedi l'introduzione" aria-label="Rivedi l'introduzione">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M18 14l.7 1.9L21 16.5l-2.3.6L18 19l-.7-1.9L15 16.5l2.3-.6z"/></svg>
+      </button>
+
+      <button id="app-refresh" onclick="hardRefresh()" class="shrink-0 w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Aggiorna app (ricarica l'ultima versione)" aria-label="Aggiorna app">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v5h-5"/></svg>
+      </button>
+
       <button id="theme-toggle" class="shrink-0 w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Inverti schema colori">
         <svg class="w-5 h-5 dark:hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
         <svg class="w-5 h-5 hidden dark:inline text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
@@ -207,14 +218,14 @@
       <div class="nav-scroll-wrap">
         <div class="seg-container">
           <div class="seg gap-0 text-[13px] font-semibold" role="tablist" id="nav">
-            <button role="tab" data-view="dashboard">Dashboard</button>
-            <button role="tab" data-view="payment">Nota Pro</button>
-            <button role="tab" data-view="report">Report</button>
-            <button role="tab" data-view="clients">Clienti</button>
-            <button role="tab" data-view="expenses">Spese</button>
-            <button role="tab" data-view="quotes">Preventivi</button>
-            <button role="tab" data-view="settings">Impostazioni</button>
-            <button role="tab" data-view="guide">Manuale d'Uso</button>
+            <button role="tab" data-view="dashboard" title="Dashboard"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="nav-label">Dashboard</span></button>
+            <button role="tab" data-view="payment" title="Nota Pro"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 13h6"/><path d="M9 16h4"/></svg><span class="nav-label">Nota Pro</span></button>
+            <button role="tab" data-view="report" title="Report"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/></svg><span class="nav-label">Report</span></button>
+            <button role="tab" data-view="clients" title="Clienti"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0111 0"/><path d="M16 5.5a3 3 0 010 5.4"/><path d="M18.5 20a5.5 5.5 0 00-3-4.9"/></svg><span class="nav-label">Clienti</span></button>
+            <button role="tab" data-view="expenses" title="Spese"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2"/></svg><span class="nav-label">Spese</span></button>
+            <button role="tab" data-view="quotes" title="Preventivi"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l3 3v15H6V3z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg><span class="nav-label">Preventivi</span></button>
+            <button role="tab" data-view="settings" title="Impostazioni"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7L5.6 5.6"/></svg><span class="nav-label">Impostazioni</span></button>
+            <button role="tab" data-view="guide" title="Manuale d'Uso"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 016.5 3H19v14H6.5A1.5 1.5 0 005 18.5z"/><path d="M5 18.5A1.5 1.5 0 016.5 17H19v3H6.5A1.5 1.5 0 015 18.5z"/></svg><span class="nav-label">Manuale d'Uso</span></button>
           </div>
         </div>
         <div class="nav-fade" aria-hidden="true"></div>
@@ -1163,6 +1174,29 @@ function applyRoleVisibility() {
   OWNER_ONLY_VIEWS.forEach(v => {
     const tab = $('#nav button[data-view="' + v + '"]');
     if (tab) tab.classList.toggle('hidden', client);
+  });
+}
+
+// Full app refresh: pull the latest version (update SW, clear caches when online), then reload.
+// User data is safe — it lives in IndexedDB and on the cloud, not in the HTTP caches.
+function hardRefresh() {
+  openModal({
+    title: 'Aggiornare l\'app?',
+    bodyHTML: `<p class="text-[14px]">Ricarico HourFlow scaricando l'ultima versione disponibile. I tuoi dati restano al sicuro: sono salvati in locale e sul cloud, non vengono toccati.</p>`,
+    confirmText: 'Aggiorna ora',
+    onConfirm: async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.update()));
+        }
+        if (window.caches && navigator.onLine !== false) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+      } catch (e) { /* best-effort: reload anyway */ }
+      location.reload();
+    }
   });
 }
 
