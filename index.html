@@ -1269,9 +1269,9 @@ function renderDashboard() {
 
 function summaryCard(label, value, valueClass, sub) {
   return `
-    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-4 py-4 shadow-sm flex flex-col justify-between">
-      <div class="text-[10px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">${esc(label)}</div>
-      <div class="mt-1.5 text-[18px] sm:text-[20px] font-extrabold tracking-tight ${valueClass} leading-tight tabular-nums">${esc(value)}</div>
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-3 py-3.5 sm:px-4 sm:py-4 shadow-sm flex flex-col justify-between overflow-hidden">
+      <div class="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 truncate">${esc(label)}</div>
+      <div class="mt-1.5 text-[16px] sm:text-[20px] font-extrabold tracking-tight ${valueClass} leading-tight tabular-nums truncate">${esc(value)}</div>
       ${sub ? `<div class="text-[9px] font-medium text-ink-faint dark:text-zinc-500 mt-1 truncate">${esc(sub)}</div>` : ''}
     </div>`;
 }
@@ -3515,7 +3515,7 @@ function updateUserBadge() {
   const client = isClient();
   el.classList.remove('hidden'); el.classList.add('flex');
   el.innerHTML = `
-    <span class="truncate font-semibold text-ink-soft dark:text-zinc-300">${esc(name)}</span>
+    <span class="hidden sm:inline truncate font-semibold text-ink-soft dark:text-zinc-300">${esc(name)}</span>
     ${role ? `<span class="shrink-0 font-bold rounded-full px-2 py-0.5 ${client ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400' : 'bg-accent-soft text-accent'}">${esc(role)}</span>` : ''}`;
 }
 
