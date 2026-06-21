@@ -3943,22 +3943,28 @@ function buildClientStatement(clientId, viewerEmail) {
   };
 }
 
-// Proprietario: pubblica/aggiorna statement e indice per ogni cliente che ha
-// un'email account associata (client.accountEmail).
+// Proprietario: scrive statement + indice per UN cliente. Propaga gli errori.
+async function publishStatementFor(c) {
+  const owner = sync.user.uid;
+  const email = String(c.accountEmail || '').trim().toLowerCase();
+  if (!email) return;
+  const stmt = buildClientStatement(c.id, email);
+  await sync.db.collection('users').doc(owner).collection('statements').doc(c.id).set(stmt);
+  await sync.db.collection('links').doc(owner + '_' + c.id).set({
+    ownerUid: owner, clientId: c.id, viewerEmail: email, clientName: c.name || '', updatedAt: Date.now()
+  });
+}
+
+// Proprietario: pubblica/aggiorna statement e indice per ogni cliente associato.
 async function publishAllStatements() {
   if (!sync.user || isClient()) return;
-  const owner = sync.user.uid;
+  let lastErr = null;
   for (const c of state.clients) {
-    const email = String(c.accountEmail || '').trim().toLowerCase();
-    if (!email) continue;
-    try {
-      const stmt = buildClientStatement(c.id, email);
-      await sync.db.collection('users').doc(owner).collection('statements').doc(c.id).set(stmt);
-      await sync.db.collection('links').doc(owner + '_' + c.id).set({
-        ownerUid: owner, clientId: c.id, viewerEmail: email, clientName: c.name || '', updatedAt: Date.now()
-      });
-    } catch (_) {}
+    if (!(c.accountEmail && String(c.accountEmail).trim())) continue;
+    try { await publishStatementFor(c); }
+    catch (err) { lastErr = err; }
   }
+  if (lastErr) { setSyncStatus('error'); toast('Pubblicazione dati cliente non riuscita: ' + syncErrorMsg(lastErr), 'error'); }
 }
 
 function schedulePublish() {
@@ -3986,8 +3992,12 @@ async function associateClientAccount(clientId) {
       await dbPut('clients', updated);
       state.clients = state.clients.map(x => x.id === clientId ? updated : x);
       cloudPush();
-      await publishAllStatements();
-      toast('Account associato: il cliente vedra\u0027 i dati al prossimo accesso');
+      try {
+        await publishStatementFor(updated);   // scrittura verificata (propaga errori)
+        toast('Account associato: il cliente vedrà i dati a breve');
+      } catch (err) {
+        toast('Associazione NON riuscita: ' + syncErrorMsg(err) + ' — pubblica le regole Firestore aggiornate', 'error');
+      }
       renderClients();
     }
   });
@@ -4048,7 +4058,13 @@ function attachClientStatementByEmail() {
         );
       }
       if (state.view === 'settings') renderSettings();
-    }, () => { /* offline o regole: ignora */ });
+    }, (err) => {
+      // Errore di lettura dell'indice (es. regole non aggiornate): rendilo visibile.
+      sync.share.linked = false;
+      setSyncStatus('error');
+      toast('Lettura dati condivisi negata: ' + syncErrorMsg(err), 'error');
+      if (state.view === 'settings') renderSettings();
+    });
   // Rete di sicurezza: rilettura periodica nel caso il realtime cada in background.
   sync.share.pollTimer = setInterval(pollStatement, 30000);
 }
