@@ -1,53 +1,80 @@
 /* HourFlow Service Worker — app shell offline + runtime cache.
-   Path relativi per funzionare anche in sottocartella di GitHub Pages. */
-const CACHE = 'hourflow-v2';
-const SHELL = ['./', './index.html', './manifest.json', './apple-touch-icon.png', './favicon.ico', './favicon-32.png', './favicon-16.png'];
+   Relative paths so it also works from a GitHub Pages subfolder.
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE)
+   Strategy
+   - App shell (HTML incl. welcome, icons, manifest) -> precache, served instantly.
+   - CDN libraries (Tailwind, jsPDF on cdnjs, Firebase SDK on gstatic)
+                                                     -> stale-while-revalidate, so the
+                                                        app boots & exports offline too.
+   - Firebase *data* (Firestore/Auth/Installations)  -> always network; Firestore keeps
+                                                        its own IndexedDB persistence. */
+const PRECACHE = 'hourflow-precache-v3';
+const RUNTIME  = 'hourflow-runtime-v3';
+
+const SHELL = [
+  './', './index.html', './welcome.html', './manifest.json',
+  './apple-touch-icon.png', './favicon.ico', './favicon-32.png', './favicon-16.png'
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(PRECACHE)
       .then((c) => Promise.allSettled(SHELL.map((u) => c.add(u))))
       .then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
+self.addEventListener('activate', (event) => {
+  const keep = [PRECACHE, RUNTIME];
+  event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => !keep.includes(k)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
+// Serve cache immediately, refresh from network for next time.
+function staleWhileRevalidate(event, req) {
+  return caches.match(req).then((cached) => {
+    const fetching = fetch(req).then((res) => {
+      if (res && (res.status === 200 || res.type === 'opaque')) {
+        const copy = res.clone();
+        caches.open(RUNTIME).then((c) => c.put(req, copy)).catch(() => {});
+      }
+      return res;
+    }).catch(() => cached);
+    event.waitUntil(fetching.then(() => {}).catch(() => {}));
+    return cached || fetching;
+  });
+}
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
   if (req.method !== 'GET') return;
-  const url = new URL(req.url);
 
-  // Le chiamate Firebase/Auth/Firestore devono SEMPRE andare in rete
-  // (la persistenza offline è gestita da Firestore stesso).
-  if (/firestore|googleapis|firebaseio|identitytoolkit|gstatic/.test(url.host)) return;
+  let url;
+  try { url = new URL(req.url); } catch (_) { return; }
 
-  // Navigazioni: network-first con fallback alla cache (per l'uso offline).
+  // Firebase realtime/auth/data endpoints: always network, never cache.
+  // (Static Firebase SDK files on www.gstatic.com are intentionally NOT matched here.)
+  if (/firestore\.googleapis|identitytoolkit|securetoken|firebaseio|firebaseinstallations|fcmregistrations/.test(url.href)) {
+    return; // default browser handling
+  }
+
+  // Navigations: network-first (fresh deploys land fast) with offline fallback.
   if (req.mode === 'navigate') {
-    e.respondWith(
+    event.respondWith(
       fetch(req)
-        .then((r) => { const cl = r.clone(); caches.open(CACHE).then((c) => c.put(req, cl)); return r; })
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(PRECACHE).then((c) => c.put(req, copy)).catch(() => {});
+          return res;
+        })
         .catch(() => caches.match(req).then((m) => m || caches.match('./index.html')))
     );
     return;
   }
 
-  // Altri asset (incluse CDN come Tailwind): cache-first, poi rete e memorizza.
-  e.respondWith(
-    caches.match(req).then((m) => m || fetch(req).then((r) => {
-      try {
-        if (r && (r.status === 200 || r.type === 'opaque')) {
-          const cl = r.clone();
-          caches.open(CACHE).then((c) => c.put(req, cl));
-        }
-      } catch (_) {}
-      return r;
-    }).catch(() => m))
-  );
+  // Everything else: app shell + CDN libraries via stale-while-revalidate.
+  event.respondWith(staleWhileRevalidate(event, req));
 });
