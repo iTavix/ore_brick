@@ -89,7 +89,8 @@
   .dark .nav-fade { background: linear-gradient(to right, rgba(44,44,46,0), rgba(44,44,46,.96)); }
   .nav-fade.hide { opacity: 0; }
   @media (min-width: 640px) {
-    #nav button { flex: 1 1 auto; padding: 6px 12px; }
+    #nav button { flex: 1 1 auto; padding: 4px 6px; gap: 4px; font-size: 12px; }
+    #nav .nav-ico { width: 16px; height: 16px; }
     .nav-label { display: inline; }
     .nav-fade { display: none; }
   }
@@ -199,7 +200,7 @@
       </div>
 
       <button id="open-welcome" onclick="location.href='welcome.html'" class="shrink-0 w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Rivedi l'introduzione" aria-label="Rivedi l'introduzione">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M18 14l.7 1.9L21 16.5l-2.3.6L18 19l-.7-1.9L15 16.5l2.3-.6z"/></svg>
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v3M9 20h6"/><path d="M10.5 8.5l4 2.5-4 2.5z"/></svg>
       </button>
 
       <button id="app-refresh" onclick="hardRefresh()" class="shrink-0 w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Aggiorna app (ricarica l'ultima versione)" aria-label="Aggiorna app">
@@ -219,13 +220,13 @@
         <div class="seg-container">
           <div class="seg gap-0 text-[13px] font-semibold" role="tablist" id="nav">
             <button role="tab" data-view="dashboard" title="Dashboard"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="nav-label">Dashboard</span></button>
-            <button role="tab" data-view="payment" title="Nota Pro"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 13h6"/><path d="M9 16h4"/></svg><span class="nav-label">Nota Pro</span></button>
+            <button role="tab" data-view="payment" title="Nota Pro"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/></svg><span class="nav-label">Nota Pro</span></button>
             <button role="tab" data-view="report" title="Report"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/></svg><span class="nav-label">Report</span></button>
             <button role="tab" data-view="clients" title="Clienti"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0111 0"/><path d="M16 5.5a3 3 0 010 5.4"/><path d="M18.5 20a5.5 5.5 0 00-3-4.9"/></svg><span class="nav-label">Clienti</span></button>
-            <button role="tab" data-view="expenses" title="Spese"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2"/></svg><span class="nav-label">Spese</span></button>
-            <button role="tab" data-view="quotes" title="Preventivi"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l3 3v15H6V3z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg><span class="nav-label">Preventivi</span></button>
+            <button role="tab" data-view="expenses" title="Spese"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 9.5h19"/></svg><span class="nav-label">Spese</span></button>
+            <button role="tab" data-view="quotes" title="Preventivi"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="3" width="6" height="4" rx="1.5"/><path d="M9 12h6M9 16h4"/></svg><span class="nav-label">Preventivi</span></button>
             <button role="tab" data-view="settings" title="Impostazioni"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7L5.6 5.6"/></svg><span class="nav-label">Impostazioni</span></button>
-            <button role="tab" data-view="guide" title="Manuale d'Uso"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 016.5 3H19v14H6.5A1.5 1.5 0 005 18.5z"/><path d="M5 18.5A1.5 1.5 0 016.5 17H19v3H6.5A1.5 1.5 0 015 18.5z"/></svg><span class="nav-label">Manuale d'Uso</span></button>
+            <button role="tab" data-view="guide" title="Manuale d'Uso"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 016.5 3H19v14H6.5A1.5 1.5 0 005 18.5z"/><path d="M5 18.5A1.5 1.5 0 016.5 17H19v3H6.5A1.5 1.5 0 015 18.5z"/></svg><span class="nav-label">Manuale</span></button>
           </div>
         </div>
         <div class="nav-fade" aria-hidden="true"></div>
@@ -549,8 +550,9 @@ function buildNoteModel() {
   const clientNames = [...new Set(flat.map(x => x.clientName).filter(Boolean))];
   const clientAddresses = [...new Set(flat.map(x => x.clientAddress).filter(Boolean))];
   const clientVats = [...new Set(flat.map(x => x.clientVat).filter(Boolean))];
+  const clientForeignVats = [...new Set(flat.map(x => x.clientForeignVat).filter(Boolean))];
   return { s, flat, tH, baseCompensation, taxP, vatP, wTaxP, taxValue, vatValue, wTaxValue,
-           grandTotal, stampDuty, payable, ctx, note, paid, residual, forfettario, clientNames, clientAddresses, clientVats };
+           grandTotal, stampDuty, payable, ctx, note, paid, residual, forfettario, clientNames, clientAddresses, clientVats, clientForeignVats };
 }
 
 // Esporta la nota come PDF nativo (jsPDF + autotable), senza dialogo di stampa.
@@ -593,6 +595,7 @@ function exportNotePDF() {
   if (m.clientNames.length === 1) {
     if (m.clientAddresses[0]) { doc.text(String(m.clientAddresses[0]), M, dy); dy += 12; }
     if (m.clientVats[0]) { doc.text('P.IVA/CF: ' + m.clientVats[0], M, dy); dy += 12; }
+    if (m.clientForeignVats && m.clientForeignVats[0]) { doc.text('IVA estera: ' + m.clientForeignVats[0], M, dy); dy += 12; }
   }
 
   const body = m.flat.map(e => [dateIt(e.date), `${e.project} (${money(e.rate)}/h)`, e.spec || '', hrs(e.hours)]);
@@ -1298,7 +1301,7 @@ function renderDashboard() {
     <div class="grid grid-cols-3 gap-3 mb-6">
       ${summaryCard('Ore filtrate', hrs(tH), 'text-ink dark:text-white')}
       ${summaryCard('Tariffa base', eur(baseRate) + '/h', 'text-ink dark:text-white')}
-      ${summaryCard('Compensazione', eur(total), 'text-accent', extra && tH > 0 ? `incl. extra ${eur(extra)}` : '')}
+      ${summaryCard('Compenso', eur(total), 'text-accent', extra && tH > 0 ? `incl. extra ${eur(extra)}` : '')}
     </div>
     ${filterWidget}
     ${buildStopwatchWidgetHTML()}
@@ -2157,6 +2160,7 @@ function clientCardHTML(c) {
         </div>
         <div class="mt-2 space-y-1 text-[12px] text-ink-soft dark:text-zinc-400 font-medium">
           ${c.vatCode ? `<div><span class="text-ink-faint">P.IVA / CF:</span> ${esc(c.vatCode)}</div>` : ''}
+          ${c.foreignVat ? `<div><span class="text-ink-faint">IVA estera:</span> ${esc(c.foreignVat)}</div>` : ''}
           ${c.email ? `<div><span class="text-ink-faint">Email:</span> ${esc(c.email)}</div>` : ''}
           ${c.address ? `<div><span class="text-ink-faint">Sede:</span> ${esc(c.address)}</div>` : ''}
         </div>
@@ -2210,6 +2214,9 @@ function editClientModal(id) {
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Partita IVA o Codice Fiscale</label>
       <input id="fc-vat" class="field mb-3" placeholder="Es. IT01234567890" value="${c ? esc(c.vatCode || '') : ''}" />
 
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">IVA estera <span class="text-ink-faint">(cliente extra-UE, es. Svizzera)</span></label>
+      <input id="fc-foreignvat" class="field mb-3" placeholder="Es. CHE-123.456.789 MWST" value="${c ? esc(c.foreignVat || '') : ''}" />
+
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Email di Fatturazione</label>
       <input id="fc-email" type="email" class="field mb-3" placeholder="Es. amministrazione@retrogames.it" value="${c ? esc(c.email || '') : ''}" />
 
@@ -2225,6 +2232,7 @@ function editClientModal(id) {
         id: c ? c.id : genId(),
         name,
         vatCode: $('#fc-vat', card).value.trim(),
+        foreignVat: $('#fc-foreignvat', card).value.trim(),
         email: $('#fc-email', card).value.trim(),
         address: $('#fc-address', card).value.trim(),
         phone: c ? (c.phone || '') : ''
@@ -2290,7 +2298,8 @@ function allEntriesFlat() {
         rate: p && p.hourlyRate != null ? p.hourlyRate : state.settings.hourlyRate,
         clientName: c ? c.name : '',
         clientAddress: c ? c.address : '',
-        clientVat: c ? c.vatCode : ''
+        clientVat: c ? c.vatCode : '',
+        clientForeignVat: c ? (c.foreignVat || '') : ''
       };
     })
     .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.project.localeCompare(b.project));
@@ -2644,13 +2653,15 @@ function renderPayment() {
   const clientNames = [...new Set(flat.map(x => x.clientName).filter(Boolean))];
   const clientAddresses = [...new Set(flat.map(x => x.clientAddress).filter(Boolean))];
   const clientVats = [...new Set(flat.map(x => x.clientVat).filter(Boolean))];
+  const clientForeignVats = [...new Set(flat.map(x => x.clientForeignVat).filter(Boolean))];
   
   let clientDisplay = '—';
   if (clientNames.length === 1) {
     clientDisplay = `<strong>${esc(clientNames[0])}</strong><br>
                      <span class="text-[11px] text-ink-soft dark:text-zinc-400">
                        ${clientAddresses[0] ? esc(clientAddresses[0]) + '<br>' : ''}
-                       ${clientVats[0] ? 'P.IVA/CF: ' + esc(clientVats[0]) : ''}
+                       ${clientVats[0] ? 'P.IVA/CF: ' + esc(clientVats[0]) + '<br>' : ''}
+                       ${clientForeignVats[0] ? 'IVA estera: ' + esc(clientForeignVats[0]) : ''}
                      </span>`;
   } else if (clientNames.length > 1) {
     clientDisplay = `<strong>Fatturazione Multi-cliente</strong><br><span class="text-[11px] text-ink-soft dark:text-zinc-400 font-medium">Ripartita su ${clientNames.length} posizioni</span>`;
@@ -3815,6 +3826,7 @@ async function exportQuotePDF(id) {
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...soft);
   if (client && client.address) { doc.text(String(client.address), M, dy); dy += 12; }
   if (client && client.vatCode) { doc.text('P.IVA/CF: ' + client.vatCode, M, dy); dy += 12; }
+  if (client && client.foreignVat) { doc.text('IVA estera: ' + client.foreignVat, M, dy); dy += 12; }
 
   const body = (q.items || []).map(it => [it.description || '', String(it.qty || 0), money(it.unitPrice), money((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))]);
   doc.autoTable({
@@ -4034,7 +4046,7 @@ function exportMonthlyCSV() {
   const months = [...map.keys()].sort().reverse();
   if (!months.length) { toast('Nessun dato da esportare', 'error'); return; }
   const sep = ';';
-  const header = ['Mese', 'Sessioni', 'Ore', 'Compensazione'].join(sep);
+  const header = ['Mese', 'Sessioni', 'Ore', 'Compenso'].join(sep);
   const lines = months.map(k => {
     const m = map.get(k);
     return [monthLabel(k), m.count, String(m.hours).replace('.', ','), String(m.comp.toFixed(2)).replace('.', ',')].join(sep);
@@ -4086,7 +4098,7 @@ function renderGuide() {
 function ownerGuideSections() {
   return `
       ${guideSection(gIcon('bg-blue-500', '<path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/>'), 'Dashboard & Filtri Avanzati', `
-        <p>La **Dashboard** è la tua centrale di controllo operativa. Da qui puoi tenere sotto controllo le ore totali registrate, la tariffa di base e la compensazione finanziaria calcolata.</p>
+        <p>La **Dashboard** è la tua centrale di controllo operativa. Da qui puoi tenere sotto controllo le ore totali registrate, la tariffa di base e il compenso finanziario calcolato.</p>
         <p>Grazie ai **Filtri di Visualizzazione**, puoi segmentare istantaneamente il tuo lavoro per:</p>
         <ul class="list-disc pl-5 space-y-1">
           <li>**Periodo Temporale:** Visualizza solo le ore del mese in corso, del mese precedente, dell'anno corrente o imposta un intervallo di date "dal / al" personalizzato.</li>
@@ -4125,11 +4137,11 @@ function ownerGuideSections() {
         <p>Dalle **Impostazioni** puoi definire una **Causale predefinita** (riportata in nota) e attivare la **marca da bollo da 2,00 €**, applicata automaticamente alle note esenti IVA sopra 77,47 €.</p>`)}
 
       ${guideSection(gIcon('bg-teal-500', '<path d="M3 4h18v4H3z"/><path d="M3 8v12h18V8"/><path d="M8 12v5"/><path d="M12 11v6"/><path d="M16 13v4"/>'), 'Report Mensili', `
-        <p>La sezione **Report** aggrega automaticamente il lavoro **mese per mese**: ore, numero di sessioni, compensazione e tariffa media oraria, con una barra di confronto tra i mesi e i totali complessivi.</p>
+        <p>La sezione **Report** aggrega automaticamente il lavoro **mese per mese**: ore, numero di sessioni, compenso e tariffa media oraria, con una barra di confronto tra i mesi e i totali complessivi.</p>
         <p>Con **Esporta CSV** scarichi il riepilogo mensile pronto per Excel o Numbers, utile per dichiarazioni e consuntivi.</p>
         <p>In fondo trovi il **Riepilogo annuale**: aggrega compensi, spese e calcolo fiscale dell'anno (coerente col regime, con coefficiente e imposta sostitutiva per il forfettario) e restituisce il **compenso netto spese**. Anche questo è esportabile in CSV.</p>`)}
 
-      ${guideSection(gIcon('bg-pink-500', '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2"/>'), 'Spese & Costi', `
+      ${guideSection(gIcon('bg-pink-500', '<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 9.5h19"/>'), 'Spese & Costi', `
         <p>La sezione **Spese** ti permette di registrare costi e trasferte, così da conoscere il **guadagno reale** e non solo il fatturato. È una vista riservata al Proprietario.</p>
         <ul class="list-disc pl-5 space-y-1">
           <li>Ogni spesa ha **descrizione, importo, categoria, data** e può essere collegata a un **progetto**.</li>
@@ -4137,7 +4149,7 @@ function ownerGuideSections() {
           <li>Sono incluse nel backup JSON e sincronizzate sul cloud come gli altri dati.</li>
         </ul>`)}
 
-      ${guideSection(gIcon('bg-cyan-600', '<path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 13h6"/><path d="M9 16h4"/>'), 'Preventivi', `
+      ${guideSection(gIcon('bg-cyan-600', '<rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="3" width="6" height="4" rx="1.5"/><path d="M9 12h6M9 16h4"/>'), 'Preventivi', `
         <p>La sezione **Preventivi** crea documenti commerciali con più **voci** (descrizione, quantità, prezzo) e totale calcolato in tempo reale, con IVA opzionale coerente col regime fiscale.</p>
         <ul class="list-disc pl-5 space-y-1">
           <li>**Numerazione automatica** per anno (es. PREV-0007/2026).</li>
@@ -4188,7 +4200,7 @@ function clientGuideSections() {
         <p>Puoi **visualizzare** progetti, ore, note e report, ma non puoi modificare o eliminare dati: l'archivio resta sotto il pieno controllo del professionista. I tuoi dati si **sincronizzano** automaticamente su tutti i tuoi dispositivi.</p>`)}
 
       ${guideSection(gIcon('bg-blue-500', '<path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/>'), 'Dashboard & Filtri', `
-        <p>La **Dashboard** riepiloga le ore registrate, la tariffa applicata e la compensazione complessiva.</p>
+        <p>La **Dashboard** riepiloga le ore registrate, la tariffa applicata e il compenso complessivo.</p>
         <p>Con i **Filtri** puoi consultare il lavoro per **periodo** (mese corrente, mese precedente, anno o intervallo personalizzato) o isolare un singolo **progetto**. La **ricerca** ti aiuta a trovare rapidamente un progetto o un'attività. Indicatori e grafico si aggiornano in tempo reale.</p>`)}
 
       ${guideSection(gIcon('bg-emerald-500', '<path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/>'), 'Leggere la Nota di Pagamento', `
@@ -4203,7 +4215,7 @@ function clientGuideSections() {
         <p>La registrazione dei pagamenti è gestita dal professionista; tu la vedi sempre aggiornata in tempo reale.</p>`)}
 
       ${guideSection(gIcon('bg-teal-500', '<path d="M3 4h18v4H3z"/><path d="M3 8v12h18V8"/><path d="M8 12v5"/><path d="M12 11v6"/><path d="M16 13v4"/>'), 'Report Mensili', `
-        <p>La sezione **Report** riepiloga il lavoro **mese per mese**: ore, numero di sessioni e compensazione, con un confronto visivo tra i periodi.</p>
+        <p>La sezione **Report** riepiloga il lavoro **mese per mese**: ore, numero di sessioni e compenso, con un confronto visivo tra i periodi.</p>
         <p>Con **Esporta CSV** puoi scaricare il riepilogo per i tuoi archivi.</p>`)}
 
       ${guideSection(gIcon('bg-zinc-500', '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="white" stroke="none"/>'), 'Coordinate di pagamento', `
