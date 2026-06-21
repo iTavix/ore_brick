@@ -178,6 +178,7 @@
           <div class="text-[11px] text-ink-faint -mt-0.5 dark:text-ink-faint font-medium">Freelance Smart Suite</div>
         </div>
       </div>
+      <div id="user-badge" class="hidden min-w-0 items-center gap-1.5 text-[11px] pl-1 sm:pl-2 max-w-[40vw] sm:max-w-[50%]"></div>
       <div class="flex-1"></div>
       
       <div id="fallback-badge" class="hidden shrink-0 text-[11px] font-semibold rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2.5 py-1 flex items-center gap-1.5" title="Uso di localStorage per file:// locale">
@@ -1115,6 +1116,7 @@ function render() {
   // Se il ruolo Cliente arriva mentre si è su una vista riservata, si reindirizza.
   if (isClient() && OWNER_ONLY_VIEWS.indexOf(state.view) !== -1) { setView('dashboard'); return; }
   applyRoleVisibility();
+  updateUserBadge();
   try {
     if (state.view === 'dashboard') renderDashboard();
     else if (state.view === 'payment') renderPayment();
@@ -1231,15 +1233,27 @@ function renderDashboard() {
     ${summary}
     <div class="flex items-center justify-between mb-3 mt-6">
       <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">I tuoi Progetti</h2>
-      ${editable ? `<button id="add-project" class="text-[14px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-        Nuovo progetto
-      </button>` : ''}
+      <div class="flex items-center gap-2">
+        <button id="dash-refresh" title="Aggiorna i dati" aria-label="Aggiorna i dati" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center text-ink-soft dark:text-ink-faint transition-soft">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg>
+        </button>
+        ${editable ? `<button id="add-project" class="text-[14px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Nuovo progetto
+        </button>` : ''}
+      </div>
     </div>
     ${searchHTML}
     ${projectsHTML}`;
 
   bindDashboardEvents(root);
+
+  const refreshBtn = $('#dash-refresh', root);
+  if (refreshBtn) refreshBtn.addEventListener('click', async () => {
+    const ic = refreshBtn.querySelector('svg');
+    if (ic) ic.classList.add('animate-spin');
+    try { await forceRefresh(); } finally { if (ic) setTimeout(() => ic.classList.remove('animate-spin'), 500); }
+  });
 
   const searchEl = $('#dash-search', root);
   if (searchEl) {
@@ -3470,6 +3484,39 @@ function updateSyncBadge() {
   el.className = `shrink-0 text-[12px] font-bold rounded-full px-2.5 py-1 transition-soft flex items-center gap-1.5 ${m.c}`;
   el.innerHTML = `<span>${m.dot}</span><span>${esc(m.t)}</span>`;
   el.onclick = () => setView('settings');
+  updateUserBadge();
+}
+
+function roleLabel() {
+  const r = currentRole();
+  if (r === 'client') return 'Cliente';
+  if (r === 'owner') return 'Proprietario';
+  return '';
+}
+
+function userDisplayName() {
+  const s = state.settings || {};
+  if (isClient()) {
+    if (s.clientProfile && s.clientProfile.name) return s.clientProfile.name;
+  } else if (s.holderName) {
+    return s.holderName;
+  }
+  if (sync.user && sync.user.email) return sync.user.email;
+  return '';
+}
+
+// Mostra "Nome · Ruolo" accanto al titolo, in base all'account collegato.
+function updateUserBadge() {
+  const el = $('#user-badge');
+  if (!el) return;
+  if (!(sync.enabled && sync.user)) { el.classList.add('hidden'); el.classList.remove('flex'); return; }
+  const name = userDisplayName();
+  const role = roleLabel();
+  const client = isClient();
+  el.classList.remove('hidden'); el.classList.add('flex');
+  el.innerHTML = `
+    <span class="truncate font-semibold text-ink-soft dark:text-zinc-300">${esc(name)}</span>
+    ${role ? `<span class="shrink-0 font-bold rounded-full px-2 py-0.5 ${client ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400' : 'bg-accent-soft text-accent'}">${esc(role)}</span>` : ''}`;
 }
 
 function initSync() {
@@ -3487,6 +3534,13 @@ function initSync() {
     sync.ready = true;
     try { sync.db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
     sync.auth.onAuthStateChanged(onAuthChanged);
+    // In modalità app/PWA (soprattutto iOS) le connessioni realtime vengono
+    // sospese in background: al ritorno in primo piano si ri-aggancia il flusso.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || !sync.user) return;
+      if (isClient()) attachClientStatementByEmail();
+      else publishAllStatements();
+    });
     setSyncStatus('signedout');
   } catch (err) {
     sync.enabled = false;
@@ -3809,6 +3863,26 @@ function cloudPush() {
   setSyncStatus('syncing');
   clearTimeout(sync.pushTimer);
   sync.pushTimer = setTimeout(pushNow, 400);
+}
+
+// Aggiornamento manuale: ristabilisce i listener e ricarica i dati dal cloud.
+// Utile in modalità app (PWA) dove non c'è il pulsante di ricarica del browser,
+// e come rete di sicurezza se un aggiornamento in tempo reale viene perso.
+async function forceRefresh() {
+  if (!sync.enabled || !sync.user) {
+    try { await loadState(); } catch (_) {}
+    render();
+    toast('Aggiornato');
+    return;
+  }
+  setSyncStatus('syncing');
+  try {
+    await startCloudListener();
+    toast('Dati aggiornati');
+  } catch (err) {
+    setSyncStatus('error');
+    toast('Errore di aggiornamento', 'error');
+  }
 }
 
 /* ---------------------------------------------------------------------
