@@ -3430,7 +3430,7 @@ const sync = {
   serverSettingsAt: 0,
   // Condivisione (architettura A): pubblicazione statement per cliente lato
   // Proprietario; scoperta+lettura live lato Cliente tramite la propria email.
-  share: { unsub: null, linksUnsub: null, pubTimer: null, linked: false }
+  share: { unsub: null, linksUnsub: null, pubTimer: null, linked: false, curKey: null, statementRef: null, pollTimer: null, lastAppliedAt: 0 }
 };
 
 function isAuthed() { return !!(sync.enabled && sync.user); }
@@ -3600,6 +3600,10 @@ function stopCloudListener() {
   if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
   if (sync.share.linksUnsub) { try { sync.share.linksUnsub(); } catch (_) {} sync.share.linksUnsub = null; }
   sync.share.linked = false;
+  sync.share.curKey = null;
+  sync.share.statementRef = null;
+  sync.share.lastAppliedAt = 0;
+  clearInterval(sync.share.pollTimer); sync.share.pollTimer = null;
   clearTimeout(sync.share.pubTimer);
   clearTimeout(sync.reloadTimer);
 }
@@ -3698,6 +3702,7 @@ async function applyParentDoc(data) {
       await dbPut('settings', settings);
       state.settings = settings;
       render();
+      if (!isClient()) schedulePublish();   // tariffe/IBAN aggiornati -> ripubblica
     }
   } catch (err) {
     console.error('applyParentDoc failed', err);
@@ -3777,6 +3782,7 @@ function handleColSnapshot(store, qs) {
     sync.applyingRemote = false;
     sync.hydrated[store] = true;
     scheduleReload();
+    if (!isClient()) schedulePublish();   // ripubblica gli statement dei clienti collegati
   });
 }
 
@@ -4016,26 +4022,55 @@ function removeClientAssociation(clientId) {
 function attachClientStatementByEmail() {
   if (sync.share.linksUnsub) { try { sync.share.linksUnsub(); } catch (_) {} sync.share.linksUnsub = null; }
   if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+  clearInterval(sync.share.pollTimer); sync.share.pollTimer = null;
+  sync.share.curKey = null;
+  sync.share.statementRef = null;
   const email = (sync.user && sync.user.email ? sync.user.email : '').toLowerCase();
   if (!email) return;
   sync.share.linksUnsub = sync.db.collection('links').where('viewerEmail', '==', email)
     .onSnapshot((qs) => {
-      if (qs.empty) { sync.share.linked = false; if (state.view === 'settings') renderSettings(); return; }
+      if (qs.empty) { sync.share.linked = false; sync.share.curKey = null; sync.share.statementRef = null;
+        if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+        if (state.view === 'settings') renderSettings(); return; }
       sync.share.linked = true;
       const link = qs.docs[0].data() || {};
-      if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
-      const ref = sync.db.collection('users').doc(link.ownerUid).collection('statements').doc(link.clientId);
-      sync.share.unsub = ref.onSnapshot(
-        (snap) => { if (snap.exists) applyStatement(snap.data()); },
-        () => { setSyncStatus('error'); }
-      );
+      const key = String(link.ownerUid) + '/' + String(link.clientId);
+      // Riaggancia il listener dello statement SOLO se cambia il bersaglio,
+      // così le ri-scritture dell'indice non interrompono il flusso realtime.
+      if (key !== sync.share.curKey || !sync.share.unsub) {
+        sync.share.curKey = key;
+        if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+        const ref = sync.db.collection('users').doc(link.ownerUid).collection('statements').doc(link.clientId);
+        sync.share.statementRef = ref;
+        sync.share.unsub = ref.onSnapshot(
+          (snap) => { if (snap.exists) applyStatement(snap.data()); },
+          () => { setSyncStatus('error'); }
+        );
+      }
       if (state.view === 'settings') renderSettings();
     }, () => { /* offline o regole: ignora */ });
+  // Rete di sicurezza: rilettura periodica nel caso il realtime cada in background.
+  sync.share.pollTimer = setInterval(pollStatement, 30000);
+}
+
+// Cliente: rilegge lo statement e lo applica solo se più recente di quello già visto.
+function pollStatement() {
+  if (!sync.share.statementRef || document.visibilityState !== 'visible') return;
+  sync.share.statementRef.get()
+    .then((snap) => {
+      if (snap && snap.exists) {
+        const data = snap.data() || {};
+        const at = typeof data.updatedAt === 'number' ? data.updatedAt : 0;
+        if (at > (sync.share.lastAppliedAt || 0)) applyStatement(data);
+      }
+    })
+    .catch(() => {});
 }
 
 // Cliente: applica lo statement ricevuto allo stato locale (sola lettura).
 async function applyStatement(data) {
   const p = (data && data.payload) || {};
+  sync.share.lastAppliedAt = typeof data.updatedAt === 'number' ? data.updatedAt : (sync.share.lastAppliedAt || 0);
   sync.applyingRemote = true;
   try {
     await dbClear('projects'); await dbClear('entries'); await dbClear('clients'); await dbClear('payments');
