@@ -533,7 +533,7 @@ function buildNoteModel() {
   const filteredIds = new Set(getFilteredEntries().map(e => e.id));
   const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
   const tH = flat.reduce((a, e) => a + (Number(e.hours) || 0), 0);
-  const baseCompensation = flat.reduce((a, e) => a + (Number(e.hours) || 0) * (Number(e.rate) || 0), 0);
+  const baseCompensation = flat.reduce((a, e) => a + (Number(e.hours) || 0) * (Number(e.rate) || 0), 0) + flatScopedTotal();
   const { taxP, vatP, wTaxP, forfettario } = effectiveFiscal(s);
   const taxValue = baseCompensation * taxP / 100;
   const subtotalWithTax = baseCompensation + taxValue;
@@ -620,7 +620,7 @@ function exportNotePDF() {
   }
 
   const totals = [];
-  totals.push(['Prestazioni Orarie', money(m.baseCompensation), false]);
+  totals.push(['Compenso prestazioni', money(m.baseCompensation), false]);
   totals.push(['Totale Ore', hrs(m.tH), false]);
   if (m.taxP > 0) totals.push([`Rivalsa Previdenziale (${m.taxP}%)`, money(m.taxValue), false]);
   if (m.vatP > 0) totals.push([`I.V.A. (${m.vatP}%)`, money(m.vatValue), false]);
@@ -1002,8 +1002,68 @@ function projectHours(projectId) {
 }
 
 function projectCompensation(project) {
+  if (project.billingType === 'flat') return Number(project.flatAmount) || 0;
   const rate = project.hourlyRate != null && project.hourlyRate !== '' ? Number(project.hourlyRate) : Number(state.settings.hourlyRate);
   return projectHours(project.id) * rate;
+}
+
+// Toggle helper for the "A ore / A forfait" segmented control inside project modals.
+function projBilling(btn, bt) {
+  const card = btn.closest('.modal-card');
+  if (!card) return;
+  $$('#f-billing button', card).forEach(b => b.setAttribute('aria-selected', String(b.dataset.bt === bt)));
+  const rw = $('#f-rate-wrap', card), fw = $('#f-flat-wrap', card);
+  if (rw) rw.classList.toggle('hidden', bt === 'flat');
+  if (fw) fw.classList.toggle('hidden', bt !== 'flat');
+}
+// Date range [start,end] (inclusive, ISO) for the active period filter, or null for "all".
+function periodRange() {
+  const period = (state.filters && state.filters.period) || 'all';
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  if (period === 'current-month') {
+    const mm = String(month + 1).padStart(2, '0');
+    const dd = String(new Date(year, month + 1, 0).getDate()).padStart(2, '0');
+    return { start: `${year}-${mm}-01`, end: `${year}-${mm}-${dd}` };
+  }
+  if (period === 'last-month') {
+    const pm = month === 0 ? 11 : month - 1;
+    const py = month === 0 ? year - 1 : year;
+    const mm = String(pm + 1).padStart(2, '0');
+    const dd = String(new Date(py, pm + 1, 0).getDate()).padStart(2, '0');
+    return { start: `${py}-${mm}-01`, end: `${py}-${mm}-${dd}` };
+  }
+  if (period === 'current-year') {
+    return { start: `${year}-01-01`, end: `${year}-12-31` };
+  }
+  if (period === 'custom') {
+    const start = state.filters.startDate || '';
+    const end = state.filters.endDate || '';
+    if (!start && !end) return null;
+    return { start: start || '0000-01-01', end: end || '9999-12-31' };
+  }
+  return null;
+}
+
+// A flat-fee project is "in scope" when it passes the current client/project filters
+// AND its creation date falls within the active period: the forfait is billed once,
+// in the month it was contracted.
+function flatProjectInScope(p) {
+  if (!p || p.billingType !== 'flat') return false;
+  const f = state.filters || {};
+  const projOk = !f.project || f.project === 'all' || f.project === p.id;
+  const cliOk = !f.client || f.client === 'all' || f.client === p.clientId;
+  if (!(projOk && cliOk)) return false;
+  const range = periodRange();
+  if (!range) return true;
+  const d = String(p.createdAt || '');
+  return d >= range.start && d <= range.end;
+}
+
+// Sum of flat-fee amounts for flat projects in the current filter scope.
+function flatScopedTotal() {
+  return state.projects.reduce((a, p) => a + (flatProjectInScope(p) ? (Number(p.flatAmount) || 0) : 0), 0);
 }
 
 function totalHours() {
@@ -1014,7 +1074,11 @@ function totalCompensation() {
   const extra = Number(state.settings.extra) || 0;
   let baseSum = 0;
   for (const p of state.projects) {
-    baseSum += projectCompensation(p);
+    if (p.billingType === 'flat') {
+      if (flatProjectInScope(p)) baseSum += Number(p.flatAmount) || 0;
+    } else {
+      baseSum += projectCompensation(p);
+    }
   }
   return baseSum + (baseSum > 0 ? extra : 0);
 }
@@ -1429,8 +1493,9 @@ function projectCard(p) {
   const open = state.expanded.has(p.id);
   const items = entriesOf(p.id);
   const pHours = projectHours(p.id);
+  const isFlat = p.billingType === 'flat';
   const pRate = p.hourlyRate != null && p.hourlyRate !== '' ? Number(p.hourlyRate) : Number(state.settings.hourlyRate);
-  const pComp = pHours * pRate;
+  const pComp = isFlat ? (Number(p.flatAmount) || 0) : pHours * pRate;
   const editable = canEdit();
 
   const client = state.clients.find(c => c.id === p.clientId);
@@ -1466,7 +1531,7 @@ function projectCard(p) {
             <span>·</span>
             <span class="font-bold text-accent">${esc(hrs(pHours))}</span>
             <span>·</span>
-            <span>${eur(pRate)}/h</span>
+            <span>${isFlat ? '<span class="text-cyan-600 dark:text-cyan-400 font-bold">Forfait</span>' : eur(pRate) + '/h'}</span>
             <span>·</span>
             <span class="font-semibold text-ink-soft dark:text-zinc-400">${eur(pComp)}</span>
             ${clientName ? `<span class="bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-extrabold text-ink-soft dark:text-zinc-400">${esc(clientName)}</span>` : ''}
@@ -1826,8 +1891,20 @@ function addProject(preClientId) {
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
       <input id="f-name" class="field mb-3" placeholder="Es. App Mobile BrickBoy" />
       
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(lascia vuoto per usare la globale)</span></label>
-      <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
+      <div class="seg gap-0 text-[13px] font-semibold mb-3" id="f-billing">
+        <button type="button" data-bt="hourly" aria-selected="true" onclick="projBilling(this,'hourly')" class="flex-1 py-2">A ore</button>
+        <button type="button" data-bt="flat" aria-selected="false" onclick="projBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
+      </div>
+      <div id="f-rate-wrap">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(lascia vuoto per usare la globale)</span></label>
+        <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
+      </div>
+      <div id="f-flat-wrap" class="hidden">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
+        <input id="f-flat" type="number" min="0" step="1" class="field mb-1.5" placeholder="Es. 1500" />
+        <p class="text-[11px] text-ink-faint mb-3">Le ore vengono comunque tracciate, ma la fatturazione usa l'importo fisso.</p>
+      </div>
 
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
       <select id="f-client-select" class="field mb-3">
@@ -1880,12 +1957,18 @@ function addProject(preClientId) {
         clientId = selectVal;
       }
       
+      const btSel = $('#f-billing button[aria-selected="true"]', card);
+      const billingType = btSel ? btSel.dataset.bt : 'hourly';
+      const flatAmount = Number($('#f-flat', card).value) || 0;
+      if (billingType === 'flat' && flatAmount <= 0) { showError(card, 'Indica l\'importo a forfait.'); return false; }
       const p = { 
         id: genId(), 
         name, 
         createdAt: todayIso(),
         hourlyRate: customRate !== '' ? Number(customRate) : null,
-        clientId
+        clientId,
+        billingType,
+        flatAmount: billingType === 'flat' ? flatAmount : 0
       };
       
       await dbPut('projects', p);
@@ -1913,8 +1996,20 @@ function renameProject(id) {
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
       <input id="f-name" class="field mb-3" value="${esc(p.name)}" />
 
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h)</label>
-      <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" value="${p.hourlyRate != null ? p.hourlyRate : ''}" />
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
+      <div class="seg gap-0 text-[13px] font-semibold mb-3" id="f-billing">
+        <button type="button" data-bt="hourly" aria-selected="${(p.billingType||'hourly')!=='flat'}" onclick="projBilling(this,'hourly')" class="flex-1 py-2">A ore</button>
+        <button type="button" data-bt="flat" aria-selected="${(p.billingType||'hourly')==='flat'}" onclick="projBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
+      </div>
+      <div id="f-rate-wrap" class="${(p.billingType||'hourly')==='flat'?'hidden':''}">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h)</label>
+        <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" value="${p.hourlyRate != null ? p.hourlyRate : ''}" />
+      </div>
+      <div id="f-flat-wrap" class="${(p.billingType||'hourly')==='flat'?'':'hidden'}">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
+        <input id="f-flat" type="number" min="0" step="1" class="field mb-1.5" placeholder="Es. 1500" value="${p.flatAmount != null ? p.flatAmount : ''}" />
+        <p class="text-[11px] text-ink-faint mb-3">Le ore vengono comunque tracciate, ma la fatturazione usa l'importo fisso.</p>
+      </div>
 
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
       <select id="f-client-select" class="field mb-3">
@@ -1970,6 +2065,12 @@ function renameProject(id) {
       p.name = name;
       p.hourlyRate = customRate !== '' ? Number(customRate) : null;
       p.clientId = clientId;
+      const btSel = $('#f-billing button[aria-selected="true"]', card);
+      const billingType = btSel ? btSel.dataset.bt : 'hourly';
+      const flatAmount = Number($('#f-flat', card).value) || 0;
+      if (billingType === 'flat' && flatAmount <= 0) { showError(card, 'Indica l\'importo a forfait.'); return false; }
+      p.billingType = billingType;
+      p.flatAmount = billingType === 'flat' ? flatAmount : 0;
       
       await dbPut('projects', p);
       renderDashboard();
@@ -2295,7 +2396,7 @@ function allEntriesFlat() {
       return { 
         ...e, 
         project: p ? p.name : '—',
-        rate: p && p.hourlyRate != null ? p.hourlyRate : state.settings.hourlyRate,
+        rate: (p && p.billingType === 'flat') ? 0 : (p && p.hourlyRate != null ? p.hourlyRate : state.settings.hourlyRate),
         clientName: c ? c.name : '',
         clientAddress: c ? c.address : '',
         clientVat: c ? c.vatCode : '',
@@ -2535,7 +2636,7 @@ function renderPayment() {
   const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
 
   const tH = flat.reduce((acc, current) => acc + Number(current.hours || 0), 0);
-  const baseCompensation = flat.reduce((acc, entry) => acc + (Number(entry.hours || 0) * Number(entry.rate || 0)), 0);
+  const baseCompensation = flat.reduce((acc, entry) => acc + (Number(entry.hours || 0) * Number(entry.rate || 0)), 0) + flatScopedTotal();
   
   const { taxP: taxPercentage, vatP: vatPercentage, wTaxP: wTaxPercentage, forfettario } = effectiveFiscal(s);
 
@@ -2725,7 +2826,7 @@ function renderPayment() {
 
       <div class="mt-6 flex justify-end print-keep">
         <div class="w-full sm:w-80 text-[13px] space-y-2">
-          <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Prestazioni Orarie</span><span class="tabular-nums">${esc(eur(baseCompensation))}</span></div>
+          <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Compenso prestazioni</span><span class="tabular-nums">${esc(eur(baseCompensation))}</span></div>
           <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Totale Ore</span><span class="tabular-nums font-bold">${esc(hrs(tH))}</span></div>
           
           ${taxPercentage > 0 ? `
@@ -3362,7 +3463,7 @@ function renderExpenses() {
 
   const rows = list.length ? list.map(expenseRowHTML).join('') : `
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
-      <div class="text-3xl mb-3">🧾</div>
+      <div class="flex justify-center mb-3"><svg class="w-12 h-12 text-ink-faint/40 dark:text-zinc-600" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 9.5h19"/></svg></div>
       <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Nessuna spesa registrata.</p>
       <p class="text-ink-faint dark:text-zinc-600 text-[13px] mt-1">${editable ? 'Aggiungi costi e trasferte per conoscere il tuo netto reale.' : 'Nessuna informazione presente.'}</p>
     </div>`;
@@ -3530,7 +3631,7 @@ function renderQuotes() {
 
   const cards = list.length ? list.map(quoteCardHTML).join('') : `
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
-      <div class="text-3xl mb-3">📝</div>
+      <div class="flex justify-center mb-3"><svg class="w-12 h-12 text-ink-faint/40 dark:text-zinc-600" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="3" width="6" height="4" rx="1.5"/><path d="M9 12h6M9 16h4"/></svg></div>
       <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Nessun preventivo.</p>
       <p class="text-ink-faint dark:text-zinc-600 text-[13px] mt-1">${editable ? 'Crea un preventivo per un cliente, esportalo in PDF e seguine lo stato.' : 'Nessuna informazione presente.'}</p>
     </div>`;
@@ -3767,20 +3868,38 @@ function createProjectFromQuote(id) {
   const defaultName = (q.items && q.items[0] && q.items[0].description)
     ? q.items[0].description
     : `Da ${quoteNumFmt(q.number, q.year)}`;
+  const qTot = quoteTotal(q).total;
   openModal({
     title: 'Crea progetto dal preventivo',
     bodyHTML: `
       <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Verrà creato un progetto collegato a <span class="font-bold text-ink dark:text-white">${esc(client ? client.name : 'cliente non assegnato')}</span>, dal preventivo <span class="font-bold">${esc(quoteNumFmt(q.number, q.year))}</span>.</p>
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome progetto</label>
       <input id="qp-name" class="field mb-3" value="${esc(defaultName)}" />
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(vuoto = globale)</span></label>
-      <input id="qp-rate" type="number" min="0" step="0.5" class="field" placeholder="Es. 35" />`,
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
+      <div class="seg gap-0 text-[13px] font-semibold mb-3" id="f-billing">
+        <button type="button" data-bt="hourly" aria-selected="false" onclick="projBilling(this,'hourly')" class="flex-1 py-2">A ore</button>
+        <button type="button" data-bt="flat" aria-selected="true" onclick="projBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
+      </div>
+      <div id="f-rate-wrap" class="hidden">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(vuoto = globale)</span></label>
+        <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
+      </div>
+      <div id="f-flat-wrap">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
+        <input id="f-flat" type="number" min="0" step="1" class="field" value="${qTot}" />
+        <p class="text-[11px] text-ink-faint mt-1">Preimpostato sul totale del preventivo.</p>
+      </div>`,
     confirmText: 'Crea progetto',
     onConfirm: async (card) => {
       const name = $('#qp-name', card).value.trim();
       if (!name) { showError(card, 'Il nome del progetto è obbligatorio.'); return false; }
-      const rate = $('#qp-rate', card).value;
-      const p = { id: genId(), name, createdAt: todayIso(), hourlyRate: rate !== '' ? Number(rate) : null, clientId: q.clientId || null };
+      const btSel = $('#f-billing button[aria-selected="true"]', card);
+      const billingType = btSel ? btSel.dataset.bt : 'flat';
+      const flatAmount = Number($('#f-flat', card).value) || 0;
+      const rate = $('#f-rate', card).value;
+      if (billingType === 'flat' && flatAmount <= 0) { showError(card, 'Indica l\'importo a forfait.'); return false; }
+      const p = { id: genId(), name, createdAt: todayIso(), hourlyRate: rate !== '' ? Number(rate) : null, clientId: q.clientId || null, billingType, flatAmount: billingType === 'flat' ? flatAmount : 0 };
       await dbPut('projects', p);
       state.projects.push(p);
       state.expanded.add(p.id);
@@ -3871,6 +3990,13 @@ function monthlyAggregate() {
     m.comp += (Number(e.hours) || 0) * (Number(e.rate) || 0);
     m.count += 1;
   }
+  for (const p of state.projects) {
+    if (p.billingType !== 'flat') continue;
+    const key = String(p.createdAt || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(key)) continue;
+    if (!map.has(key)) map.set(key, { hours: 0, comp: 0, count: 0 });
+    map.get(key).comp += Number(p.flatAmount) || 0;
+  }
   return map;
 }
 
@@ -3885,6 +4011,13 @@ function yearlyAggregate() {
     m.hours += Number(e.hours) || 0;
     m.comp += (Number(e.hours) || 0) * (Number(e.rate) || 0);
     m.count += 1;
+  }
+  for (const p of state.projects) {
+    if (p.billingType !== 'flat') continue;
+    const key = String(p.createdAt || '').slice(0, 4);
+    if (!/^\d{4}$/.test(key)) continue;
+    if (!map.has(key)) map.set(key, { hours: 0, comp: 0, count: 0 });
+    map.get(key).comp += Number(p.flatAmount) || 0;
   }
   return map;
 }
@@ -4116,7 +4249,8 @@ function ownerGuideSections() {
         </ul>`)}
 
       ${guideSection(gIcon('bg-indigo-500', '<path d="M3 7a2 2 0 012-2h3.5l2 2H19a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>'), 'Progetti & Sessioni', `
-        <p>Crea un nuovo incarico con **+ Nuovo progetto**: assegni un nome, una **tariffa oraria dedicata** (se la lasci vuota usa quella globale) e il **cliente** dall'anagrafica.</p>
+        <p>Crea un nuovo incarico con **+ Nuovo progetto**: assegni un nome, scegli il **tipo di compenso** e colleghi il **cliente** dall'anagrafica.</p>
+        <p>**A ore o a forfait:** con *A ore* imposti una **tariffa oraria dedicata** (vuota = usa quella globale) e il compenso si calcola sulle ore registrate. Con *A forfait* fissi un **importo concordato**: le ore vengono comunque tracciate, ma la fatturazione usa quella cifra fissa, a prescindere dal tempo impiegato. Un preventivo accettato può creare direttamente un progetto a forfait con il suo importo.</p>
         <p>Per ogni progetto puoi:</p>
         <ul class="list-disc pl-5 space-y-1">
           <li>**Aggiungere sessioni** manualmente — data, descrizione dell'attività e ore — oltre che tramite il cronometro.</li>
