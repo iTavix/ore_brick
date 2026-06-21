@@ -176,7 +176,7 @@
         <img src="apple-touch-icon.png" alt="HourFlow" width="32" height="32" class="w-8 h-8 rounded-[10px] shadow-sm" />
         <div class="leading-tight text-left">
           <div class="font-bold text-[15px] tracking-tight dark:text-white">HourFlow</div>
-          <div class="text-[11px] text-ink-faint -mt-0.5 dark:text-ink-faint font-medium">Freelance Smart Suite</div>
+          <div class="hidden sm:block text-[11px] text-ink-faint -mt-0.5 dark:text-ink-faint font-medium">Freelance Smart Suite</div>
         </div>
       </button>
       <div class="flex-1"></div>
@@ -191,7 +191,7 @@
         <span id="nav-timer-clock" class="tabular-nums font-mono">00:00:00</span>
       </div>
 
-      <button id="theme-toggle" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Inverti schema colori">
+      <button id="theme-toggle" class="shrink-0 w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Inverti schema colori">
         <svg class="w-5 h-5 dark:hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
         <svg class="w-5 h-5 hidden dark:inline text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
       </button>
@@ -3482,8 +3482,8 @@ function updateSyncBadge() {
     off:       { t: '', c: '', dot: '' }
   };
   const m = map[sync.status] || map.signedout;
-  el.className = `shrink-0 text-[12px] font-bold rounded-full px-2.5 py-1 transition-soft flex items-center gap-1.5 ${m.c}`;
-  el.innerHTML = `<span>${m.dot}</span><span>${esc(m.t)}</span>`;
+  el.className = `shrink-0 text-[12px] font-bold rounded-full px-2 sm:px-2.5 py-1 transition-soft flex items-center gap-1.5 ${m.c}`;
+  el.innerHTML = `<span>${m.dot}</span><span class="hidden sm:inline">${esc(m.t)}</span>`;
   el.onclick = () => setView('settings');
   updateUserBadge();
 }
