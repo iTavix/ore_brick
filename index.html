@@ -1170,7 +1170,7 @@ function setView(view) {
   // Blocco di sicurezza: un Cliente non può aprire viste riservate.
   if (isClient() && OWNER_ONLY_VIEWS.indexOf(view) !== -1) view = 'dashboard';
   state.view = view;
-  ['dashboard', 'payment', 'report', 'clients', 'settings', 'guide'].forEach(v => {
+  ['dashboard', 'payment', 'report', 'clients', 'expenses', 'quotes', 'settings', 'guide'].forEach(v => {
     const target = $('#view-' + v);
     if (target) target.classList.toggle('hidden', v !== view);
   });
