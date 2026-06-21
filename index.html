@@ -12,10 +12,11 @@
 <link rel="manifest" href="manifest.json" />
 <title>HourFlow — Smart Freelance Suite</title>
 <link rel="icon" href="favicon.ico" sizes="any" />
+<link rel="shortcut icon" href="favicon.ico" />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png" />
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOSIgZmlsbD0iI0ZGOTUwMCIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0xNS41IDloMXY4aDR2MWgtNXoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" />
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+<link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -171,15 +172,15 @@
 
   <header class="no-print sticky top-0 z-30 bg-white/80 dark:bg-[#121214]/80 backdrop-blur-xl border-b border-black/5 dark:border-white/5">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
-      <div class="flex items-center gap-2 shrink-0">
+      <button id="home-logo" type="button" aria-label="Vai alla Dashboard" class="flex items-center gap-2 shrink-0 rounded-xl hover:opacity-80 active:scale-[0.98] transition-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
         <img src="apple-touch-icon.png" alt="HourFlow" width="32" height="32" class="w-8 h-8 rounded-[10px] shadow-sm" />
-        <div class="leading-tight">
+        <div class="leading-tight text-left">
           <div class="font-bold text-[15px] tracking-tight dark:text-white">HourFlow</div>
           <div class="text-[11px] text-ink-faint -mt-0.5 dark:text-ink-faint font-medium">Freelance Smart Suite</div>
         </div>
-      </div>
-      <div id="user-badge" class="hidden min-w-0 items-center gap-1.5 text-[11px] pl-1 sm:pl-2 max-w-[40vw] sm:max-w-[50%]"></div>
+      </button>
       <div class="flex-1"></div>
+      <div id="user-badge" class="hidden items-center gap-1.5 text-[11px] min-w-0 max-w-[42vw] mr-2 sm:mr-3"></div>
       
       <div id="fallback-badge" class="hidden shrink-0 text-[11px] font-semibold rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2.5 py-1 flex items-center gap-1.5" title="Uso di localStorage per file:// locale">
         <span>⚠️</span> <span class="hidden sm:inline">Offline Locale</span>
@@ -4272,6 +4273,9 @@ async function boot() {
       });
     }
 
+    const homeLogo = $('#home-logo');
+    if (homeLogo) homeLogo.addEventListener('click', () => setView('dashboard'));
+
     syncTheme(state.settings.theme || 'auto');
     bindAutoTheme();
     setView('dashboard');
@@ -4312,6 +4316,8 @@ async function boot() {
         syncTheme(nextTheme);
       });
     }
+    const homeLogo2 = $('#home-logo');
+    if (homeLogo2) homeLogo2.addEventListener('click', () => setView('dashboard'));
     syncTheme('auto');
     setView('dashboard');
     
