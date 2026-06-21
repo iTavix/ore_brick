@@ -2007,6 +2007,7 @@ function clientCardHTML(c) {
   const associatedProjects = state.projects.filter(p => p.clientId === c.id);
   const totalClientHours = associatedProjects.reduce((acc, p) => acc + projectHours(p.id), 0);
   const totalBilled = associatedProjects.reduce((acc, p) => acc + projectCompensation(p), 0);
+  const linked = !!(c.accountEmail && String(c.accountEmail).trim());
 
   return `
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm flex flex-col justify-between hover:border-black/10 dark:hover:border-white/10 transition-soft">
@@ -2038,7 +2039,14 @@ function clientCardHTML(c) {
       <button data-client-action="new-project" data-id="${c.id}" class="no-print mt-3 w-full text-[12px] font-bold text-accent hover:text-white border border-accent/30 hover:bg-accent rounded-full py-1.5 transition-soft flex items-center justify-center gap-1.5">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
         Nuovo progetto per questo cliente
-      </button>` : ''}
+      </button>
+      <div class="no-print mt-2 flex items-center justify-between gap-2">
+        <button data-client-action="associate" data-id="${c.id}" class="text-[12px] font-bold text-ink-soft dark:text-zinc-300 hover:text-accent transition-soft flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+          ${linked ? 'Modifica account' : 'Associa account cliente'}
+        </button>
+        ${linked ? `<button data-client-action="dissociate" data-id="${c.id}" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:text-[#ff3b30] transition-soft flex items-center gap-1" title="${esc(c.accountEmail)} — clicca per rimuovere"><span>●</span> Collegato</button>` : ''}
+      </div>` : ''}
     </div>`;
 }
 
@@ -2054,6 +2062,10 @@ function handleClientAction(e) {
     deleteClient(id);
   } else if (action === 'new-project') {
     addProject(id);
+  } else if (action === 'associate') {
+    associateClientAccount(id);
+  } else if (action === 'dissociate') {
+    removeClientAssociation(id);
   }
 }
 
@@ -2651,6 +2663,16 @@ function renderSettings() {
     root.innerHTML = `
       <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-4">Profilo e Sicurezza</h2>
       ${accountPanelHTML()}
+
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-3">
+        <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Collegamento al Professionista</div>
+        ${sync.share && sync.share.linked ? `
+          <div class="flex items-center gap-2 text-[13px] text-emerald-600 dark:text-emerald-400 font-bold"><span>●</span> Collegato — i dati si aggiornano in automatico</div>
+        ` : `
+          <div class="flex items-center gap-2 text-[13px] text-ink-soft dark:text-zinc-400 font-semibold"><span class="text-amber-500">○</span> In attesa di associazione</div>
+        `}
+        <p class="text-[12px] text-ink-soft dark:text-zinc-400 leading-relaxed">Il collegamento è gestito dal professionista: quando associa la tua email${sync.user && sync.user.email ? ` (<span class="font-semibold">${esc(sync.user.email)}</span>)` : ''}, i dati che ti riguardano compaiono qui in automatico, senza codici né file.</p>
+      </div>
 
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-4">
         <div>
@@ -3391,7 +3413,10 @@ const sync = {
   // Finche' non lo e', NON si propagano eliminazioni (evita di azzerare il
   // server prima di aver letto cosa contiene).
   hydrated: { projects: false, entries: false, clients: false, payments: false },
-  serverSettingsAt: 0
+  serverSettingsAt: 0,
+  // Condivisione (architettura A): pubblicazione statement per cliente lato
+  // Proprietario; scoperta+lettura live lato Cliente tramite la propria email.
+  share: { unsub: null, linksUnsub: null, pubTimer: null, linked: false }
 };
 
 function isAuthed() { return !!(sync.enabled && sync.user); }
@@ -3502,7 +3527,15 @@ async function startCloudListener() {
     toast(syncErrorMsg(err), 'error');
     return;
   }
-  attachRealtimeListeners();       // merge per-record realtime sui cambiamenti successivi
+  attachParentDocListener();
+  if (isClient()) {
+    // Cliente: trova lo statement che lo riguarda (per email) e lo legge live;
+    // nessun listener sui propri record per non sovrascrivere i dati condivisi.
+    attachClientStatementByEmail();
+  } else {
+    attachRecordListeners();      // merge per-record realtime
+    publishAllStatements();       // (ri)pubblica gli statement dei clienti associati
+  }
   setSyncStatus('synced');
 }
 
@@ -3510,6 +3543,10 @@ function stopCloudListener() {
   if (sync.unsub) { sync.unsub(); sync.unsub = null; }
   for (const u of sync.colUnsubs) { try { u(); } catch (_) {} }
   sync.colUnsubs = [];
+  if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+  if (sync.share.linksUnsub) { try { sync.share.linksUnsub(); } catch (_) {} sync.share.linksUnsub = null; }
+  sync.share.linked = false;
+  clearTimeout(sync.share.pubTimer);
   clearTimeout(sync.reloadTimer);
 }
 
@@ -3559,7 +3596,7 @@ async function initialHydrate() {
   }
 }
 
-function attachRealtimeListeners() {
+function attachParentDocListener() {
   // Documento padre: ruolo + impostazioni in tempo reale.
   sync.unsub = userDocRef().onSnapshot(
     (snap) => {
@@ -3569,6 +3606,9 @@ function attachRealtimeListeners() {
     },
     (err) => { setSyncStatus('error'); toast(syncErrorMsg(err), 'error'); }
   );
+}
+
+function attachRecordListeners() {
   // Sottocollezioni record: merge per-record in tempo reale.
   for (const store of SYNC_STORES) {
     const unsub = colRef(store).onSnapshot(
@@ -3577,6 +3617,11 @@ function attachRealtimeListeners() {
     );
     sync.colUnsubs.push(unsub);
   }
+}
+
+function attachRealtimeListeners() {
+  attachParentDocListener();
+  attachRecordListeners();
 }
 
 // Documento padre in tempo reale: solo ruolo + impostazioni (oggetto singolo,
@@ -3593,7 +3638,9 @@ async function applyParentDoc(data) {
     const at = typeof data.settingsAt === 'number' ? data.settingsAt : 0;
     if (data.settings && typeof data.settings === 'object' && at > sync.serverSettingsAt) {
       sync.serverSettingsAt = at;
-      const settings = { ...data.settings, id: 'app' };
+      // Merge sopra le impostazioni correnti: per il Cliente preserva l'overlay
+      // dei dati del Proprietario ricevuti via statement (IBAN, tariffe, ecc.).
+      const settings = { ...state.settings, ...data.settings, id: 'app' };
       await dbPut('settings', settings);
       state.settings = settings;
       render();
@@ -3700,49 +3747,55 @@ async function pushNow() {
   setSyncStatus('syncing');
   try {
     const FieldValue = firebase.firestore.FieldValue;
+    const client = isClient();
 
     // (1) Documento padre: impostazioni come oggetto singolo (LWW per timestamp).
+    // Il Cliente pubblica SOLO le proprie impostazioni (tema/profilo/collegamento),
+    // mai i dati del Proprietario ricevuti via statement.
     sync.serverSettingsAt = Date.now();
     await userDocRef().set({
       accountRole: sync.role || 'owner',
-      settings: state.settings,
+      settings: client ? clientOwnSettings() : state.settings,
       settingsAt: sync.serverSettingsAt,
       schema: CLOUD_SCHEMA,
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
 
-    // (2) Record: diff contro l'ombra del server (sync.server).
-    for (const store of SYNC_STORES) {
-      const seen = new Set();
-      let batch = sync.db.batch(); let ops = 0;
-      const commit = async () => { if (ops > 0) { await batch.commit(); batch = sync.db.batch(); ops = 0; } };
+    // (2) Record: solo il Proprietario sincronizza le proprie sottocollezioni.
+    if (!client) {
+      for (const store of SYNC_STORES) {
+        const seen = new Set();
+        let batch = sync.db.batch(); let ops = 0;
+        const commit = async () => { if (ops > 0) { await batch.commit(); batch = sync.db.batch(); ops = 0; } };
 
-      // Upsert: record assenti sul server o piu' recenti del server.
-      for (const rec of state[store]) {
-        if (!rec || !rec.id) continue;
-        const id = String(rec.id);
-        seen.add(id);
-        const known = sync.server[store].get(id);
-        const at = typeof rec.updatedAt === 'number' ? rec.updatedAt : Date.now();
-        if (known === undefined || at > known) {
-          batch.set(colRef(store).doc(id), { ...rec, id, updatedAt: at });
-          sync.server[store].set(id, at);
-          if (++ops >= 450) await commit();
-        }
-      }
-
-      // Eliminazioni: presenti sul server ma non piu' in locale. Solo a
-      // sottocollezione idratata, per non cancellare dati non ancora letti.
-      if (sync.hydrated[store]) {
-        for (const id of Array.from(sync.server[store].keys())) {
-          if (!seen.has(id)) {
-            batch.delete(colRef(store).doc(id));
-            sync.server[store].delete(id);
+        // Upsert: record assenti sul server o piu' recenti del server.
+        for (const rec of state[store]) {
+          if (!rec || !rec.id) continue;
+          const id = String(rec.id);
+          seen.add(id);
+          const known = sync.server[store].get(id);
+          const at = typeof rec.updatedAt === 'number' ? rec.updatedAt : Date.now();
+          if (known === undefined || at > known) {
+            batch.set(colRef(store).doc(id), { ...rec, id, updatedAt: at });
+            sync.server[store].set(id, at);
             if (++ops >= 450) await commit();
           }
         }
+
+        // Eliminazioni: presenti sul server ma non piu' in locale. Solo a
+        // sottocollezione idratata, per non cancellare dati non ancora letti.
+        if (sync.hydrated[store]) {
+          for (const id of Array.from(sync.server[store].keys())) {
+            if (!seen.has(id)) {
+              batch.delete(colRef(store).doc(id));
+              sync.server[store].delete(id);
+              if (++ops >= 450) await commit();
+            }
+          }
+        }
+        await commit();
       }
-      await commit();
+      schedulePublish();   // aggiorna gli statement dei clienti collegati
     }
     setSyncStatus('synced');
   } catch (err) {
@@ -3756,6 +3809,174 @@ function cloudPush() {
   setSyncStatus('syncing');
   clearTimeout(sync.pushTimer);
   sync.pushTimer = setTimeout(pushNow, 400);
+}
+
+/* ---------------------------------------------------------------------
+   CONDIVISIONE OWNER -> CLIENTE (Architettura A: statement pubblicato)
+   - Associazione guidata dal Proprietario tramite l'EMAIL dell'account Cliente.
+   - Il Proprietario pubblica users/{ownerUid}/statements/{clientId} (solo i dati
+     di quel cliente) e un indice links/{ownerUid_clientId} per la scoperta.
+   - Il Cliente, al login, trova lo statement che lo riguarda tramite la propria
+     email e lo legge in tempo reale: nessun codice, nessun import di file.
+--------------------------------------------------------------------- */
+
+// Impostazioni "proprie" del Cliente (le uniche che il suo account spinge).
+function clientOwnSettings() {
+  const s = state.settings || {};
+  return {
+    id: 'app',
+    theme: s.theme || 'auto',
+    clientProfile: s.clientProfile || { name: '', vat: '', address: '', email: '', phone: '' }
+  };
+}
+
+// Filtra i contesti (proj:<id>) appartenenti ai progetti del cliente, escludendo
+// "proj:all" che e' trasversale e rivelerebbe dati di altri clienti.
+function ctxBelongsToProjects(key, projIds) {
+  const m = /^proj:([^|]+)\|/.exec(key || '');
+  return !!(m && m[1] !== 'all' && projIds.has(m[1]));
+}
+
+// Statement (estratto) per un singolo cliente, indirizzato alla sua email.
+function buildClientStatement(clientId, viewerEmail) {
+  const projects = state.projects.filter(p => p.clientId === clientId);
+  const projIds = new Set(projects.map(p => p.id));
+  const entries = state.entries.filter(e => projIds.has(e.projectId));
+  const payments = state.payments.filter(p => ctxBelongsToProjects(p.ctx, projIds));
+  const reg = (state.settings && state.settings.noteRegistry) || {};
+  const noteRegistry = {};
+  for (const k in reg) if (ctxBelongsToProjects(k, projIds)) noteRegistry[k] = reg[k];
+  const client = state.clients.find(c => c.id === clientId) || null;
+  const s = state.settings || {};
+  const settings = {
+    holderName: s.holderName || '', iban: s.iban || '', bic: s.bic || '',
+    causale: s.causale || '', stampDuty: !!s.stampDuty,
+    hourlyRate: Number(s.hourlyRate) || 0, extra: Number(s.extra) || 0,
+    taxRate: Number(s.taxRate) || 0, vatRate: Number(s.vatRate) || 0,
+    withholdingTaxRate: Number(s.withholdingTaxRate) || 0,
+    noteRegistry
+  };
+  return {
+    ownerUid: sync.user.uid, clientId, viewerEmail: String(viewerEmail || '').toLowerCase(),
+    updatedAt: Date.now(),
+    payload: { projects, entries, payments, clients: client ? [client] : [], settings }
+  };
+}
+
+// Proprietario: pubblica/aggiorna statement e indice per ogni cliente che ha
+// un'email account associata (client.accountEmail).
+async function publishAllStatements() {
+  if (!sync.user || isClient()) return;
+  const owner = sync.user.uid;
+  for (const c of state.clients) {
+    const email = String(c.accountEmail || '').trim().toLowerCase();
+    if (!email) continue;
+    try {
+      const stmt = buildClientStatement(c.id, email);
+      await sync.db.collection('users').doc(owner).collection('statements').doc(c.id).set(stmt);
+      await sync.db.collection('links').doc(owner + '_' + c.id).set({
+        ownerUid: owner, clientId: c.id, viewerEmail: email, clientName: c.name || '', updatedAt: Date.now()
+      });
+    } catch (_) {}
+  }
+}
+
+function schedulePublish() {
+  if (!sync.user || isClient()) return;
+  clearTimeout(sync.share.pubTimer);
+  sync.share.pubTimer = setTimeout(publishAllStatements, 600);
+}
+
+// Proprietario: associa l'account del cliente indicandone l'email di accesso.
+async function associateClientAccount(clientId) {
+  if (isClient()) { toast('Solo il Proprietario puo\u0027 associare gli account', 'error'); return; }
+  const c = state.clients.find(x => x.id === clientId);
+  if (!c) return;
+  openModal({
+    title: 'Associa account cliente',
+    bodyHTML: `
+      <p class="text-[14px] text-ink-soft dark:text-zinc-300 mb-3">Inserisci l'<span class="font-bold">email con cui il cliente accede</span> a HourFlow. Da quel momento, accedendo, vedra\u0027 in automatico i dati che lo riguardano \u2014 senza codici ne\u0027 file.</p>
+      <input id="assoc-email" type="email" autocomplete="off" class="field" value="${esc(c.accountEmail || c.email || '')}" placeholder="email@cliente.it" />`,
+    confirmText: 'Associa',
+    onConfirm: async (card) => {
+      const el = $('#assoc-email', card);
+      const email = (el ? el.value : '').trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showError(card, 'Inserisci un\u0027email valida'); return false; }
+      const updated = { ...c, accountEmail: email, updatedAt: Date.now() };
+      await dbPut('clients', updated);
+      state.clients = state.clients.map(x => x.id === clientId ? updated : x);
+      cloudPush();
+      await publishAllStatements();
+      toast('Account associato: il cliente vedra\u0027 i dati al prossimo accesso');
+      renderClients();
+    }
+  });
+}
+
+// Proprietario: rimuove l'associazione (cancella statement e indice).
+function removeClientAssociation(clientId) {
+  if (isClient()) return;
+  const c = state.clients.find(x => x.id === clientId);
+  if (!c) return;
+  openModal({
+    title: 'Rimuovere l\u0027associazione?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Il cliente <span class="font-bold">${esc(c.name)}</span> non vedra\u0027 piu\u0027 i dati condivisi.</p>`,
+    confirmText: 'Rimuovi',
+    onConfirm: async () => {
+      const owner = sync.user.uid;
+      const updated = { ...c, accountEmail: '', updatedAt: Date.now() };
+      await dbPut('clients', updated);
+      state.clients = state.clients.map(x => x.id === clientId ? updated : x);
+      cloudPush();
+      try { await sync.db.collection('users').doc(owner).collection('statements').doc(clientId).delete(); } catch (_) {}
+      try { await sync.db.collection('links').doc(owner + '_' + clientId).delete(); } catch (_) {}
+      toast('Associazione rimossa');
+      renderClients();
+    }
+  });
+}
+
+// Cliente: trova (in tempo reale) lo statement indirizzato alla propria email e
+// lo legge. Se l'associazione arriva dopo il login, compare comunque da sola.
+function attachClientStatementByEmail() {
+  if (sync.share.linksUnsub) { try { sync.share.linksUnsub(); } catch (_) {} sync.share.linksUnsub = null; }
+  if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+  const email = (sync.user && sync.user.email ? sync.user.email : '').toLowerCase();
+  if (!email) return;
+  sync.share.linksUnsub = sync.db.collection('links').where('viewerEmail', '==', email)
+    .onSnapshot((qs) => {
+      if (qs.empty) { sync.share.linked = false; if (state.view === 'settings') renderSettings(); return; }
+      sync.share.linked = true;
+      const link = qs.docs[0].data() || {};
+      if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+      const ref = sync.db.collection('users').doc(link.ownerUid).collection('statements').doc(link.clientId);
+      sync.share.unsub = ref.onSnapshot(
+        (snap) => { if (snap.exists) applyStatement(snap.data()); },
+        () => { setSyncStatus('error'); }
+      );
+      if (state.view === 'settings') renderSettings();
+    }, () => { /* offline o regole: ignora */ });
+}
+
+// Cliente: applica lo statement ricevuto allo stato locale (sola lettura).
+async function applyStatement(data) {
+  const p = (data && data.payload) || {};
+  sync.applyingRemote = true;
+  try {
+    await dbClear('projects'); await dbClear('entries'); await dbClear('clients'); await dbClear('payments');
+    for (const r of (p.projects || [])) await dbPut('projects', r);
+    for (const r of (p.entries || [])) await dbPut('entries', r);
+    for (const r of (p.payments || [])) await dbPut('payments', r);
+    for (const r of (p.clients || [])) await dbPut('clients', r);
+    const own = state.settings || {};
+    const merged = { ...own, ...(p.settings || {}), id: 'app',
+      theme: own.theme, clientProfile: own.clientProfile };
+    await dbPut('settings', merged);
+    await loadState();
+    render();
+    setSyncStatus('synced');
+  } finally { sync.applyingRemote = false; }
 }
 
 function syncErrorMsg(err) {
