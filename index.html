@@ -4515,7 +4515,8 @@ function setSyncStatus(status) {
       if (sync.status !== 'syncing') return;
       try { console.warn('[sync] watchdog scattato — ultimo stadio:', sync.stage); } catch (_) {}
       sync.applyingRemote = false;            // non lasciare il push bloccato
-      setSyncStatus('error');
+      sync.status = 'error'; updateSyncBadge(); if (state.view === 'settings') renderSettings();
+      if (maybeRecoverWedgedFirestore(new Error('sync-timeout'))) return;
       toast('Sincronizzazione non completata (stadio: ' + (sync.stage || '?') + '). Dati locali disponibili.', 'warning');
     }, 12000);
   }
@@ -4587,7 +4588,16 @@ function initSync() {
     try { sync.db.settings({ experimentalForceLongPolling: true }); } catch (_) {}
     sync.enabled = true;
     sync.ready = true;
-    try { sync.db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
+    // La persistenza IndexedDB di Firestore puo' "ingolfare" il client su iOS/iPadOS
+    // (ogni lettura resta appesa). Se l'auto-ripristino l'ha disattivata, la saltiamo:
+    // le letture vanno dirette in rete e i dati offline restano nel DB locale dell'app.
+    let usePersist = true;
+    try { if (localStorage.getItem('hf_skip_persist') === '1') usePersist = false; } catch (_) {}
+    if (usePersist) {
+      try { sync.db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
+    } else {
+      try { console.warn('[sync] persistenza Firestore disattivata (auto-ripristino)'); } catch (_) {}
+    }
     sync.auth.onAuthStateChanged(onAuthChanged);
     // In modalità app/PWA (soprattutto iOS) le connessioni realtime vengono
     // sospese in background: al ritorno in primo piano si ri-aggancia il flusso.
@@ -4634,7 +4644,7 @@ async function startCloudListener() {
     await initialHydrate();        // caricamento iniziale deterministico (one-shot .get)
   } catch (err) {
     setSyncStatus('error');
-    toast(syncErrorMsg(err), 'error');
+    if (!maybeRecoverWedgedFirestore(err)) toast(syncErrorMsg(err), 'error');
     return;
   }
   // Se nel frattempo l'utente e' cambiato/uscito (onAuthChanged puo' rifirare),
@@ -4685,12 +4695,34 @@ function stopCloudListener() {
 // risponde (canale realtime sospeso in modalita' app/PWA su iOS) ripiega sulla
 // cache locale di Firestore. Senza questa rete di sicurezza la prima idratazione
 // poteva restare appesa per sempre -> badge bloccato su "In Sincronia...".
-function getWithTimeout(ref, ms = 8000) {
-  let timer;
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('sync-timeout')), ms); });
-  return Promise.race([ref.get(), timeout])
-    .then((snap) => { clearTimeout(timer); return snap; })
-    .catch(() => { clearTimeout(timer); return ref.get({ source: 'cache' }); });
+function getWithTimeout(ref, serverMs = 9000, cacheMs = 2500) {
+  const bound = (p, ms) => {
+    let t;
+    const timeout = new Promise((_, reject) => { t = setTimeout(() => reject(new Error('sync-timeout')), ms); });
+    return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+  };
+  // Prima il server (limite generoso, regge anche reti lente); se non risponde,
+  // la cache locale (deve essere istantanea). Entrambi i tentativi sono limitati,
+  // quindi questa funzione NON puo' restare appesa: o risolve o rigetta entro ~11s.
+  return bound(ref.get(), serverMs).catch(() => bound(ref.get({ source: 'cache' }), cacheMs));
+}
+
+// Auto-ripristino per client Firestore "ingolfato" (tipico di iOS/iPadOS quando la
+// persistenza IndexedDB si blocca): se la prima lettura va in timeout e non l'abbiamo
+// gia' tentato in questa sessione, disattiva la persistenza e ricarica UNA volta.
+// Ritorna true se ha avviato il ripristino (cosi' il chiamante non mostra il toast d'errore).
+function maybeRecoverWedgedFirestore(err) {
+  const code = String((err && (err.code || err.message)) || '');
+  const looksWedged = /sync-timeout|unavailable|deadline-exceeded|failed-precondition/i.test(code);
+  if (!looksWedged) return false;
+  try {
+    if (sessionStorage.getItem('hf_recovered') === '1') return false; // gia' tentato: non rientrare in loop
+    sessionStorage.setItem('hf_recovered', '1');
+    localStorage.setItem('hf_skip_persist', '1');
+    toast('Connessione cloud bloccata: riavvio senza cache locale…', 'warning');
+    setTimeout(() => { try { location.reload(); } catch (_) {} }, 1500);
+    return true;
+  } catch (_) { return false; }
 }
 
 async function initialHydrate() {
