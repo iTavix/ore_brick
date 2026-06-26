@@ -4455,11 +4455,11 @@ const sync = {
   status: 'off',
   // "Ombra" delle versioni note sul server: store -> Map(id -> updatedAt).
   // Serve a calcolare il diff in push (cosa creare/aggiornare/eliminare).
-  server: { projects: new Map(), entries: new Map(), clients: new Map(), payments: new Map() },
+  server: { projects: new Map(), entries: new Map(), clients: new Map(), payments: new Map(), expenses: new Map(), quotes: new Map() },
   // Idratazione: una sottocollezione e' "idratata" dopo il primo snapshot.
   // Finche' non lo e', NON si propagano eliminazioni (evita di azzerare il
   // server prima di aver letto cosa contiene).
-  hydrated: { projects: false, entries: false, clients: false, payments: false },
+  hydrated: { projects: false, entries: false, clients: false, payments: false, expenses: false, quotes: false },
   serverSettingsAt: 0,
   // Condivisione (architettura A): pubblicazione statement per cliente lato
   // Proprietario; scoperta+lettura live lato Cliente tramite la propria email.
@@ -4646,8 +4646,20 @@ function stopCloudListener() {
 // ad esso). Account inesistente -> push dello stato locale. Account esistente ->
 // il cloud e' autoritativo: si sostituiscono i record locali (inclusi i dati demo
 // di un'installazione nuova), coerentemente col comportamento storico.
+// Lettura Firestore a prova di stallo: tenta il server, ma se entro `ms` non
+// risponde (canale realtime sospeso in modalita' app/PWA su iOS) ripiega sulla
+// cache locale di Firestore. Senza questa rete di sicurezza la prima idratazione
+// poteva restare appesa per sempre -> badge bloccato su "In Sincronia...".
+function getWithTimeout(ref, ms = 8000) {
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('sync-timeout')), ms); });
+  return Promise.race([ref.get(), timeout])
+    .then((snap) => { clearTimeout(timer); return snap; })
+    .catch(() => { clearTimeout(timer); return ref.get({ source: 'cache' }); });
+}
+
 async function initialHydrate() {
-  const snap = await userDocRef().get();
+  const snap = await getWithTimeout(userDocRef());
 
   if (!snap.exists) {
     for (const s of SYNC_STORES) sync.hydrated[s] = true; // niente sul cloud da leggere
@@ -4670,7 +4682,7 @@ async function initialHydrate() {
     await dbClear('expenses'); await dbClear('quotes');
     for (const store of SYNC_STORES) {
       try {
-        const qs = await colRef(store).get();
+        const qs = await getWithTimeout(colRef(store));
         for (const doc of qs.docs) {
           const at = typeof doc.data().updatedAt === 'number' ? doc.data().updatedAt : 0;
           sync.server[store].set(doc.id, at);
@@ -4800,25 +4812,31 @@ async function migrateLegacyDoc(data) {
 function handleColSnapshot(store, qs) {
   sync.applyingRemote = true;
   const tasks = [];
-  qs.docChanges().forEach((chg) => {
-    const id = chg.doc.id;
-    const pending = chg.doc.metadata && chg.doc.metadata.hasPendingWrites;
-    if (chg.type === 'removed') {
-      sync.server[store].delete(id);
-      if (pending) return;                 // eco della nostra eliminazione
-      tasks.push(removeRecordLocally(store, id));
-      return;
-    }
-    const data = chg.doc.data() || {};
-    const remoteAt = typeof data.updatedAt === 'number' ? data.updatedAt : 0;
-    sync.server[store].set(id, remoteAt);
-    if (pending) return;                   // eco della nostra scrittura
-    const local = state[store].find(x => x.id === id);
-    if (!local || remoteAt > (local.updatedAt || 0)) {
-      tasks.push(dbPut(store, { ...data, id }));
-    }
-  });
-  Promise.all(tasks).catch((err) => console.error('handleColSnapshot failed', err)).finally(() => {
+  // Il corpo e' protetto: un'eccezione qui (es. store imprevisto) NON deve
+  // lasciare applyingRemote incastrato a true, altrimenti il push si blocca.
+  try {
+    qs.docChanges().forEach((chg) => {
+      const id = chg.doc.id;
+      const pending = chg.doc.metadata && chg.doc.metadata.hasPendingWrites;
+      if (chg.type === 'removed') {
+        sync.server[store].delete(id);
+        if (pending) return;                 // eco della nostra eliminazione
+        tasks.push(removeRecordLocally(store, id));
+        return;
+      }
+      const data = chg.doc.data() || {};
+      const remoteAt = typeof data.updatedAt === 'number' ? data.updatedAt : 0;
+      sync.server[store].set(id, remoteAt);
+      if (pending) return;                   // eco della nostra scrittura
+      const local = state[store].find(x => x.id === id);
+      if (!local || remoteAt > (local.updatedAt || 0)) {
+        tasks.push(dbPut(store, { ...data, id }));
+      }
+    });
+  } catch (err) {
+    console.error('handleColSnapshot failed', err);
+  }
+  Promise.all(tasks).catch((err) => console.error('handleColSnapshot tasks failed', err)).finally(() => {
     sync.applyingRemote = false;
     sync.hydrated[store] = true;
     scheduleReload();
