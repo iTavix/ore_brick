@@ -1267,6 +1267,60 @@ function hardRefresh() {
   });
 }
 
+// Pulizia tecnica della sincronizzazione — NON tocca i dati dell'app.
+// Svuota la persistenza/cache di Firestore, le cache HTTP e il service worker,
+// poi ricarica. Serve a sbloccare un client Firestore "ingolfato" (tipico iOS/iPadOS)
+// senza perdere progetti, ore, clienti ecc. (restano in IndexedDB e sul cloud).
+function confirmSyncReset() {
+  openModal({
+    title: 'Sbloccare la sincronizzazione?',
+    bodyHTML: `<p class="text-[14px]">Svuoto la cache cloud e l'app shell, poi ricarico l'app. <span class="font-bold">I tuoi dati non vengono toccati</span>: progetti, ore e clienti restano in locale e sul cloud. Potrebbe esserti richiesto di accedere di nuovo.</p>`,
+    confirmText: 'Sblocca e ricarica',
+    onConfirm: async () => { await runSyncReset(); }
+  });
+}
+
+async function runSyncReset() {
+  const online = navigator.onLine !== false;
+  const withDeadline = (p, ms) => Promise.race([
+    Promise.resolve(p),
+    new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))
+  ]);
+
+  // 1) Persistenza Firestore: termina il client e cancella SOLO il suo IndexedDB
+  //    (clearPersistence non tocca il DB dell'app). Se il client e' ingolfato,
+  //    terminate() va in timeout: in tal caso non riusciamo a pulire, quindi al
+  //    prossimo avvio saltiamo proprio l'apertura della cache (flag hf_skip_persist).
+  let persistCleared = false;
+  try {
+    if (sync.db) {
+      await withDeadline(sync.db.terminate(), 4000);
+      await withDeadline(sync.db.clearPersistence(), 4000);
+      persistCleared = true;
+    }
+  } catch (_) { persistCleared = false; }
+
+  try {
+    if (persistCleared) localStorage.removeItem('hf_skip_persist'); // ripartiamo con cache pulita
+    else localStorage.setItem('hf_skip_persist', '1');              // non riaprire la cache ingolfata
+    sessionStorage.removeItem('hf_recovered');                      // riarma l'auto-ripristino
+  } catch (_) {}
+
+  // 2) Cache HTTP + service worker: solo online, per non lasciare l'app non
+  //    avviabile offline (senza SW e senza cache non si caricherebbe).
+  if (online) {
+    try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (_) {}
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    } catch (_) {}
+  }
+
+  try { location.reload(); } catch (_) {}
+}
+
 function setView(view) {
   // Blocco di sicurezza: un Cliente non può aprire viste riservate.
   if (isClient() && OWNER_ONLY_VIEWS.indexOf(view) !== -1) view = 'dashboard';
@@ -3207,6 +3261,10 @@ function renderSettings() {
         <input id="imp-file" type="file" accept="application/json,.json" class="hidden" />
       </div>
       <p class="text-[11px] text-ink-faint dark:text-zinc-500 mt-3 font-semibold">Nota: Ripristinando un JSON sovrascriverai in modo definitivo l'archivio locale.</p>
+      <div class="border-t border-black/5 dark:border-white/10 mt-4 pt-4">
+        <button id="sync-reset" class="px-4 py-2 rounded-full border border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 text-[13px] font-bold transition-soft">Sblocca sincronizzazione</button>
+        <p class="text-[11px] text-ink-faint dark:text-zinc-500 mt-3 font-semibold leading-relaxed">Svuota la cache cloud e l'app shell (service worker) e ricarica. Utile se la sincronizzazione resta bloccata su "In Sincronia…". <span class="font-bold">I tuoi dati (progetti, ore, clienti…) NON vengono toccati</span> e restano in locale e sul cloud.</p>
+      </div>
     </div>`;
 
   const sSave = $('#s-save');
@@ -3232,6 +3290,8 @@ function renderSettings() {
     impJson.addEventListener('click', () => impFile.click());
     impFile.addEventListener('change', importJSON);
   }
+  const syncReset = $('#sync-reset');
+  if (syncReset) syncReset.addEventListener('click', confirmSyncReset);
   bindAccountPanel();
 }
 
