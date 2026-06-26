@@ -4495,8 +4495,30 @@ function colRef(store) {
   return sync.db.collection('users').doc(sync.user.uid).collection(store);
 }
 
+// Marca lo stadio corrente della sincronizzazione (a fini diagnostici): se il
+// watchdog scatta, sappiamo ESATTAMENTE dove si era fermato il flusso.
+function syncStage(s) {
+  sync.stage = s;
+  try { console.log('[sync] stadio:', s); } catch (_) {}
+}
+
+let _syncWatchdog = null;
 function setSyncStatus(status) {
   sync.status = status;
+  // Watchdog centrale: lo stato "syncing" NON puo' restare appeso all'infinito,
+  // qualunque sia il punto di blocco (get Firestore, listener, push...). Se dopo
+  // 12s siamo ancora in "syncing", sblocchiamo e mostriamo l'errore con lo stadio
+  // raggiunto, lasciando comunque utilizzabili i dati locali gia' caricati.
+  clearTimeout(_syncWatchdog);
+  if (status === 'syncing') {
+    _syncWatchdog = setTimeout(() => {
+      if (sync.status !== 'syncing') return;
+      try { console.warn('[sync] watchdog scattato — ultimo stadio:', sync.stage); } catch (_) {}
+      sync.applyingRemote = false;            // non lasciare il push bloccato
+      setSyncStatus('error');
+      toast('Sincronizzazione non completata (stadio: ' + (sync.stage || '?') + '). Dati locali disponibili.', 'warning');
+    }, 12000);
+  }
   updateSyncBadge();
   if (state.view === 'settings') renderSettings();
 }
@@ -4605,6 +4627,7 @@ function resetSyncShadow() {
 async function startCloudListener() {
   if (!sync.user) return;
   setSyncStatus('syncing');
+  syncStage('start');
   stopCloudListener();
   resetSyncShadow();
   try {
@@ -4614,15 +4637,27 @@ async function startCloudListener() {
     toast(syncErrorMsg(err), 'error');
     return;
   }
-  attachParentDocListener();
-  if (isClient()) {
-    // Cliente: trova lo statement che lo riguarda (per email) e lo legge live;
-    // nessun listener sui propri record per non sovrascrivere i dati condivisi.
-    attachClientStatementByEmail();
-  } else {
-    attachRecordListeners();      // merge per-record realtime
-    publishAllStatements();       // (ri)pubblica gli statement dei clienti associati
+  // Se nel frattempo l'utente e' cambiato/uscito (onAuthChanged puo' rifirare),
+  // non proseguire con riferimenti non piu' validi: evita TypeError silenziosi
+  // che lascerebbero il badge appeso su "syncing".
+  if (!sync.user) { setSyncStatus('signedout'); return; }
+  syncStage('attach-listeners');
+  try {
+    attachParentDocListener();
+    if (isClient()) {
+      // Cliente: trova lo statement che lo riguarda (per email) e lo legge live;
+      // nessun listener sui propri record per non sovrascrivere i dati condivisi.
+      attachClientStatementByEmail();
+    } else {
+      attachRecordListeners();      // merge per-record realtime
+      publishAllStatements();       // (ri)pubblica gli statement dei clienti associati
+    }
+  } catch (err) {
+    setSyncStatus('error');
+    toast(syncErrorMsg(err), 'error');
+    return;
   }
+  syncStage('done');
   setSyncStatus('synced');
 }
 
@@ -4659,10 +4694,12 @@ function getWithTimeout(ref, ms = 8000) {
 }
 
 async function initialHydrate() {
+  syncStage('hydrate:parent-get');
   const snap = await getWithTimeout(userDocRef());
 
   if (!snap.exists) {
     for (const s of SYNC_STORES) sync.hydrated[s] = true; // niente sul cloud da leggere
+    syncStage('hydrate:push-new');
     await pushNow();                                       // carica lo stato locale
     return;
   }
@@ -4678,10 +4715,12 @@ async function initialHydrate() {
 
   sync.applyingRemote = true;
   try {
+    syncStage('hydrate:clear');
     await dbClear('projects'); await dbClear('entries'); await dbClear('clients'); await dbClear('payments');
     await dbClear('expenses'); await dbClear('quotes');
     for (const store of SYNC_STORES) {
       try {
+        syncStage('hydrate:get:' + store);
         const qs = await getWithTimeout(colRef(store));
         for (const doc of qs.docs) {
           const at = typeof doc.data().updatedAt === 'number' ? doc.data().updatedAt : 0;
@@ -4699,6 +4738,7 @@ async function initialHydrate() {
       sync.serverSettingsAt = typeof data.settingsAt === 'number' ? data.settingsAt : 0;
       await dbPut('settings', { ...data.settings, id: 'app' });
     }
+    syncStage('hydrate:loadState');
     await loadState();
     render();
   } finally {
@@ -5244,7 +5284,10 @@ function accountPanelHTML() {
       </div>`;
   }
   if (sync.user) {
-    const statusText = { syncing: 'Sincronia in corso…', synced: 'Tutti i dati sono salvati', error: 'Rete assente o errore', signedout: '—', off: '—' }[sync.status] || '';
+    const statusBase = { syncing: 'Sincronia in corso…', synced: 'Tutti i dati sono salvati', error: 'Rete assente o errore', signedout: '—', off: '—' }[sync.status] || '';
+    // In "syncing"/"error" mostriamo anche lo stadio raggiunto: aiuta a capire dove si ferma.
+    const statusText = ((sync.status === 'syncing' || sync.status === 'error') && sync.stage)
+      ? `${statusBase} · ${sync.stage}` : statusBase;
     const role = currentRole();
     const roleBadge = role === 'client'
       ? `<span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-500">Cliente</span>`
