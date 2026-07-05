@@ -2,6 +2,9 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
+<!-- CSP: solo gli script inline e i tre CDN usati (Tailwind, Firebase su gstatic,
+     jsPDF su cdnjs); connessioni consentite verso i soli servizi Google/Firebase. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://www.gstatic.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://cdn.tailwindcss.com https://www.gstatic.com https://cdnjs.cloudflare.com; frame-src 'self'; object-src 'none'; base-uri 'self'" />
 <!-- First-run welcome: redirect to welcome.html before the app boots. The
      welcome page sets "hourflow_welcome_seen_v1" on entry, so this runs once. -->
 <script>
@@ -356,9 +359,9 @@ const DEFAULT_SETTINGS = {
   taxRate: 0,
   vatRate: 0,
   withholdingTaxRate: 0,
-  holderName: 'Claudio Tavella',
-  iban: 'IT47R0364601600526311864007',
-  bic: 'NTSBITM1XXX',
+  holderName: '',
+  iban: '',
+  bic: '',
   causale: 'Prestazione professionale',
   stampDuty: false,
   regime: 'ordinario',        // 'ordinario' | 'forfettario' (forfettario: no IVA, no ritenuta in nota)
@@ -5274,6 +5277,15 @@ function attachClientStatementByEmail() {
   sync.share.statementRef = null;
   const email = (sync.user && sync.user.email ? sync.user.email : '').toLowerCase();
   if (!email) return;
+  // I dati condivisi si aprono solo a identità verificata: Firebase permette di
+  // registrare account con email altrui non confermate, che altrimenti
+  // combacerebbero con viewerEmail. (La barriera server è nelle regole
+  // Firestore: request.auth.token.email_verified — vedi FIRESTORE_RULES.md.)
+  if (!sync.user.emailVerified) {
+    toast('Verifica la tua email per consultare i dati condivisi: Impostazioni → "Verifica ora", poi accedi di nuovo.', 'warning');
+    if (state.view === 'settings') renderSettings();
+    return;
+  }
   sync.share.linksUnsub = sync.db.collection('links').where('viewerEmail', '==', email)
     .onSnapshot((qs) => {
       if (qs.empty) { sync.share.linked = false; sync.share.curKey = null; sync.share.statementRef = null;
