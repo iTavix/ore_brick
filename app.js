@@ -255,8 +255,8 @@ function buildNoteModel() {
   const clientAddresses = [...new Set(flat.map(x => x.clientAddress).filter(Boolean))];
   const clientVats = [...new Set(flat.map(x => x.clientVat).filter(Boolean))];
   const clientForeignVats = [...new Set(flat.map(x => x.clientForeignVat).filter(Boolean))];
-  return { s, flat, tH, baseCompensation, taxP, vatP, wTaxP, taxValue, vatValue, wTaxValue,
-           grandTotal, stampDuty, payable, ctx, note, paid, residual, forfettario, clientNames, clientAddresses, clientVats, clientForeignVats };
+  return { s, flat, tH, baseCompensation, taxP, vatP, wTaxP, taxValue, subtotalWithTax, vatValue, wTaxValue,
+           grandTotal, stampDuty, payable, ctx, note, ctxPayments, paid, residual, forfettario, clientNames, clientAddresses, clientVats, clientForeignVats };
 }
 
 // Esporta la nota come PDF nativo (jsPDF + autotable), senza dialogo di stampa.
@@ -2411,38 +2411,19 @@ function renderPayment() {
   const s = state.settings;
   
   // La nota usa lo STESSO filtro canonico della Dashboard (progetto + tutti i
-  // periodi: mese corrente/precedente, anno corrente, intervallo personalizzato),
-  // così totali, stato pagamento e numerazione restano coerenti con la vista.
-  const filteredIds = new Set(getFilteredEntries().map(e => e.id));
-  const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
-
-  const tH = flat.reduce((acc, current) => acc + Number(current.hours || 0), 0);
-  const baseCompensation = round2(flat.reduce((acc, entry) => acc + (Number(entry.hours || 0) * Number(entry.rate || 0)), 0) + flatScopedTotal());
-
-  const { taxP: taxPercentage, vatP: vatPercentage, wTaxP: wTaxPercentage, forfettario } = effectiveFiscal(s);
-
-  const taxValue = round2((baseCompensation * taxPercentage) / 100);
-  const subtotalWithTax = round2(baseCompensation + taxValue);
-  const vatValue = round2((subtotalWithTax * vatPercentage) / 100);
-  const wTaxValue = round2((subtotalWithTax * wTaxPercentage) / 100);
-  const grandTotal = round2(subtotalWithTax + vatValue - wTaxValue);
-
-  // Stato pagamento per il contesto di fatturazione corrente.
-  const ctx = paymentContext();
-  const note = getNote(ctx.key);
-  // Marca da bollo: 2 € sulle note esenti IVA sopra 77,47 € (se abilitata).
-  const stampDuty = (vatPercentage === 0 && s.stampDuty && grandTotal > 77.47) ? 2 : 0;
-  const payable = round2(grandTotal + stampDuty);
-  const ctxPayments = paymentsForContext(ctx.key);
-  const paid = round2(ctxPayments.reduce((a, p) => a + (Number(p.amount) || 0), 0));
-  const residual = round2(payable - paid);
+  // periodi: mese corrente/precedente, anno corrente, intervallo personalizzato).
+  // Tutti i valori arrivano da buildNoteModel(), lo stesso modello dell'export
+  // PDF: un unico punto di calcolo, vista e documenti non possono divergere.
+  const m = buildNoteModel();
+  const { flat, tH, baseCompensation, taxValue, subtotalWithTax, vatValue, wTaxValue,
+          grandTotal, stampDuty, payable, ctx, note, ctxPayments, paid, residual, forfettario } = m;
+  const taxPercentage = m.taxP, vatPercentage = m.vatP, wTaxPercentage = m.wTaxP;
   const hasTotal = payable > 0.005;
   const payStatus = !hasTotal ? null : (residual <= 0.005 && paid > 0 ? 'paid' : (paid > 0 ? 'acconto' : 'due'));
   // Snapshot del totale sulla nota: consente ai promemoria di sapere quali note
   // restano da incassare senza ricalcolare le voci. Scrive solo quando cambia.
   if (note && canManagePayment() && !sync.applyingRemote) {
-    const snap = Math.round(payable * 100) / 100;
-    if (note.payableSnapshot !== snap) { note.payableSnapshot = snap; dbPut('settings', state.settings); }
+    if (note.payableSnapshot !== payable) { note.payableSnapshot = payable; dbPut('settings', state.settings); }
   }
   const due = note ? dueStatus(note.dueDate, residual) : null;
   const statusMap = {
