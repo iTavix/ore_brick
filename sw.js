@@ -2,17 +2,18 @@
    Relative paths so it also works from a GitHub Pages subfolder.
 
    Strategy
-   - App shell (HTML incl. welcome, icons, manifest) -> precache, served instantly.
-   - CDN libraries (Tailwind, jsPDF on cdnjs, Firebase SDK on gstatic)
+   - App shell (HTML incl. welcome, JS/CSS, icons, manifest) -> precache, served instantly.
+   - CDN libraries (jsPDF on cdnjs, Firebase SDK on gstatic)
                                                      -> stale-while-revalidate, so the
                                                         app boots & exports offline too.
    - Firebase *data* (Firestore/Auth/Installations)  -> always network; Firestore keeps
                                                         its own IndexedDB persistence. */
-const PRECACHE = 'hourflow-precache-v6';
-const RUNTIME  = 'hourflow-runtime-v6';
+const PRECACHE = 'hourflow-precache-v7';
+const RUNTIME  = 'hourflow-runtime-v7';
 
 const SHELL = [
   './', './index.html', './welcome.html', './manifest.json',
+  './app.js', './style.css', './tailwind.css',
   './apple-touch-icon.png', './favicon.ico', './favicon-32.png', './favicon-16.png'
 ];
 

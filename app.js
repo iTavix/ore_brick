@@ -1,0 +1,5259 @@
+"use strict";
+
+/* =====================================================================
+   HourFlow Premium Edition - Core Scripting
+   ===================================================================== */
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+// Coalesces rapid calls (e.g. search keystrokes) into a single trailing call.
+function debounce(fn, wait = 180) {
+  let t;
+  return function (...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), wait); };
+}
+
+// Lazy-load jsPDF + autotable on first export so ~300KB don't block startup.
+// Returns a cached promise; rejects if the scripts can't be fetched (offline),
+// in which case exportNotePDF() falls back to the print path.
+let _pdfLibPromise = null;
+function loadPdfLib() {
+  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+  if (_pdfLibPromise) return _pdfLibPromise;
+  const inject = (src) => new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = src; sc.onload = res; sc.onerror = () => rej(new Error('load failed: ' + src));
+    document.head.appendChild(sc);
+  });
+  _pdfLibPromise = inject('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+    .then(() => inject('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'))
+    .catch((e) => { _pdfLibPromise = null; throw e; });
+  return _pdfLibPromise;
+}
+
+// Definizione globale posizionata prima del caricamento dello stato dell'app
+const DEFAULT_SETTINGS = {
+  id: 'app',
+  hourlyRate: 25,
+  extra: 0,
+  taxRate: 0,
+  vatRate: 0,
+  withholdingTaxRate: 0,
+  holderName: '',
+  iban: '',
+  bic: '',
+  causale: 'Prestazione professionale',
+  stampDuty: false,
+  regime: 'ordinario',        // 'ordinario' | 'forfettario' (forfettario: no IVA, no ritenuta in nota)
+  roundingMinutes: 0,         // round timer sessions UP to this increment in minutes (0 = off)
+  coefficiente: 78,           // forfettario: coefficiente di redditività (%) — annual estimate
+  impostaSostitutiva: 5,      // forfettario: imposta sostitutiva (%) — annual estimate
+  clientProfile: { name: '', vat: '', address: '', email: '', phone: '' },
+  theme: 'auto'
+};
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function genId() {
+  try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (_) {}
+  try {
+    const b = new Uint8Array(16); crypto.getRandomValues(b);
+    return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  } catch (_) {}
+  return 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+}
+
+function eur(n) {
+  return (Number(n) || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+}
+
+function hrs(n) {
+  const v = Number(n) || 0;
+  return v.toLocaleString('it-IT', { maximumFractionDigits: 2 }) + ' h';
+}
+
+// Arrotondamento monetario a 2 decimali: i totali fiscali vanno fissati voce per
+// voce, altrimenti i float IEEE 754 fanno divergere i centesimi tra nota, PDF e storico.
+function round2(n) {
+  return Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+}
+
+// Una data ISO è valida solo se il round-trip Date la riproduce identica
+// (il solo regex accetta impossibili come 2026-02-30).
+function isValidIsoDate(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+// Giorni interi da a → b, calcolati in UTC: immune a fuso locale e ora legale.
+function daysBetweenIso(a, b) {
+  const utc = (iso) => { const [y, m, d] = iso.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((utc(b) - utc(a)) / 86400000);
+}
+
+function dateIt(iso) {
+  if (!isValidIsoDate(iso)) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function todayIso() {
+  const d = new Date();
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function maskIban(iban) {
+  const v = String(iban == null ? '' : iban).replace(/\s+/g, '');
+  if (!v) return '';
+  let out = v.length <= 8 ? '•'.repeat(v.length) : v.slice(0, 4) + '•'.repeat(v.length - 8) + v.slice(-4);
+  return out.replace(/(.{4})/g, '$1 ').trim();
+}
+
+// Raggruppa l'IBAN in blocchi da 4 per la stampa leggibile
+function groupIban(iban) {
+  const v = String(iban == null ? '' : iban).replace(/\s+/g, '');
+  return v ? v.replace(/(.{4})/g, '$1 ').trim() : '';
+}
+
+// Copia testo negli appunti: Clipboard API moderna con fallback su execCommand.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) { /* fallback sotto */ }
+  try {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.style.position = 'fixed'; el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    return true;
+  } catch (_) { return false; }
+}
+
+// Stampa robusta cross-browser, in particolare iOS/Safari. La nota viene stampata
+// dentro un iframe ISOLATO con gli stili della pagina clonati. Cosi' si evitano gli
+// ostacoli che mandano in tilt l'anteprima di Safari (header sticky + backdrop blur,
+// body a 100vh, contenitori overflow-x-auto, dark mode) e non si dipende dal rinvio
+// post-gesto che iOS ignora. Fallback su window.print() se qualcosa fallisce.
+function printNote() {
+  const area = document.querySelector('.print-area');
+  if (!area) { try { window.print(); } catch (_) {} return; }
+
+  const old = document.getElementById('print-frame');
+  if (old) old.remove();
+
+  const iframe = document.createElement('iframe');
+  iframe.id = 'print-frame';
+  iframe.setAttribute('aria-hidden', 'true');
+  // Fuori schermo ma con dimensioni reali (A4 a 96dpi): display:none/size 0 non
+  // verrebbe impaginato e alcuni browser lo stampano vuoto.
+  iframe.style.cssText = 'position:fixed; left:-9999px; top:0; width:794px; height:1123px; border:0;';
+  document.body.appendChild(iframe);
+
+  // Clona tutti gli stili della pagina, incluse le utility generate da Tailwind
+  // (iniettate come <style>): nell'iframe le classi rendono identiche allo schermo.
+  let headStyles = '';
+  document.querySelectorAll('style, link[rel="stylesheet"]').forEach((node) => {
+    headStyles += node.outerHTML;
+  });
+
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(
+    '<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">' +
+    headStyles +
+    '<style>' +
+      '@page { size: A4; margin: 14mm; }' +
+      'html,body{ margin:0!important; padding:0!important; background:#fff!important; }' +
+      '*{ -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }' +
+      '.no-print{ display:none!important; }' +
+      '.print\\:inline{ display:inline!important; }' +
+      '.print-area{ box-shadow:none!important; border:none!important; border-radius:0!important; margin:0!important; padding:0!important; overflow:visible!important; background:#fff!important; }' +
+      '.overflow-x-auto{ overflow:visible!important; }' +
+      '.print-table{ width:100%!important; min-width:0!important; }' +
+      '.print-table th,.print-table td{ padding:8px 10px!important; border-bottom:1px solid #e2e2e6!important; }' +
+      '.print-table tr,.print-table thead,.print-keep{ break-inside:avoid; }' +
+    '</style></head><body>' +
+    area.outerHTML +
+    '</body></html>'
+  );
+  doc.close();
+
+  let printed = false;
+  const fire = () => {
+    if (printed) return; printed = true;
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (e) {
+      console.error('print failed', e);
+      try { window.print(); } catch (_) {}
+    }
+    // afterprint non e' garantito su iOS: pulizia a tempo.
+    setTimeout(() => { const f = document.getElementById('print-frame'); if (f) f.remove(); }, 1500);
+  };
+
+  // Se il documento e' gia' pronto, stampo SUBITO (resto dentro il gesto del tap,
+  // requisito di iOS). Altrimenti attendo onload, con timeout di sicurezza perche'
+  // i documenti creati via document.write spesso non emettono onload.
+  if (doc.readyState === 'complete') {
+    fire();
+  } else {
+    iframe.onload = fire;
+    setTimeout(fire, 300);
+  }
+}
+
+// Effective fiscal rates honoring the chosen regime. In 'forfettario' the invoice
+// carries no VAT and no withholding tax (esente IVA, non soggetto a ritenuta);
+// the optional INPS rivalsa is preserved. Centralised so the PDF model and the
+// on-screen note never drift apart.
+function effectiveFiscal(s) {
+  const forfettario = (s.regime || 'ordinario') === 'forfettario';
+  return {
+    forfettario,
+    taxP: Number(s.taxRate) || 0,
+    vatP: forfettario ? 0 : (Number(s.vatRate) || 0),
+    wTaxP: forfettario ? 0 : (Number(s.withholdingTaxRate) || 0)
+  };
+}
+
+// Modello della nota corrente: tutti i valori calcolati dai filtri/impostazioni.
+// Usato dall'export PDF (e riutilizzabile altrove) senza dipendere dal DOM.
+function buildNoteModel() {
+  const s = state.settings;
+  const filteredIds = new Set(getFilteredEntries().map(e => e.id));
+  const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
+  const tH = flat.reduce((a, e) => a + (Number(e.hours) || 0), 0);
+  const baseCompensation = round2(flat.reduce((a, e) => a + (Number(e.hours) || 0) * (Number(e.rate) || 0), 0) + flatScopedTotal());
+  const { taxP, vatP, wTaxP, forfettario } = effectiveFiscal(s);
+  const taxValue = round2(baseCompensation * taxP / 100);
+  const subtotalWithTax = round2(baseCompensation + taxValue);
+  const vatValue = round2(subtotalWithTax * vatP / 100);
+  const wTaxValue = round2(subtotalWithTax * wTaxP / 100);
+  const grandTotal = round2(subtotalWithTax + vatValue - wTaxValue);
+  const stampDuty = (vatP === 0 && s.stampDuty && grandTotal > 77.47) ? 2 : 0;
+  const payable = round2(grandTotal + stampDuty);
+  const ctx = paymentContext();
+  const note = getNote(ctx.key);
+  const ctxPayments = paymentsForContext(ctx.key);
+  const paid = round2(ctxPayments.reduce((a, p) => a + (Number(p.amount) || 0), 0));
+  const residual = round2(payable - paid);
+  const clientNames = [...new Set(flat.map(x => x.clientName).filter(Boolean))];
+  const clientAddresses = [...new Set(flat.map(x => x.clientAddress).filter(Boolean))];
+  const clientVats = [...new Set(flat.map(x => x.clientVat).filter(Boolean))];
+  const clientForeignVats = [...new Set(flat.map(x => x.clientForeignVat).filter(Boolean))];
+  return { s, flat, tH, baseCompensation, taxP, vatP, wTaxP, taxValue, vatValue, wTaxValue,
+           grandTotal, stampDuty, payable, ctx, note, paid, residual, forfettario, clientNames, clientAddresses, clientVats, clientForeignVats };
+}
+
+// Esporta la nota come PDF nativo (jsPDF + autotable), senza dialogo di stampa.
+// Se la libreria non è disponibile, ripiega sulla stampa via iframe.
+function exportNotePDF() {
+  if (!(window.jspdf && window.jspdf.jsPDF)) {
+    toast('Modulo PDF non pronto: uso la stampa', 'warning');
+    printNote();
+    return;
+  }
+  const m = buildNoteModel();
+  const s = m.s;
+  const money = (n) => (Number(n) || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' EUR';
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 40;
+  const accent = [255, 149, 0], ink = [29, 29, 31], soft = [110, 110, 115];
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(...accent);
+  doc.text('NOTA DI PAGAMENTO', M, 52);
+
+  let ry = 44;
+  doc.setFontSize(10);
+  if (m.note) { doc.setFont('helvetica', 'bold'); doc.setTextColor(...ink); doc.text(`Nota N. ${noteNumFmt(m.note.n, m.note.year)}`, W - M, ry, { align: 'right' }); ry += 14; }
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...soft);
+  doc.text(`Emissione: ${dateIt(m.note ? m.note.issuedAt : todayIso())}`, W - M, ry, { align: 'right' }); ry += 14;
+  const status = m.payable > 0.005 ? (m.residual <= 0.005 && m.paid > 0 ? 'PAGATA' : (m.paid > 0 ? 'ACCONTO RICEVUTO' : 'DA SALDARE')) : '';
+  if (status) { doc.setFont('helvetica', 'bold'); doc.setTextColor(...ink); doc.text(status, W - M, ry, { align: 'right' }); }
+
+  let y = 88;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...soft); doc.text('MITTENTE', M, y);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...ink); doc.text(s.holderName || '-', M, y + 14);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...soft); doc.text('DESTINATARIO', M, y + 36);
+  const cname = m.clientNames.length === 1 ? m.clientNames[0] : (m.clientNames.length > 1 ? 'Fatturazione Multi-cliente' : '-');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...ink); doc.text(cname, M, y + 50);
+  let dy = y + 64;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...soft);
+  if (m.clientNames.length === 1) {
+    if (m.clientAddresses[0]) { doc.text(String(m.clientAddresses[0]), M, dy); dy += 12; }
+    if (m.clientVats[0]) { doc.text('P.IVA/CF: ' + m.clientVats[0], M, dy); dy += 12; }
+    if (m.clientForeignVats && m.clientForeignVats[0]) { doc.text('IVA estera: ' + m.clientForeignVats[0], M, dy); dy += 12; }
+  }
+
+  const body = m.flat.map(e => [dateIt(e.date), `${e.project} (${money(e.rate)}/h)`, e.spec || '', hrs(e.hours)]);
+  doc.autoTable({
+    startY: Math.max(dy + 10, y + 92),
+    head: [['Data', 'Progetto', 'Descrizione', 'Ore']],
+    body: body.length ? body : [['—', '—', 'Nessuna voce', '—']],
+    theme: 'grid',
+    headStyles: { fillColor: [245, 245, 247], textColor: ink, fontStyle: 'bold', fontSize: 8 },
+    bodyStyles: { fontSize: 9, textColor: ink },
+    columnStyles: { 3: { halign: 'right' } },
+    margin: { left: M, right: M }
+  });
+
+  let ty = doc.lastAutoTable.finalY + 18;
+  if (s.causale) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...soft); doc.text(`Causale: ${s.causale}`, M, ty); ty += 18; }
+  if (m.forfettario) {
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(...soft);
+    doc.text('Operazione in franchigia da IVA - art. 1, c. 54-89, L. 190/2014.', M, ty); ty += 11;
+    doc.text("Compenso non soggetto a ritenuta d'acconto.", M, ty); ty += 16;
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...ink);
+  }
+
+  const totals = [];
+  totals.push(['Compenso prestazioni', money(m.baseCompensation), false]);
+  totals.push(['Totale Ore', hrs(m.tH), false]);
+  if (m.taxP > 0) totals.push([`Rivalsa Previdenziale (${m.taxP}%)`, money(m.taxValue), false]);
+  if (m.vatP > 0) totals.push([`I.V.A. (${m.vatP}%)`, money(m.vatValue), false]);
+  if (m.wTaxP > 0) totals.push([`Ritenuta d'Acconto (${m.wTaxP}%)`, '-' + money(m.wTaxValue), false]);
+  if (m.stampDuty > 0) { totals.push(['Subtotale', money(m.grandTotal), false]); totals.push(['Marca da bollo', money(m.stampDuty), false]); }
+  totals.push([m.stampDuty > 0 ? 'Totale documento' : 'Netto a pagare', money(m.payable), true]);
+  if (m.paid > 0) { totals.push(['Gia versato', '-' + money(m.paid), false]); totals.push([m.residual <= 0.005 ? 'Saldato' : 'Residuo da pagare', money(Math.max(0, m.residual)), false]); }
+
+  const colX = W - M, labelX = W - M - 180;
+  for (const [label, val, bold] of totals) {
+    if (ty > H - 80) { doc.addPage(); ty = 60; }
+    doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 12 : 10);
+    doc.setTextColor(...(bold ? accent : soft)); doc.text(label, labelX, ty);
+    doc.setTextColor(...(bold ? accent : ink)); doc.text(val, colX, ty, { align: 'right' });
+    ty += bold ? 20 : 14;
+  }
+
+  ty += 12;
+  if (ty > H - 110) { doc.addPage(); ty = 60; }
+  doc.setDrawColor(220); doc.line(M, ty, W - M, ty); ty += 16;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...soft); doc.text('ESTREMI DI LIQUIDAZIONE', M, ty); ty += 16;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...ink);
+  doc.text(`Intestatario: ${s.holderName || '-'}`, M, ty); ty += 14;
+  doc.text(`IBAN: ${s.iban ? groupIban(s.iban) : '-'}`, M, ty); ty += 14;
+  doc.text(`BIC/SWIFT: ${s.bic || '-'}`, M, ty);
+
+  doc.setFontSize(8); doc.setTextColor(...soft); doc.text('HourFlow  ·  iTavix', M, H - 24);
+
+  const numPart = m.note ? `_${String(m.note.n).padStart(4, '0')}-${m.note.year}` : '';
+  doc.save(`nota_pagamento${numPart}_${todayIso()}.pdf`);
+  toast('PDF generato');
+}
+
+/* ---------------------------------------------------------------------
+   Secure Storage Helper & Fallback Engine
+--------------------------------------------------------------------- */
+function getLocalStorageItem(key) {
+  try {
+    return (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(key) : null;
+  } catch (e) { return null; }
+}
+
+function setLocalStorageItem(key, value) {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(key, value);
+    }
+  } catch (e) { console.warn("Impossibile salvare nel localStorage: ", e); }
+}
+
+const DB_NAME = 'hourflow-prm';
+const DB_VERSION = 3;
+let _db = null;
+let _useFallback = false;
+
+const fallbackData = {
+  settings: {},
+  projects: [],
+  entries: [],
+  clients: [],
+  payments: [],
+  timer: {}
+};
+
+function initFallbackStorage() {
+  _useFallback = true;
+  const fallbackBadge = $('#fallback-badge');
+  if (fallbackBadge) fallbackBadge.classList.remove('hidden');
+  try {
+    const parsedSettings = JSON.parse(getLocalStorageItem('obb_p_settings'));
+    fallbackData.settings = (parsedSettings && typeof parsedSettings === 'object' && !Array.isArray(parsedSettings)) ? parsedSettings : {};
+
+    const parsedProjects = JSON.parse(getLocalStorageItem('obb_p_projects'));
+    fallbackData.projects = Array.isArray(parsedProjects) ? parsedProjects : [];
+
+    const parsedEntries = JSON.parse(getLocalStorageItem('obb_p_entries'));
+    fallbackData.entries = Array.isArray(parsedEntries) ? parsedEntries : [];
+
+    const parsedClients = JSON.parse(getLocalStorageItem('obb_p_clients'));
+    fallbackData.clients = Array.isArray(parsedClients) ? parsedClients : [];
+
+    const parsedPayments = JSON.parse(getLocalStorageItem('obb_p_payments'));
+    fallbackData.payments = Array.isArray(parsedPayments) ? parsedPayments : [];
+
+    const parsedTimer = JSON.parse(getLocalStorageItem('obb_p_timer'));
+    fallbackData.timer = (parsedTimer && typeof parsedTimer === 'object' && !Array.isArray(parsedTimer)) ? parsedTimer : {};
+  } catch (e) {
+    console.warn("Storage di fallback volatile in uso.");
+    fallbackData.settings = {};
+    fallbackData.projects = [];
+    fallbackData.entries = [];
+    fallbackData.clients = [];
+    fallbackData.payments = [];
+    fallbackData.timer = {};
+  }
+}
+
+function saveFallback(store) {
+  if (!_useFallback) return;
+  setLocalStorageItem('obb_p_' + store, JSON.stringify(fallbackData[store]));
+}
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    try {
+      if (typeof indexedDB === 'undefined' || indexedDB === null) {
+        throw new Error("IndexedDB non disponibile.");
+      }
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('clients')) db.createObjectStore('clients', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('entries')) {
+          const s = db.createObjectStore('entries', { keyPath: 'id' });
+          s.createIndex('projectId', 'projectId', { unique: false });
+        }
+        if (!db.objectStoreNames.contains('timer')) db.createObjectStore('timer', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('payments')) db.createObjectStore('payments', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('expenses')) {
+          const ex = db.createObjectStore('expenses', { keyPath: 'id' });
+          ex.createIndex('projectId', 'projectId', { unique: false });
+        }
+        if (!db.objectStoreNames.contains('quotes')) db.createObjectStore('quotes', { keyPath: 'id' });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error("Errore IndexedDB"));
+    } catch (err) { reject(err); }
+  });
+}
+
+function tx(store, mode) {
+  return _db.transaction(store, mode).objectStore(store);
+}
+function idbReq(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+const dbGet = async (store, key) => {
+  if (_useFallback) {
+    if (store === 'settings' || store === 'timer') {
+      return fallbackData[store][key] || null;
+    }
+    return null;
+  }
+  try { return await idbReq(tx(store, 'readonly').get(key)); } catch (err) {
+    initFallbackStorage();
+    return dbGet(store, key);
+  }
+};
+
+const dbGetAll = async (store) => {
+  if (_useFallback) {
+    if (store === 'projects') return fallbackData.projects;
+    if (store === 'entries') return fallbackData.entries;
+    if (store === 'clients') return fallbackData.clients;
+    if (store === 'payments') return fallbackData.payments;
+    if (store === 'settings') return Object.values(fallbackData.settings);
+    return [];
+  }
+  try { return await idbReq(tx(store, 'readonly').getAll()); } catch (err) {
+    initFallbackStorage();
+    return dbGetAll(store);
+  }
+};
+
+const dbPut = async (store, value) => {
+  // Per-record sync: ogni scrittura LOCALE di un record timbra updatedAt (epoch ms)
+  // così il merge cloud puo' decidere chi vince per singolo record (last-write-wins
+  // a livello di documento, non dell'intero archivio). Durante applyingRemote NON
+  // si timbra, per conservare il timestamp originale arrivato dal cloud.
+  if (value && typeof value === 'object' &&
+      (store === 'projects' || store === 'entries' || store === 'clients' || store === 'payments') &&
+      !sync.applyingRemote) {
+    value.updatedAt = Date.now();
+  }
+  if (_useFallback) {
+    if (store === 'settings' || store === 'timer') {
+      fallbackData[store][value.id] = value;
+    } else if (store === 'projects' || store === 'entries' || store === 'clients' || store === 'payments') {
+      const idx = fallbackData[store].findIndex(item => item.id === value.id);
+      if (idx > -1) fallbackData[store][idx] = value;
+      else fallbackData[store].push(value);
+    }
+    saveFallback(store);
+    return value;
+  }
+  try { return await idbReq(tx(store, 'readwrite').put(value)); } catch (err) {
+    initFallbackStorage();
+    return dbPut(store, value);
+  }
+};
+
+const dbDel = async (store, key) => {
+  if (_useFallback) {
+    if (store === 'settings' || store === 'timer') {
+      delete fallbackData[store][key];
+    } else if (store === 'projects' || store === 'entries' || store === 'clients' || store === 'payments') {
+      fallbackData[store] = fallbackData[store].filter(item => item.id !== key);
+    }
+    saveFallback(store);
+    return;
+  }
+  try { return await idbReq(tx(store, 'readwrite').delete(key)); } catch (err) {
+    initFallbackStorage();
+    return dbDel(store, key);
+  }
+};
+
+function dbClear(store) {
+  if (_useFallback) {
+    if (store === 'projects' || store === 'entries' || store === 'clients' || store === 'payments') fallbackData[store] = [];
+    saveFallback(store);
+    return Promise.resolve();
+  }
+  try {
+    const t = _db.transaction(store, 'readwrite');
+    return new Promise((resolve, reject) => {
+      const req = t.objectStore(store).clear();
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) {
+    initFallbackStorage();
+    return dbClear(store);
+  }
+}
+
+/* ---------------------------------------------------------------------
+   State Management & Seed Data
+--------------------------------------------------------------------- */
+const state = {
+  settings: { ...DEFAULT_SETTINGS },
+  projects: [],
+  entries: [],
+  clients: [],
+  payments: [],
+  expenses: [],
+  quotes: [],
+  view: 'dashboard',
+  expanded: new Set(),
+  activeTimer: null,
+  search: '',
+  
+  filters: {
+    period: 'all',
+    startDate: '',
+    endDate: '',
+    project: 'all'
+  }
+};
+
+async function seedIfEmpty() {
+  const existing = await dbGetAll('projects');
+  const hasSettings = await dbGet('settings', 'app');
+  if (!hasSettings) await dbPut('settings', { ...DEFAULT_SETTINGS });
+  if (existing && existing.length) return;
+
+  const p1 = { id: genId(), name: 'Arcade BrickBoy', createdAt: '2026-06-17', hourlyRate: 30, clientId: 'c1' };
+  const p2 = { id: genId(), name: 'GameBoy BrickBoy', createdAt: '2026-05-22', hourlyRate: null, clientId: 'c2' };
+  const p3 = { id: genId(), name: 'Play station 1 BrickBoy', createdAt: '2026-03-30', hourlyRate: 35, clientId: 'c3' };
+  for (const p of [p1, p2, p3]) await dbPut('projects', p);
+
+  const seedEntries = [
+    { id: genId(), projectId: p1.id, spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5 },
+    { id: genId(), projectId: p2.id, spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5 },
+    { id: genId(), projectId: p2.id, spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25 },
+    { id: genId(), projectId: p3.id, spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75 }
+  ];
+  for (const e of seedEntries) await dbPut('entries', e);
+}
+
+async function loadState() {
+  const s = await dbGet('settings', 'app');
+  state.settings = s ? s : { ...DEFAULT_SETTINGS };
+  state.projects = (await dbGetAll('projects')) || [];
+  state.entries = (await dbGetAll('entries')) || [];
+  state.clients = (await dbGetAll('clients')) || [];
+  state.payments = (await dbGetAll('payments')) || [];
+  state.expenses = (await dbGetAll('expenses')) || [];
+  state.quotes = (await dbGetAll('quotes')) || [];
+  state.activeTimer = await dbGet('timer', 'current') || null;
+
+  if (!Array.isArray(state.projects)) state.projects = [];
+  if (!Array.isArray(state.entries)) state.entries = [];
+  if (!Array.isArray(state.clients)) state.clients = [];
+  if (!Array.isArray(state.payments)) state.payments = [];
+  if (!Array.isArray(state.expenses)) state.expenses = [];
+  if (!Array.isArray(state.quotes)) state.quotes = [];
+
+  // Procedura di Auto-migrazione (Crea record anagrafici dai vecchi testi dei clienti)
+  let migrated = false;
+  for (const p of state.projects) {
+    if (!p.clientId && p.clientName) {
+      let existingClient = state.clients.find(c => c.name.toLowerCase() === p.clientName.toLowerCase());
+      if (!existingClient) {
+        existingClient = {
+          id: genId(),
+          name: p.clientName,
+          address: p.clientAddress || '',
+          vatCode: '',
+          email: '',
+          phone: ''
+        };
+        state.clients.push(existingClient);
+        await dbPut('clients', existingClient);
+      }
+      p.clientId = existingClient.id;
+      await dbPut('projects', p);
+      migrated = true;
+    }
+  }
+
+  if (migrated) {
+    state.projects = (await dbGetAll('projects')) || [];
+    state.clients = (await dbGetAll('clients')) || [];
+  }
+
+  state.projects.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.name || '').localeCompare(String(b.name || '')));
+  state.entries.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  state.clients.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+/* ---------------------------------------------------------------------
+   Calcoli Fiscali Relazionali e Filtri
+--------------------------------------------------------------------- */
+function getFilteredEntries() {
+  let filtered = state.entries;
+
+  if (state.filters.project !== 'all') {
+    filtered = filtered.filter(e => e.projectId === state.filters.project);
+  }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  if (state.filters.period === 'current-month') {
+    const mm = String(month + 1).padStart(2, '0');
+    const dd = String(new Date(year, month + 1, 0).getDate()).padStart(2, '0');
+    const startIso = `${year}-${mm}-01`;
+    const endIso = `${year}-${mm}-${dd}`;
+    filtered = filtered.filter(e => e.date >= startIso && e.date <= endIso);
+  } else if (state.filters.period === 'last-month') {
+    const prevMonth = month === 0 ? 11 : month - 1;
+    const prevYear = month === 0 ? year - 1 : year;
+    const mm = String(prevMonth + 1).padStart(2, '0');
+    const dd = String(new Date(prevYear, prevMonth + 1, 0).getDate()).padStart(2, '0');
+    const startIso = `${prevYear}-${mm}-01`;
+    const endIso = `${prevYear}-${mm}-${dd}`;
+    filtered = filtered.filter(e => e.date >= startIso && e.date <= endIso);
+  } else if (state.filters.period === 'current-year') {
+    const startIso = `${year}-01-01`;
+    const endIso = `${year}-12-31`;
+    filtered = filtered.filter(e => e.date >= startIso && e.date <= endIso);
+  } else if (state.filters.period === 'custom') {
+    if (state.filters.startDate) {
+      filtered = filtered.filter(e => e.date >= state.filters.startDate);
+    }
+    if (state.filters.endDate) {
+      filtered = filtered.filter(e => e.date <= state.filters.endDate);
+    }
+  }
+
+  return filtered;
+}
+
+function entriesOf(projectId) {
+  const filtered = getFilteredEntries();
+  return filtered.filter(e => e.projectId === projectId);
+}
+
+function projectHours(projectId) {
+  return entriesOf(projectId).reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
+}
+
+function projectCompensation(project) {
+  if (project.billingType === 'flat') return Number(project.flatAmount) || 0;
+  const rate = project.hourlyRate != null && project.hourlyRate !== '' ? Number(project.hourlyRate) : Number(state.settings.hourlyRate);
+  return projectHours(project.id) * rate;
+}
+
+// Toggle helper for the "A ore / A forfait" segmented control inside project modals.
+function projBilling(btn, bt) {
+  const card = btn.closest('.modal-card');
+  if (!card) return;
+  $$('#f-billing button', card).forEach(b => b.setAttribute('aria-selected', String(b.dataset.bt === bt)));
+  const rw = $('#f-rate-wrap', card), fw = $('#f-flat-wrap', card);
+  if (rw) rw.classList.toggle('hidden', bt === 'flat');
+  if (fw) fw.classList.toggle('hidden', bt !== 'flat');
+}
+// Date range [start,end] (inclusive, ISO) for the active period filter, or null for "all".
+function periodRange() {
+  const period = (state.filters && state.filters.period) || 'all';
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  if (period === 'current-month') {
+    const mm = String(month + 1).padStart(2, '0');
+    const dd = String(new Date(year, month + 1, 0).getDate()).padStart(2, '0');
+    return { start: `${year}-${mm}-01`, end: `${year}-${mm}-${dd}` };
+  }
+  if (period === 'last-month') {
+    const pm = month === 0 ? 11 : month - 1;
+    const py = month === 0 ? year - 1 : year;
+    const mm = String(pm + 1).padStart(2, '0');
+    const dd = String(new Date(py, pm + 1, 0).getDate()).padStart(2, '0');
+    return { start: `${py}-${mm}-01`, end: `${py}-${mm}-${dd}` };
+  }
+  if (period === 'current-year') {
+    return { start: `${year}-01-01`, end: `${year}-12-31` };
+  }
+  if (period === 'custom') {
+    const start = state.filters.startDate || '';
+    const end = state.filters.endDate || '';
+    if (!start && !end) return null;
+    return { start: start || '0000-01-01', end: end || '9999-12-31' };
+  }
+  return null;
+}
+
+// A flat-fee project is "in scope" when it passes the current client/project filters
+// AND its creation date falls within the active period: the forfait is billed once,
+// in the month it was contracted.
+function flatProjectInScope(p) {
+  if (!p || p.billingType !== 'flat') return false;
+  const f = state.filters || {};
+  const projOk = !f.project || f.project === 'all' || f.project === p.id;
+  const cliOk = !f.client || f.client === 'all' || f.client === p.clientId;
+  if (!(projOk && cliOk)) return false;
+  const range = periodRange();
+  if (!range) return true;
+  const d = String(p.createdAt || '');
+  return d >= range.start && d <= range.end;
+}
+
+// Sum of flat-fee amounts for flat projects in the current filter scope.
+function flatScopedTotal() {
+  return state.projects.reduce((a, p) => a + (flatProjectInScope(p) ? (Number(p.flatAmount) || 0) : 0), 0);
+}
+
+function totalHours() {
+  return getFilteredEntries().reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
+}
+
+function totalCompensation() {
+  const extra = Number(state.settings.extra) || 0;
+  let baseSum = 0;
+  for (const p of state.projects) {
+    if (p.billingType === 'flat') {
+      if (flatProjectInScope(p)) baseSum += Number(p.flatAmount) || 0;
+    } else {
+      baseSum += projectCompensation(p);
+    }
+  }
+  return baseSum + (baseSum > 0 ? extra : 0);
+}
+
+/* ---------------------------------------------------------------------
+   System Toasts & Theme control
+--------------------------------------------------------------------- */
+function toast(message, kind = 'ok') {
+  const root = $('#toast-root');
+  if (!root) return;
+  const el = document.createElement('div');
+  const themeClasses = 'bg-[#1d1d1f] dark:bg-zinc-800 text-white dark:text-zinc-100';
+  el.className = `toast pointer-events-auto ${themeClasses} text-[13px] font-semibold px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 border border-white/5`;
+  const dot = kind === 'error' ? '⚠️' : (kind === 'warning' ? '⚙️' : '✓');
+  el.innerHTML = `<span>${dot}</span><span>${esc(message)}</span>`;
+  root.appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity .25s ease, transform .25s ease';
+    el.style.opacity = '0'; el.style.transform = 'translateY(8px)';
+    setTimeout(() => el.remove(), 280);
+  }, 2600);
+}
+
+function syncTheme(themeName) {
+  const isDark = themeName === 'dark' || (themeName === 'auto' && typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.body.classList.toggle('dark', isDark);
+}
+
+// In modalità "auto" segue dal vivo il cambio chiaro/scuro del sistema operativo.
+let _themeMql = null;
+function bindAutoTheme() {
+  if (!window.matchMedia) return;
+  _themeMql = window.matchMedia('(prefers-color-scheme: dark)');
+  const onChange = () => { if ((state.settings.theme || 'auto') === 'auto') syncTheme('auto'); };
+  if (_themeMql.addEventListener) _themeMql.addEventListener('change', onChange);
+  else if (_themeMql.addListener) _themeMql.addListener(onChange); // Safari datati
+}
+
+// Registra il service worker per PWA/offline. Path relativi: funziona sia sul
+// dominio utente (itavix.github.io) sia in una sottocartella di GitHub Pages.
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (location.protocol === 'file:') return; // niente SW in apertura locale
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('SW non registrato:', err));
+  });
+}
+
+/* ---------------------------------------------------------------------
+   Modal Manager
+--------------------------------------------------------------------- */
+function closeModal() {
+  const root = $('#modal-root');
+  if (root) root.innerHTML = '';
+  document.body.style.overflow = '';
+}
+
+function openModal(opts) {
+  const root = $('#modal-root');
+  if (!root) return;
+  document.body.style.overflow = 'hidden';
+  const danger = opts.danger;
+  root.innerHTML = `
+    <div class="fixed inset-0 z-40 modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4" id="m-backdrop">
+      <div class="modal-card bg-white dark:bg-darkCard w-full sm:max-w-md rounded-t-xl2 sm:rounded-xl2 shadow-2xl overflow-hidden border border-black/5 dark:border-darkBorder">
+        <div class="px-5 pt-5 pb-1">
+          <h2 class="text-[17px] font-semibold tracking-tight dark:text-white">${esc(opts.title || '')}</h2>
+        </div>
+        <div class="px-5 py-3 dark:text-zinc-200 text-[14px]" id="m-body">${opts.bodyHTML || ''}</div>
+        <div class="px-5 py-4 flex gap-2 justify-end border-t border-black/5 dark:border-darkBorder bg-gray-50 dark:bg-zinc-900/50">
+          <button id="m-cancel" class="px-4 py-2 rounded-full text-[14px] font-semibold text-ink-soft dark:text-ink-faint hover:bg-black/5 dark:hover:bg-white/5 transition-soft">${esc(opts.cancelText || 'Annulla')}</button>
+          <button id="m-confirm" class="px-4 py-2 rounded-full text-[14px] font-bold text-white transition-soft ${danger ? 'bg-[#ff3b30] hover:bg-[#e0352b]' : 'bg-accent hover:bg-accent-hover'}">${esc(opts.confirmText || 'Salva')}</button>
+        </div>
+      </div>
+    </div>`;
+
+  const backdrop = $('#m-backdrop');
+  if (backdrop) {
+    backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) closeModal(); });
+  }
+  const cancelBtn = $('#m-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+  const card = $('.modal-card', root);
+  if (card && typeof opts.onMount === 'function') opts.onMount(card);
+  
+  const confirm = async () => {
+    const ok = opts.onConfirm ? await opts.onConfirm(card) : true;
+    if (ok !== false) closeModal();
+  };
+  
+  const confirmBtn = $('#m-confirm');
+  if (confirmBtn) confirmBtn.addEventListener('click', confirm);
+  
+  if (card) {
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'number' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); confirm(); }
+      if (e.key === 'Escape') closeModal();
+      // Focus-trap: il Tab resta dentro al modale.
+      if (e.key === 'Tab') {
+        const focusables = $$('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])', card)
+          .filter(el => !el.disabled && el.offsetParent !== null);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    });
+    const first = $('input, textarea, select', card);
+    if (first) setTimeout(() => first.focus(), 100);
+  }
+}
+
+function showError(card, msg) {
+  let box = $('#m-error', card);
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'm-error';
+    box.className = 'mt-3 text-[13px] text-[#ff3b30] bg-[#ff3b30]/8 rounded-lg px-3 py-2 font-medium';
+    const mBody = $('#m-body', card);
+    if (mBody) mBody.appendChild(box);
+  }
+  box.textContent = msg;
+}
+
+/* ---------------------------------------------------------------------
+   SISTEMA DI ROUTING E ROUTER (SETVIEW & RENDER)
+--------------------------------------------------------------------- */
+function navScrollContainer() {
+  const n = document.getElementById('nav');
+  return n ? n.parentElement : null; // .seg-container
+}
+function updateNavFade() {
+  const c = navScrollContainer();
+  const fade = document.querySelector('.nav-fade');
+  if (!c || !fade) return;
+  const scrollable = c.scrollWidth > c.clientWidth + 2;
+  const atEnd = c.scrollLeft + c.clientWidth >= c.scrollWidth - 2;
+  fade.classList.toggle('hide', !scrollable || atEnd);
+}
+function scrollNavActiveIntoView() {
+  const c = navScrollContainer();
+  const active = document.querySelector('#nav button[aria-selected="true"]');
+  if (!c || !active) return;
+  const cRect = c.getBoundingClientRect();
+  const aRect = active.getBoundingClientRect();
+  const delta = (aRect.left - cRect.left) - (c.clientWidth - active.clientWidth) / 2;
+  if (Math.abs(delta) > 4) c.scrollBy({ left: delta, behavior: 'smooth' });
+}
+function syncNavScroll() { scrollNavActiveIntoView(); updateNavFade(); }
+
+// Viste riservate al Proprietario: un account Cliente non deve accedervi né
+// vederne il tab (l'anagrafica Clienti contiene dati di altri committenti).
+const OWNER_ONLY_VIEWS = ['clients', 'expenses', 'quotes'];
+
+// Nasconde/mostra i tab riservati in base al ruolo corrente.
+function applyRoleVisibility() {
+  const client = isClient();
+  OWNER_ONLY_VIEWS.forEach(v => {
+    const tab = $('#nav button[data-view="' + v + '"]');
+    if (tab) tab.classList.toggle('hidden', client);
+  });
+}
+
+// Full app refresh: pull the latest version (update SW, clear caches when online), then reload.
+// User data is safe — it lives in IndexedDB and on the cloud, not in the HTTP caches.
+function hardRefresh() {
+  openModal({
+    title: 'Aggiornare l\'app?',
+    bodyHTML: `<p class="text-[14px]">Ricarico HourFlow scaricando l'ultima versione disponibile. I tuoi dati restano al sicuro: sono salvati in locale e sul cloud, non vengono toccati.</p>`,
+    confirmText: 'Aggiorna ora',
+    onConfirm: async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.update()));
+        }
+        if (window.caches && navigator.onLine !== false) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+      } catch (e) { /* best-effort: reload anyway */ }
+      location.reload();
+    }
+  });
+}
+
+// Pulizia tecnica della sincronizzazione — NON tocca i dati dell'app.
+// Svuota la persistenza/cache di Firestore, le cache HTTP e il service worker,
+// poi ricarica. Serve a sbloccare un client Firestore "ingolfato" (tipico iOS/iPadOS)
+// senza perdere progetti, ore, clienti ecc. (restano in IndexedDB e sul cloud).
+function confirmSyncReset() {
+  openModal({
+    title: 'Sbloccare la sincronizzazione?',
+    bodyHTML: `<p class="text-[14px]">Svuoto la cache cloud e l'app shell, poi ricarico l'app. <span class="font-bold">I tuoi dati non vengono toccati</span>: progetti, ore e clienti restano in locale e sul cloud. Potrebbe esserti richiesto di accedere di nuovo.</p>`,
+    confirmText: 'Sblocca e ricarica',
+    onConfirm: async () => { await runSyncReset(); }
+  });
+}
+
+async function runSyncReset() {
+  const online = navigator.onLine !== false;
+  const withDeadline = (p, ms) => Promise.race([
+    Promise.resolve(p),
+    new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))
+  ]);
+
+  // 1) Persistenza Firestore: termina il client e cancella SOLO il suo IndexedDB
+  //    (clearPersistence non tocca il DB dell'app). Se il client e' ingolfato,
+  //    terminate() va in timeout: in tal caso non riusciamo a pulire, quindi al
+  //    prossimo avvio saltiamo proprio l'apertura della cache (flag hf_skip_persist).
+  let persistCleared = false;
+  try {
+    if (sync.db) {
+      await withDeadline(sync.db.terminate(), 4000);
+      await withDeadline(sync.db.clearPersistence(), 4000);
+      persistCleared = true;
+    }
+  } catch (_) { persistCleared = false; }
+
+  try {
+    if (persistCleared) localStorage.removeItem('hf_skip_persist'); // ripartiamo con cache pulita
+    else localStorage.setItem('hf_skip_persist', '1');              // non riaprire la cache ingolfata
+    sessionStorage.removeItem('hf_recovered');                      // riarma l'auto-ripristino
+  } catch (_) {}
+
+  // 2) Cache HTTP + service worker: solo online, per non lasciare l'app non
+  //    avviabile offline (senza SW e senza cache non si caricherebbe).
+  if (online) {
+    try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (_) {}
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    } catch (_) {}
+  }
+
+  try { location.reload(); } catch (_) {}
+}
+
+function setView(view) {
+  // Blocco di sicurezza: un Cliente non può aprire viste riservate.
+  if (isClient() && OWNER_ONLY_VIEWS.indexOf(view) !== -1) view = 'dashboard';
+  state.view = view;
+  ['dashboard', 'payment', 'report', 'clients', 'expenses', 'quotes', 'settings', 'guide'].forEach(v => {
+    const target = $('#view-' + v);
+    if (target) target.classList.toggle('hidden', v !== view);
+  });
+  $$('#nav button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === view)));
+  render();
+  syncNavScroll();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function render() {
+  // Se il ruolo Cliente arriva mentre si è su una vista riservata, si reindirizza.
+  if (isClient() && OWNER_ONLY_VIEWS.indexOf(state.view) !== -1) { setView('dashboard'); return; }
+  applyRoleVisibility();
+  updateUserBadge();
+  ensureTimerTicking(); // riattiva il ciclo orologio se un timer è stato ripristinato
+
+  try {
+    if (state.view === 'dashboard') renderDashboard();
+    else if (state.view === 'payment') renderPayment();
+    else if (state.view === 'report') renderReports();
+    else if (state.view === 'clients') renderClients();
+    else if (state.view === 'expenses') renderExpenses();
+    else if (state.view === 'quotes') renderQuotes();
+    else if (state.view === 'settings') renderSettings();
+    else if (state.view === 'guide') renderGuide();
+  } catch (err) {
+    const msg = (err && err.message ? err.message : String(err)) +
+      (err && err.stack ? '\n' + String(err.stack).split('\n').slice(0, 4).join('\n') : '');
+    if (window.__hfShowFatal) window.__hfShowFatal(msg); else throw err;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   DASHBOARD / CONTROLLI FILTRI / ANALYTICS
+--------------------------------------------------------------------- */
+function buildFilterWidgetHTML() {
+  const p = state.filters;
+  const projectOptions = state.projects.map(proj => 
+    `<option value="${proj.id}" ${p.project === proj.id ? 'selected' : ''}>${esc(proj.name)}</option>`
+  ).join('');
+
+  return `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-[12px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">Filtri di Visualizzazione</h3>
+        <button id="btn-reset-filters" class="text-[12px] font-semibold text-accent hover:underline">Svuota filtri</button>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Periodo temporale</label>
+          <select id="filt-period" class="field py-1.5 px-2.5 text-[13px]">
+            <option value="all" ${p.period === 'all' ? 'selected' : ''}>Tutto lo storico</option>
+            <option value="current-month" ${p.period === 'current-month' ? 'selected' : ''}>Mese corrente</option>
+            <option value="last-month" ${p.period === 'last-month' ? 'selected' : ''}>Mese precedente</option>
+            <option value="current-year" ${p.period === 'current-year' ? 'selected' : ''}>Anno corrente</option>
+            <option value="custom" ${p.period === 'custom' ? 'selected' : ''}>Intervallo personalizzato…</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Filtra Progetto</label>
+          <select id="filt-project" class="field py-1.5 px-2.5 text-[13px]">
+            <option value="all" ${p.project === 'all' ? 'selected' : ''}>Tutti i progetti</option>
+            ${projectOptions}
+          </select>
+        </div>
+        <div id="custom-date-container" class="${p.period === 'custom' ? '' : 'hidden'} col-span-1 grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Dal</label>
+            <input id="filt-start" type="date" class="field py-1.5 px-2 text-[12px]" value="${p.startDate}" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Al</label>
+            <input id="filt-end" type="date" class="field py-1.5 px-2 text-[12px]" value="${p.endDate}" />
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderDashboard() {
+  const root = $('#view-dashboard');
+  if (!root) return;
+
+  const tH = totalHours();
+  const baseRate = Number(state.settings.hourlyRate) || 0;
+  const extra = Number(state.settings.extra) || 0;
+  const total = totalCompensation();
+
+  const filterWidget = buildFilterWidgetHTML();
+  const chartHtml = buildVisualAnalyticsChart();
+
+  const summary = `
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      ${summaryCard('Ore filtrate', hrs(tH), 'text-ink dark:text-white')}
+      ${summaryCard('Tariffa base', eur(baseRate) + '/h', 'text-ink dark:text-white')}
+      ${summaryCard('Compenso', eur(total), 'text-accent', extra && tH > 0 ? `incl. extra ${eur(extra)}` : '')}
+    </div>
+    ${filterWidget}
+    ${buildStopwatchWidgetHTML()}
+    ${chartHtml}`;
+
+  let projectsHTML;
+  const editable = canEdit();
+  const q = (state.search || '').trim().toLowerCase();
+  let visibleProjects = state.filters.project === 'all'
+    ? state.projects
+    : state.projects.filter(p => p.id === state.filters.project);
+  if (q) {
+    visibleProjects = visibleProjects.filter(p =>
+      String(p.name || '').toLowerCase().includes(q) ||
+      state.entries.some(e => e.projectId === p.id && String(e.spec || '').toLowerCase().includes(q))
+    );
+  }
+
+  if (!visibleProjects.length) {
+    projectsHTML = `
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
+        <div class="text-3xl mb-3">🗂️</div>
+        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">${q ? 'Nessun risultato per la ricerca.' : 'Nessun progetto corrispondente.'}</p>
+      </div>`;
+  } else {
+    projectsHTML = `<div class="space-y-3" id="projects-list-container">${visibleProjects.map(projectCard).join('')}</div>`;
+  }
+
+  const searchHTML = state.projects.length ? `
+    <div class="relative mb-3">
+      <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="dash-search" type="text" value="${esc(state.search || '')}" placeholder="Cerca progetti o attività…" autocomplete="off" class="field pl-9 py-2 text-[13px]" />
+    </div>` : '';
+
+  root.innerHTML = `
+    ${summary}
+    <div class="flex items-center justify-between mb-3 mt-6">
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">I tuoi Progetti</h2>
+      <div class="flex items-center gap-2">
+        <button id="dash-refresh" title="Aggiorna i dati" aria-label="Aggiorna i dati" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center text-ink-soft dark:text-ink-faint transition-soft">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg>
+        </button>
+        ${editable ? `<button id="add-project" class="text-[14px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Nuovo progetto
+        </button>` : ''}
+      </div>
+    </div>
+    ${searchHTML}
+    ${projectsHTML}`;
+
+  bindDashboardEvents(root);
+
+  const refreshBtn = $('#dash-refresh', root);
+  if (refreshBtn) refreshBtn.addEventListener('click', async () => {
+    const ic = refreshBtn.querySelector('svg');
+    if (ic) ic.classList.add('animate-spin');
+    try { await forceRefresh(); } finally { if (ic) setTimeout(() => ic.classList.remove('animate-spin'), 500); }
+  });
+
+  const searchEl = $('#dash-search', root);
+  if (searchEl) {
+    // Debounce the expensive re-render: the input updates natively while typing,
+    // and the (heavy) list/results rebuild only once the user pauses.
+    const runSearch = debounce(() => {
+      const live = document.getElementById('dash-search');
+      const pos = live ? live.selectionStart : null;
+      renderDashboard();
+      const again = document.getElementById('dash-search');
+      if (again) { again.focus(); try { if (pos != null) again.setSelectionRange(pos, pos); } catch (_) {} }
+    }, 180);
+    searchEl.addEventListener('input', () => { state.search = searchEl.value; runSearch(); });
+  }
+}
+
+function summaryCard(label, value, valueClass, sub) {
+  return `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-3 py-3.5 sm:px-4 sm:py-4 shadow-sm flex flex-col justify-between overflow-hidden">
+      <div class="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 truncate">${esc(label)}</div>
+      <div class="mt-1.5 text-[16px] sm:text-[20px] font-extrabold tracking-tight ${valueClass} leading-tight tabular-nums truncate">${esc(value)}</div>
+      ${sub ? `<div class="text-[9px] font-medium text-ink-faint dark:text-zinc-500 mt-1 truncate">${esc(sub)}</div>` : ''}
+    </div>`;
+}
+
+function buildVisualAnalyticsChart() {
+  const filtered = getFilteredEntries();
+  if (state.projects.length === 0 || filtered.length === 0 || totalHours() === 0) return '';
+  
+  const maxCompensation = Math.max(...state.projects.map(p => projectCompensation(p)), 1);
+  
+  const bars = state.projects.map((p, index) => {
+    const comp = projectCompensation(p);
+    const hr = projectHours(p.id);
+    if (hr === 0) return '';
+
+    const percentage = (comp / maxCompensation) * 100;
+    const colors = ['bg-accent', 'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-indigo-500'];
+    const activeColor = colors[index % colors.length];
+    
+    return `
+      <div class="flex flex-col items-center flex-1 min-w-[60px]">
+        <div class="relative w-8 bg-gray-100 dark:bg-zinc-800 rounded-lg h-24 flex items-end overflow-hidden group">
+          <div class="${activeColor} w-full transition-all duration-500 rounded-b-lg" style="height: ${percentage}%">
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-zinc-900 text-white text-[10px] font-semibold py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-soft whitespace-nowrap z-10 shadow-md">
+              ${esc(p.name)}: ${hrs(hr)} (${eur(comp)})
+            </div>
+          </div>
+        </div>
+        <div class="text-[10px] font-semibold text-ink-soft dark:text-zinc-400 mt-2 truncate w-full text-center" title="${esc(p.name)}">${esc(p.name)}</div>
+        <div class="text-[9px] font-bold text-ink-faint tabular-nums">${eur(comp)}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="bg-white dark:bg-darkCard p-5 rounded-xl2 border border-black/5 dark:border-darkBorder shadow-sm mb-6">
+      <h3 class="text-[11px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-4">Ripartizione Finanziaria Periodo</h3>
+      <div class="flex items-end justify-between gap-4 overflow-x-auto py-2">
+        ${bars || '<div class="text-center w-full py-4 text-ink-faint text-[12px]">Nessun dato finanziario per il filtro selezionato.</div>'}
+      </div>
+    </div>`;
+}
+
+function projectCard(p) {
+  const open = state.expanded.has(p.id);
+  const items = entriesOf(p.id);
+  const pHours = projectHours(p.id);
+  const isFlat = p.billingType === 'flat';
+  const pRate = p.hourlyRate != null && p.hourlyRate !== '' ? Number(p.hourlyRate) : Number(state.settings.hourlyRate);
+  const pComp = isFlat ? (Number(p.flatAmount) || 0) : pHours * pRate;
+  const editable = canEdit();
+
+  const client = state.clients.find(c => c.id === p.clientId);
+  const clientName = client ? client.name : '';
+
+  const itemsHTML = items.length
+    ? items.map(e => `
+        <div class="group flex items-center gap-3 px-4 py-3 border-t border-black/5 dark:border-white/5 hover:bg-black/[0.01] dark:hover:bg-white/[0.005]">
+          <div class="flex-1 min-w-0">
+            <div class="text-[14px] text-ink dark:text-zinc-200 truncate font-semibold">${esc(e.spec)}</div>
+            <div class="text-[11px] text-ink-faint dark:text-zinc-500 mt-0.5 font-medium">${esc(dateIt(e.date))}</div>
+          </div>
+          <div class="text-[13px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0 mr-1">${esc(hrs(e.hours))}</div>
+          ${editable ? `          <div class="flex items-center gap-1 shrink-0">
+            <button data-action="edit-entry" data-id="${e.id}" title="Modifica" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
+            </button>
+            <button data-action="del-entry" data-id="${e.id}" title="Elimina" class="w-8 h-8 rounded-full hover:bg-red-500/10 transition-soft text-ink-faint hover:text-red-500 flex items-center justify-center">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+            </button>
+          </div>` : ''}
+        </div>`).join('')
+    : `<div class="px-4 py-5 border-t border-black/5 dark:border-white/5 text-center text-[13px] text-ink-faint font-medium">${editable ? 'Nessuna voce per questo filtro. Premi "+" per iniziare.' : 'Nessuna voce registrata.'}</div>`;
+
+  return `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-sm">
+      <div data-proj-id="${p.id}" role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(p.name)} — espandi o comprimi le sessioni" class="project-header-row flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
+        <span class="chev ${open ? 'open' : ''} text-ink-faint dark:text-zinc-600 text-[11px]">▶</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-[15px] font-bold tracking-tight truncate dark:text-white">${esc(p.name)}</div>
+          <div class="text-[11px] text-ink-faint dark:text-zinc-500 flex items-center gap-2 flex-wrap mt-0.5 font-medium">
+            <span>${items.length} sessioni</span>
+            <span>·</span>
+            <span class="font-bold text-accent">${esc(hrs(pHours))}</span>
+            <span>·</span>
+            <span>${isFlat ? '<span class="text-cyan-600 dark:text-cyan-400 font-bold">Forfait</span>' : eur(pRate) + '/h'}</span>
+            <span>·</span>
+            <span class="font-semibold text-ink-soft dark:text-zinc-400">${eur(pComp)}</span>
+            ${clientName ? `<span class="bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-extrabold text-ink-soft dark:text-zinc-400">${esc(clientName)}</span>` : ''}
+          </div>
+        </div>
+        ${editable ? `        <div class="flex items-center gap-1">
+          <button data-action="start-timer" data-id="${p.id}" title="Avvia sessione live" class="w-8 h-8 rounded-full bg-accent/10 hover:bg-accent/20 text-accent transition-soft flex items-center justify-center">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </button>
+          <button data-action="rename-project" data-id="${p.id}" title="Modifica dettagli" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
+          </button>
+          <button data-action="del-project" data-id="${p.id}" title="Elimina" class="w-8 h-8 rounded-full hover:bg-red-500/10 transition-soft text-ink-faint hover:text-red-500 flex items-center justify-center">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          </button>
+        </div>` : ''}
+      </div>
+      ${open ? `
+        <div>${itemsHTML}</div>
+        ${editable ? `<div class="px-4 py-3 border-t border-black/5 dark:border-white/5 flex items-center gap-3 bg-gray-50/50 dark:bg-zinc-900/10">
+          <button data-action="add-entry-trigger" data-id="${p.id}" class="text-[13px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+            Aggiungi voce manuale
+          </button>
+        </div>` : ''}` : ''}
+    </div>`;
+}
+
+/* ---------------------------------------------------------------------
+   GESTIONE EVENTI VELOCE (Event Delegation)
+--------------------------------------------------------------------- */
+function bindDashboardEvents(root) {
+  const filtPeriod = $('#filt-period', root);
+  const filtProject = $('#filt-project', root);
+  const filtStart = $('#filt-start', root);
+  const filtEnd = $('#filt-end', root);
+  const btnReset = $('#btn-reset-filters', root);
+
+  if (filtPeriod) filtPeriod.addEventListener('change', () => {
+    state.filters.period = filtPeriod.value;
+    $('#custom-date-container', root).classList.toggle('hidden', filtPeriod.value !== 'custom');
+    renderDashboard();
+  });
+
+  if (filtProject) filtProject.addEventListener('change', () => {
+    state.filters.project = filtProject.value;
+    renderDashboard();
+  });
+
+  if (filtStart) filtStart.addEventListener('change', () => {
+    state.filters.startDate = filtStart.value;
+    renderDashboard();
+  });
+
+  if (filtEnd) filtEnd.addEventListener('change', () => {
+    state.filters.endDate = filtEnd.value;
+    renderDashboard();
+  });
+
+  if (btnReset) btnReset.addEventListener('click', () => {
+    state.filters = { period: 'all', startDate: '', endDate: '', project: 'all' };
+    renderDashboard();
+  });
+
+  const addProjBtn = $('#add-project', root);
+  if (addProjBtn) addProjBtn.addEventListener('click', addProject);
+
+  // La delega va agganciata UNA SOLA VOLTA al nodo persistente #view-dashboard:
+  // renderDashboard() ne sostituisce solo l'innerHTML, quindi senza questa guardia
+  // ogni render aggiungerebbe un nuovo listener (azioni eseguite più volte / toggle "bloccato").
+  if (!root.dataset.delegated) {
+    root.dataset.delegated = '1';
+
+    const toggleProject = (id) => {
+      if (!id) return;
+      if (state.expanded.has(id)) state.expanded.delete(id);
+      else state.expanded.add(id);
+      renderDashboard();
+    };
+
+    root.addEventListener('click', (e) => {
+      const actionBtn = e.target.closest('[data-action]');
+      if (actionBtn) {
+        e.stopPropagation();
+        handleDashboardAction(actionBtn.dataset.action, actionBtn.dataset.id);
+        return;
+      }
+      const headerRow = e.target.closest('.project-header-row');
+      if (headerRow) toggleProject(headerRow.dataset.projId);
+    });
+
+    // Accessibilità da tastiera: Invio/Spazio sulle intestazioni progetto
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      if (e.target.closest('[data-action]')) return;
+      const headerRow = e.target.closest('.project-header-row');
+      if (headerRow) { e.preventDefault(); toggleProject(headerRow.dataset.projId); }
+    });
+  }
+}
+
+function handleDashboardAction(action, id) {
+  switch (action) {
+    case 'start-timer':
+      startProjectTimer(id);
+      break;
+    case 'rename-project':
+      renameProject(id);
+      break;
+    case 'del-project':
+      deleteProject(id);
+      break;
+    case 'add-entry-trigger':
+      addEntry(id);
+      break;
+    case 'edit-entry':
+      editEntry(id);
+      break;
+    case 'del-entry':
+      deleteEntry(id);
+      break;
+    case 'timer-pause':
+      toggleTimerPause();
+      break;
+    case 'timer-stop':
+      stopAndSaveTimer();
+      break;
+    case 'timer-discard':
+      discardTimer();
+      break;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   CRONOMETRO / WORK MONITORING (Precision Updates)
+--------------------------------------------------------------------- */
+function buildStopwatchWidgetHTML() {
+  if (!state.activeTimer) return '';
+  const p = state.projects.find(x => x.id === state.activeTimer.projectId);
+  const pName = p ? p.name : 'Progetto rimosso';
+  const paused = state.activeTimer.paused;
+  
+  return `
+    <div class="bg-red-500/10 dark:bg-red-500/20 rounded-xl2 border border-red-500/20 p-4 shadow-sm mb-6 flex flex-col md:flex-row items-center gap-4 justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center">
+          <span class="w-2.5 h-2.5 rounded-full bg-red-600 dark:bg-red-400 pulse-dot"></span>
+        </div>
+        <div class="text-left">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Cronometro Attivo</div>
+          <div class="text-[15px] font-bold text-ink dark:text-white leading-tight">${esc(pName)}</div>
+          <div class="text-[12px] text-ink-soft dark:text-zinc-400 mt-0.5">${esc(state.activeTimer.spec || '(nessuna descrizione)')}</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 w-full md:w-auto justify-end">
+        <div class="text-[24px] font-bold font-mono tracking-wider tabular-nums text-red-600 dark:text-red-400 mr-2" id="widget-timer-clock">
+          00:00:00
+        </div>
+        <button id="btn-timer-pause" data-action="timer-pause" class="px-4 py-2 rounded-full bg-white dark:bg-zinc-800 text-ink dark:text-white border border-black/10 dark:border-white/10 text-[13px] font-bold hover:bg-gray-50 dark:hover:bg-zinc-700 transition-soft">
+          ${paused ? 'Riprendi' : 'Pausa'}
+        </button>
+        <button id="btn-timer-stop" data-action="timer-stop" class="px-4 py-2 rounded-full bg-red-600 hover:bg-red-700 text-white text-[13px] font-bold transition-soft shadow-sm">
+          Salva ore
+        </button>
+        <button id="btn-timer-discard" data-action="timer-discard" class="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-ink-faint hover:text-red-500 transition-soft" title="Scarta">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </button>
+      </div>
+    </div>`;
+}
+
+async function startProjectTimer(projectId) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  if (state.activeTimer) {
+    toast('Un altro timer è già attivo. Completa o scarta la sessione corrente.', 'error');
+    return;
+  }
+  const p = state.projects.find(x => x.id === projectId);
+  if (!p) return;
+
+  openModal({
+    title: 'Inizia Sessione di Lavoro',
+    bodyHTML: `
+      <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Verrà registrato il tempo effettivo per il progetto: <span class="font-bold text-ink dark:text-white">${esc(p.name)}</span>.</p>
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Cosa stai facendo? (Descrizione attività)</label>
+      <input id="f-timer-spec" class="field" placeholder="Es. Refactoring API, stesura documentazione" />
+    `,
+    confirmText: 'Avvia Cronometro',
+    onConfirm: async (card) => {
+      const spec = $('#f-timer-spec', card).value.trim();
+      const timerObj = {
+        id: 'current',
+        projectId,
+        spec: spec || 'Attività generica',
+        startTime: Date.now(),
+        paused: false,
+        elapsedBeforePause: 0
+      };
+      state.activeTimer = timerObj;
+      await dbPut('timer', timerObj);
+      ensureTimerTicking();
+      renderDashboard();
+      toast('Timer avviato correttamente');
+    }
+  });
+}
+
+async function toggleTimerPause() {
+  if (!state.activeTimer) return;
+  if (state.activeTimer.paused) {
+    state.activeTimer.paused = false;
+    state.activeTimer.startTime = Date.now();
+  } else {
+    state.activeTimer.paused = true;
+    state.activeTimer.elapsedBeforePause += Date.now() - state.activeTimer.startTime;
+  }
+  await dbPut('timer', state.activeTimer);
+  renderDashboard();
+}
+
+// Round billable hours UP to the nearest increment (minutes). 0 = no rounding.
+// L'epsilon evita che un multiplo esatto dello step venga gonfiato di uno scatto
+// dai float (es. 0.2/0.1 → 2.0000000000000004 → ceil 3: 12 minuti fatturati 18).
+function roundUpHours(h, incMinutes) {
+  const inc = Number(incMinutes) || 0;
+  if (inc <= 0) return h;
+  const step = inc / 60;
+  return Math.round(Math.ceil(h / step - 1e-9) * step * 100) / 100;
+}
+
+async function stopAndSaveTimer() {
+  if (!state.activeTimer) return;
+  
+  let totalElapsedMs = state.activeTimer.elapsedBeforePause;
+  if (!state.activeTimer.paused) {
+    totalElapsedMs += Date.now() - state.activeTimer.startTime;
+  }
+  
+  const rawHours = Math.max(0.1, Math.round((totalElapsedMs / 3600000) * 100) / 100);
+  const calculatedHours = roundUpHours(rawHours, Number(state.settings.roundingMinutes) || 0);
+  const projectId = state.activeTimer.projectId;
+  const spec = state.activeTimer.spec;
+
+  openModal({
+    title: 'Termina e Salva Sessione',
+    bodyHTML: `
+      <p class="text-[14px] mb-3">Tempo rilevato: <span class="font-bold">${rawHours} h</span>${calculatedHours !== rawHours ? ` · arrotondato a <span class="font-bold text-accent">${calculatedHours} h</span>` : ''}. Registrare questa riga sul progetto?</p>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+          <input id="f-final-date" type="date" class="field" value="${todayIso()}" />
+        </div>
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore da registrare</label>
+          <input id="f-final-hours" type="number" min="0" step="0.05" class="field" value="${calculatedHours}" />
+        </div>
+      </div>
+    `,
+    confirmText: 'Registra Sessione',
+    onConfirm: async (card) => {
+      const date = $('#f-final-date', card).value;
+      const hours = Number($('#f-final-hours', card).value);
+      if (hours <= 0 || isNaN(hours)) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
+      
+      const newEntry = {
+        id: genId(),
+        projectId,
+        spec,
+        date: date || todayIso(),
+        hours
+      };
+      
+      await dbPut('entries', newEntry);
+      await dbDel('timer', 'current');
+      
+      state.entries.push(newEntry);
+      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      state.activeTimer = null;
+      
+      renderDashboard();
+      cloudPush();
+      toast('Sessione registrata correttamente');
+    }
+  });
+}
+
+async function discardTimer() {
+  openModal({
+    title: 'Annullare la sessione?',
+    danger: true,
+    bodyHTML: '<p class="text-[14px] text-ink-soft dark:text-zinc-400">Tutti i progressi temporali accumulati in questa sessione verranno cancellati.</p>',
+    confirmText: 'Elimina sessione',
+    onConfirm: async () => {
+      await dbDel('timer', 'current');
+      state.activeTimer = null;
+      renderDashboard();
+      toast('Timer rimosso');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   HIGH-PERFORMANCE TARGETED TIMER WRITER
+   Aggiorna direttamente i nodi interessati senza toccare il DOM circostante.
+--------------------------------------------------------------------- */
+let _lastTickTime = 0;
+let _timerInterval = null;
+
+// Il ciclo a 500ms gira SOLO con un timer attivo: senza timer l'interval si
+// auto-spegne (batteria/CPU su mobile) e riparte da ensureTimerTicking().
+function ensureTimerTicking() {
+  if (state.activeTimer && !_timerInterval) {
+    _timerInterval = setInterval(updateTimerUI, 500);
+  }
+}
+
+function updateTimerUI() {
+  if (!state.activeTimer) {
+    const navWidget = $('#nav-timer-widget');
+    if (navWidget) navWidget.classList.add('hidden');
+    document.title = "HourFlow";
+    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+    return;
+  }
+  
+  let elapsedMs = state.activeTimer.elapsedBeforePause;
+  if (!state.activeTimer.paused) {
+    elapsedMs += Date.now() - state.activeTimer.startTime;
+  }
+  
+  const totalSecs = Math.floor(elapsedMs / 1000);
+  const hrsNum = Math.floor(totalSecs / 3600);
+  const minsNum = Math.floor((totalSecs % 3600) / 60);
+  const secsNum = totalSecs % 60;
+  
+  const pad = (x) => String(x).padStart(2, '0');
+  const clockString = `${pad(hrsNum)}:${pad(minsNum)}:${pad(secsNum)}`;
+  
+  if (totalSecs !== _lastTickTime) {
+    document.title = `⏱️ [${clockString}] HourFlow`;
+    _lastTickTime = totalSecs;
+  }
+  
+  const navWidget = $('#nav-timer-widget');
+  const navClock = $('#nav-timer-clock');
+  if (navWidget && navClock) {
+    navWidget.classList.remove('hidden');
+    navClock.innerText = clockString;
+  }
+  
+  const widgetClock = $('#widget-timer-clock');
+  if (widgetClock) {
+    widgetClock.innerText = clockString;
+  }
+}
+
+/* Gestione risparmio energetico se la pagina non è visibile */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === 'visible') {
+    ensureTimerTicking();
+    updateTimerUI();
+  }
+});
+
+/* ---------------------------------------------------------------------
+   PROJECTS & CRUD DELLE SESSIONI
+--------------------------------------------------------------------- */
+function addProject(preClientId) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  
+  const clientOptions = state.clients.map(c => 
+    `<option value="${c.id}" ${preClientId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+
+  openModal({
+    title: 'Aggiungi Nuovo Progetto',
+    bodyHTML: `
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
+      <input id="f-name" class="field mb-3" placeholder="Es. App Mobile BrickBoy" />
+      
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
+      <div class="seg gap-0 text-[13px] font-semibold mb-3" id="f-billing">
+        <button type="button" data-bt="hourly" aria-selected="true" onclick="projBilling(this,'hourly')" class="flex-1 py-2">A ore</button>
+        <button type="button" data-bt="flat" aria-selected="false" onclick="projBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
+      </div>
+      <div id="f-rate-wrap">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(lascia vuoto per usare la globale)</span></label>
+        <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
+      </div>
+      <div id="f-flat-wrap" class="hidden">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
+        <input id="f-flat" type="number" min="0" step="1" class="field mb-1.5" placeholder="Es. 1500" />
+        <p class="text-[11px] text-ink-faint mb-3">Le ore vengono comunque tracciate, ma la fatturazione usa l'importo fisso.</p>
+      </div>
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
+      <select id="f-client-select" class="field mb-3">
+        <option value="">-- Nessun Cliente Associato --</option>
+        ${clientOptions}
+        <option value="__NEW__" class="text-accent font-bold">+ Crea Nuovo Cliente…</option>
+      </select>
+
+      <div id="new-client-inline-form" class="hidden border border-black/5 dark:border-white/5 rounded-xl p-3 bg-black/[0.01] dark:bg-white/[0.01] mb-3">
+        <h4 class="text-[12px] font-bold uppercase tracking-wider text-accent mb-2">Nuova Anagrafica Rapida</h4>
+        <input id="f-new-client-name" class="field text-[13px] py-1.5 mb-2" placeholder="Nome / Denominazione Cliente" />
+        <input id="f-new-client-vat" class="field text-[13px] py-1.5 mb-2" placeholder="P.IVA / CF (opzionale)" />
+        <textarea id="f-new-client-address" class="field text-[13px] py-1.5 h-12 resize-none" placeholder="Indirizzo Sede (opzionale)"></textarea>
+      </div>
+    `,
+    onMount: (card) => {
+      const select = $('#f-client-select', card);
+      const inlineForm = $('#new-client-inline-form', card);
+      if (select && inlineForm) {
+        select.addEventListener('change', () => {
+          inlineForm.classList.toggle('hidden', select.value !== '__NEW__');
+        });
+      }
+    },
+    confirmText: 'Crea Progetto',
+    onConfirm: async (card) => {
+      const name = $('#f-name', card).value.trim();
+      if (!name) { showError(card, 'Nome progetto obbligatorio.'); return false; }
+      const customRate = $('#f-rate', card).value;
+      const selectVal = $('#f-client-select', card).value;
+
+      let clientId = null;
+      if (selectVal === '__NEW__') {
+        const inlineName = $('#f-new-client-name', card).value.trim();
+        if (!inlineName) { showError(card, 'Specificare la denominazione per il nuovo cliente.'); return false; }
+        
+        const newClientObj = {
+          id: genId(),
+          name: inlineName,
+          vatCode: $('#f-new-client-vat', card).value.trim(),
+          address: $('#f-new-client-address', card).value.trim(),
+          email: '',
+          phone: ''
+        };
+        await dbPut('clients', newClientObj);
+        state.clients.push(newClientObj);
+        state.clients.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        clientId = newClientObj.id;
+      } else if (selectVal) {
+        clientId = selectVal;
+      }
+      
+      const btSel = $('#f-billing button[aria-selected="true"]', card);
+      const billingType = btSel ? btSel.dataset.bt : 'hourly';
+      const flatAmount = Number($('#f-flat', card).value) || 0;
+      if (billingType === 'flat' && flatAmount <= 0) { showError(card, 'Indica l\'importo a forfait.'); return false; }
+      const p = { 
+        id: genId(), 
+        name, 
+        createdAt: todayIso(),
+        hourlyRate: customRate !== '' ? Number(customRate) : null,
+        clientId,
+        billingType,
+        flatAmount: billingType === 'flat' ? flatAmount : 0
+      };
+      
+      await dbPut('projects', p);
+      state.projects.push(p);
+      state.expanded.add(p.id);
+      render();
+      cloudPush();
+      toast('Progetto configurato con successo');
+    }
+  });
+}
+
+function renameProject(id) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+
+  const clientOptions = state.clients.map(c => 
+    `<option value="${c.id}" ${p.clientId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+
+  openModal({
+    title: 'Modifica Dettagli Progetto',
+    bodyHTML: `
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
+      <input id="f-name" class="field mb-3" value="${esc(p.name)}" />
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
+      <div class="seg gap-0 text-[13px] font-semibold mb-3" id="f-billing">
+        <button type="button" data-bt="hourly" aria-selected="${(p.billingType||'hourly')!=='flat'}" onclick="projBilling(this,'hourly')" class="flex-1 py-2">A ore</button>
+        <button type="button" data-bt="flat" aria-selected="${(p.billingType||'hourly')==='flat'}" onclick="projBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
+      </div>
+      <div id="f-rate-wrap" class="${(p.billingType||'hourly')==='flat'?'hidden':''}">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h)</label>
+        <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" value="${p.hourlyRate != null ? p.hourlyRate : ''}" />
+      </div>
+      <div id="f-flat-wrap" class="${(p.billingType||'hourly')==='flat'?'':'hidden'}">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
+        <input id="f-flat" type="number" min="0" step="1" class="field mb-1.5" placeholder="Es. 1500" value="${p.flatAmount != null ? p.flatAmount : ''}" />
+        <p class="text-[11px] text-ink-faint mb-3">Le ore vengono comunque tracciate, ma la fatturazione usa l'importo fisso.</p>
+      </div>
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
+      <select id="f-client-select" class="field mb-3">
+        <option value="">-- Nessun Cliente Associato --</option>
+        ${clientOptions}
+        <option value="__NEW__" class="text-accent font-bold">+ Crea Nuovo Cliente…</option>
+      </select>
+
+      <div id="new-client-inline-form" class="hidden border border-black/5 dark:border-white/5 rounded-xl p-3 bg-black/[0.01] dark:bg-white/[0.01] mb-3">
+        <h4 class="text-[12px] font-bold uppercase tracking-wider text-accent mb-2">Nuova Anagrafica Rapida</h4>
+        <input id="f-new-client-name" class="field text-[13px] py-1.5 mb-2" placeholder="Nome / Denominazione Cliente" />
+        <input id="f-new-client-vat" class="field text-[13px] py-1.5 mb-2" placeholder="P.IVA / CF (opzionale)" />
+        <textarea id="f-new-client-address" class="field text-[13px] py-1.5 h-12 resize-none" placeholder="Indirizzo Sede (opzionale)"></textarea>
+      </div>
+    `,
+    onMount: (card) => {
+      const select = $('#f-client-select', card);
+      const inlineForm = $('#new-client-inline-form', card);
+      if (select && inlineForm) {
+        select.addEventListener('change', () => {
+          inlineForm.classList.toggle('hidden', select.value !== '__NEW__');
+        });
+      }
+    },
+    confirmText: 'Salva Modifiche',
+    onConfirm: async (card) => {
+      const name = $('#f-name', card).value.trim();
+      if (!name) { showError(card, 'Il nome non può essere vuoto.'); return false; }
+      const customRate = $('#f-rate', card).value;
+      const selectVal = $('#f-client-select', card).value;
+
+      let clientId = null;
+      if (selectVal === '__NEW__') {
+        const inlineName = $('#f-new-client-name', card).value.trim();
+        if (!inlineName) { showError(card, 'Specificare la denominazione per il nuovo cliente.'); return false; }
+        
+        const newClientObj = {
+          id: genId(),
+          name: inlineName,
+          vatCode: $('#f-new-client-vat', card).value.trim(),
+          address: $('#f-new-client-address', card).value.trim(),
+          email: '',
+          phone: ''
+        };
+        await dbPut('clients', newClientObj);
+        state.clients.push(newClientObj);
+        state.clients.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        clientId = newClientObj.id;
+      } else if (selectVal) {
+        clientId = selectVal;
+      }
+
+      p.name = name;
+      p.hourlyRate = customRate !== '' ? Number(customRate) : null;
+      p.clientId = clientId;
+      const btSel = $('#f-billing button[aria-selected="true"]', card);
+      const billingType = btSel ? btSel.dataset.bt : 'hourly';
+      const flatAmount = Number($('#f-flat', card).value) || 0;
+      if (billingType === 'flat' && flatAmount <= 0) { showError(card, 'Indica l\'importo a forfait.'); return false; }
+      p.billingType = billingType;
+      p.flatAmount = billingType === 'flat' ? flatAmount : 0;
+      
+      await dbPut('projects', p);
+      renderDashboard();
+      cloudPush();
+      toast('Dati del progetto aggiornati');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   SESSIONI: aggiunta manuale, modifica, eliminazione
+--------------------------------------------------------------------- */
+const entryFieldsHTML = (e) => `
+  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione attività</label>
+  <input id="f-spec" class="field mb-3" placeholder="Es. Sviluppo modulo pagamenti" value="${e ? esc(e.spec || '') : ''}" />
+  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+  <input id="f-date" type="date" class="field mb-3" value="${e && e.date ? esc(e.date) : todayIso()}" />
+  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore lavorate</label>
+  <input id="f-hours" type="number" min="0" step="0.25" class="field" placeholder="Es. 2.5" value="${e && e.hours != null ? e.hours : ''}" />`;
+
+function addEntry(projectId) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const p = state.projects.find(x => x.id === projectId);
+  if (!p) return;
+  openModal({
+    title: 'Aggiungi Sessione',
+    bodyHTML: `<p class="text-[12px] text-ink-faint mb-3">Progetto: <span class="font-bold text-ink dark:text-zinc-200">${esc(p.name)}</span></p>${entryFieldsHTML(null)}`,
+    confirmText: 'Aggiungi Sessione',
+    onConfirm: async (card) => {
+      const hours = Number($('#f-hours', card).value);
+      if (hours <= 0 || isNaN(hours)) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
+      const entry = {
+        id: genId(),
+        projectId,
+        spec: $('#f-spec', card).value.trim() || 'Attività generica',
+        date: $('#f-date', card).value || todayIso(),
+        hours
+      };
+      await dbPut('entries', entry);
+      state.entries.push(entry);
+      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      state.expanded.add(projectId);
+      renderDashboard();
+      cloudPush();
+      toast('Sessione aggiunta');
+    }
+  });
+}
+
+function editEntry(id) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  const p = state.projects.find(x => x.id === e.projectId);
+  openModal({
+    title: 'Modifica Sessione',
+    bodyHTML: `${p ? `<p class="text-[12px] text-ink-faint mb-3">Progetto: <span class="font-bold text-ink dark:text-zinc-200">${esc(p.name)}</span></p>` : ''}${entryFieldsHTML(e)}`,
+    confirmText: 'Salva Modifiche',
+    onConfirm: async (card) => {
+      const hours = Number($('#f-hours', card).value);
+      if (hours <= 0 || isNaN(hours)) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
+      e.spec = $('#f-spec', card).value.trim() || 'Attività generica';
+      e.date = $('#f-date', card).value || todayIso();
+      e.hours = hours;
+      await dbPut('entries', e); // updatedAt ritimbrato automaticamente
+      state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      renderDashboard();
+      cloudPush();
+      toast('Sessione aggiornata');
+    }
+  });
+}
+
+function deleteEntry(id) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  openModal({
+    title: 'Eliminare la sessione?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Rimuovere la sessione <span class="font-bold">${esc(e.spec || 'senza descrizione')}</span> del ${esc(dateIt(e.date))} (${esc(hrs(e.hours))})? L'operazione non è reversibile.</p>`,
+    confirmText: 'Elimina Sessione',
+    onConfirm: async () => {
+      await dbDel('entries', id);
+      state.entries = state.entries.filter(x => x.id !== id);
+      renderDashboard();
+      cloudPush(); // il push diff propaga l'eliminazione al cloud
+      toast('Sessione eliminata');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   PROGETTI: eliminazione (con relative sessioni)
+--------------------------------------------------------------------- */
+function deleteProject(id) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  const related = state.entries.filter(e => e.projectId === id);
+  openModal({
+    title: 'Eliminare il progetto?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Eliminare <span class="font-bold">${esc(p.name)}</span>${related.length ? ` insieme alle sue <span class="font-bold text-[#ff3b30]">${related.length} sessioni</span>` : ''}? L'operazione non è reversibile.</p>`,
+    confirmText: 'Elimina Progetto',
+    onConfirm: async () => {
+      for (const e of related) await dbDel('entries', e.id);
+      await dbDel('projects', id);
+      state.entries = state.entries.filter(e => e.projectId !== id);
+      state.projects = state.projects.filter(x => x.id !== id);
+      state.expanded.delete(id);
+      // Se il cronometro attivo apparteneva a questo progetto, fermalo.
+      if (state.activeTimer && state.activeTimer.projectId === id) {
+        await dbDel('timer', 'current');
+        state.activeTimer = null;
+      }
+      renderDashboard();
+      cloudPush();
+      toast('Progetto eliminato');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   GESTIONE COMPONENTI ANAGRAFICA CLIENTI
+--------------------------------------------------------------------- */
+function renderClients() {
+  const root = $('#view-clients');
+  if (!root) return;
+  const editable = canEdit();
+
+  let listHTML = '';
+  if (state.clients.length === 0) {
+    listHTML = `
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
+        <div class="text-3xl mb-3">👥</div>
+        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Nessun cliente registrato.</p>
+        <p class="text-ink-faint dark:text-zinc-600 text-[13px] mt-1">${editable ? 'Crea un cliente per associarlo ai tuoi progetti e fatturare con facilità.' : 'Nessuna informazione presente.'}</p>
+      </div>`;
+  } else {
+    listHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        ${state.clients.map(clientCardHTML).join('')}
+      </div>`;
+  }
+
+  root.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">Rubrica Clienti</h2>
+      ${editable ? `
+        <button id="btn-add-client" class="text-[14px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Nuovo Cliente
+        </button>
+      ` : ''}
+    </div>
+    ${listHTML}`;
+
+  const addBtn = $('#btn-add-client');
+  if (addBtn) addBtn.addEventListener('click', () => editClientModal(null));
+
+  root.removeEventListener('click', handleClientAction);
+  root.addEventListener('click', handleClientAction);
+}
+
+function clientCardHTML(c) {
+  const editable = canEdit();
+  const associatedProjects = state.projects.filter(p => p.clientId === c.id);
+  const totalClientHours = associatedProjects.reduce((acc, p) => acc + projectHours(p.id), 0);
+  const totalBilled = associatedProjects.reduce((acc, p) => acc + projectCompensation(p), 0);
+  const linked = !!(c.accountEmail && String(c.accountEmail).trim());
+
+  return `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm flex flex-col justify-between hover:border-black/10 dark:hover:border-white/10 transition-soft">
+      <div>
+        <div class="flex items-start justify-between gap-2">
+          <h3 class="text-[16px] font-bold text-ink dark:text-white leading-tight">${esc(c.name)}</h3>
+          ${editable ? `
+            <div class="flex items-center gap-1 shrink-0 no-print">
+              <button data-client-action="edit" data-id="${c.id}" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center text-ink-faint hover:text-ink dark:hover:text-white transition-soft" title="Modifica">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
+              </button>
+              <button data-client-action="delete" data-id="${c.id}" class="w-8 h-8 rounded-full hover:bg-red-500/10 flex items-center justify-center text-ink-faint hover:text-red-500 transition-soft" title="Elimina">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
+            </div>
+          ` : ''}
+        </div>
+        <div class="mt-2 space-y-1 text-[12px] text-ink-soft dark:text-zinc-400 font-medium">
+          ${c.vatCode ? `<div><span class="text-ink-faint">P.IVA / CF:</span> ${esc(c.vatCode)}</div>` : ''}
+          ${c.foreignVat ? `<div><span class="text-ink-faint">IVA estera:</span> ${esc(c.foreignVat)}</div>` : ''}
+          ${c.email ? `<div><span class="text-ink-faint">Email:</span> ${esc(c.email)}</div>` : ''}
+          ${c.address ? `<div><span class="text-ink-faint">Sede:</span> ${esc(c.address)}</div>` : ''}
+        </div>
+      </div>
+      <div class="mt-4 pt-3 border-t border-black/5 dark:border-white/5 flex items-center justify-between text-[11px] text-ink-faint font-semibold uppercase tracking-wider">
+        <div>Progetti: <span class="text-ink dark:text-white font-extrabold">${associatedProjects.length}</span></div>
+        <div>Totale: <span class="text-accent font-extrabold">${eur(totalBilled)} (${hrs(totalClientHours)})</span></div>
+      </div>
+      ${editable ? `
+      <button data-client-action="new-project" data-id="${c.id}" class="no-print mt-3 w-full text-[12px] font-bold text-accent hover:text-white border border-accent/30 hover:bg-accent rounded-full py-1.5 transition-soft flex items-center justify-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+        Nuovo progetto per questo cliente
+      </button>
+      <div class="no-print mt-2 flex items-center justify-between gap-2">
+        <button data-client-action="associate" data-id="${c.id}" class="text-[12px] font-bold text-ink-soft dark:text-zinc-300 hover:text-accent transition-soft flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+          ${linked ? 'Modifica account' : 'Associa account cliente'}
+        </button>
+        ${linked ? `<button data-client-action="dissociate" data-id="${c.id}" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:text-[#ff3b30] transition-soft flex items-center gap-1" title="${esc(c.accountEmail)} — clicca per rimuovere"><span>●</span> Collegato</button>` : ''}
+      </div>` : ''}
+    </div>`;
+}
+
+function handleClientAction(e) {
+  const btn = e.target.closest('[data-client-action]');
+  if (!btn) return;
+  const action = btn.dataset.clientAction;
+  const id = btn.dataset.id;
+
+  if (action === 'edit') {
+    editClientModal(id);
+  } else if (action === 'delete') {
+    deleteClient(id);
+  } else if (action === 'new-project') {
+    addProject(id);
+  } else if (action === 'associate') {
+    associateClientAccount(id);
+  } else if (action === 'dissociate') {
+    removeClientAssociation(id);
+  }
+}
+
+function editClientModal(id) {
+  const c = id ? state.clients.find(x => x.id === id) : null;
+  openModal({
+    title: c ? 'Modifica Scheda Cliente' : 'Crea Anagrafica Cliente',
+    bodyHTML: `
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Denominazione / Nome Completo</label>
+      <input id="fc-name" class="field mb-3" placeholder="Es. Retrogames SRL" value="${c ? esc(c.name) : ''}" />
+      
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Partita IVA o Codice Fiscale</label>
+      <input id="fc-vat" class="field mb-3" placeholder="Es. IT01234567890" value="${c ? esc(c.vatCode || '') : ''}" />
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">IVA estera <span class="text-ink-faint">(cliente extra-UE, es. Svizzera)</span></label>
+      <input id="fc-foreignvat" class="field mb-3" placeholder="Es. CHE-123.456.789 MWST" value="${c ? esc(c.foreignVat || '') : ''}" />
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Email di Fatturazione</label>
+      <input id="fc-email" type="email" class="field mb-3" placeholder="Es. amministrazione@retrogames.it" value="${c ? esc(c.email || '') : ''}" />
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Sede Fiscale o Residenza</label>
+      <textarea id="fc-address" class="field h-16 resize-none" placeholder="Es. Via Roma 12, 20121 Milano (MI)">${c ? esc(c.address || '') : ''}</textarea>
+    `,
+    confirmText: c ? 'Salva Cliente' : 'Crea Cliente',
+    onConfirm: async (card) => {
+      const name = $('#fc-name', card).value.trim();
+      if (!name) { showError(card, 'La denominazione del cliente è obbligatoria.'); return false; }
+
+      const clientData = {
+        id: c ? c.id : genId(),
+        name,
+        vatCode: $('#fc-vat', card).value.trim(),
+        foreignVat: $('#fc-foreignvat', card).value.trim(),
+        email: $('#fc-email', card).value.trim(),
+        address: $('#fc-address', card).value.trim(),
+        phone: c ? (c.phone || '') : ''
+      };
+
+      await dbPut('clients', clientData);
+      if (c) {
+        Object.assign(c, clientData);
+      } else {
+        state.clients.push(clientData);
+      }
+      state.clients.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      renderClients();
+      cloudPush();
+      toast('Scheda cliente archiviata con successo');
+    }
+  });
+}
+
+function deleteClient(id) {
+  const c = state.clients.find(x => x.id === id);
+  if (!c) return;
+  const associated = state.projects.filter(p => p.clientId === id);
+  if (associated.length > 0) {
+    openModal({
+      title: 'Impossibile eliminare cliente',
+      bodyHTML: `<p class="text-[14px]">Il cliente <span class="font-bold">${esc(c.name)}</span> è associato a <span class="font-bold text-accent">${associated.length} progetti</span> attivi. Scollega o elimina prima i progetti associati per procedere.</p>`,
+      confirmText: 'Ho capito',
+      cancelText: 'Chiudi'
+    });
+    return;
+  }
+
+  openModal({
+    title: 'Cancellare anagrafica cliente?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Rimuovere definitivamente <span class="font-bold">${esc(c.name)}</span> dalla rubrica? I dati inseriti non saranno più recuperabili.</p>`,
+    confirmText: 'Elimina Cliente',
+    onConfirm: async () => {
+      await dbDel('clients', id);
+      state.clients = state.clients.filter(x => x.id !== id);
+      renderClients();
+      cloudPush();
+      toast('Scheda cliente rimossa');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   AGGIORNAMENTO NOTA DI PAGAMENTO RELAZIONALE
+--------------------------------------------------------------------- */
+function allEntriesFlat() {
+  const projectMap = new Map(state.projects.map(p => [p.id, p]));
+  const clientMap = new Map(state.clients.map(c => [c.id, c]));
+
+  return state.entries
+    .map(e => {
+      const p = projectMap.get(e.projectId);
+      const c = p ? clientMap.get(p.clientId) : null;
+      return { 
+        ...e, 
+        project: p ? p.name : '—',
+        rate: (p && p.billingType === 'flat') ? 0 : (p && p.hourlyRate != null ? p.hourlyRate : state.settings.hourlyRate),
+        clientName: c ? c.name : '',
+        clientAddress: c ? c.address : '',
+        clientVat: c ? c.vatCode : '',
+        clientForeignVat: c ? (c.foreignVat || '') : ''
+      };
+    })
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.project.localeCompare(b.project));
+}
+
+/* ---------------------------------------------------------------------
+   PAGAMENTI: registro acconti/saldi agganciato al contesto di fatturazione
+--------------------------------------------------------------------- */
+// Il contesto è ricavato dai filtri attivi (progetto + finestra temporale).
+// "Mese corrente" viene risolto al mese concreto, così l'associazione dei
+// pagamenti resta stabile anche cambiando mese.
+function paymentContext() {
+  const f = state.filters;
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const monthRange = (y, m) => {
+    const mm = String(m + 1).padStart(2, '0');
+    const last = String(new Date(y, m + 1, 0).getDate()).padStart(2, '0');
+    return { start: `${y}-${mm}-01`, end: `${y}-${mm}-${last}`, label: `Mese ${mm}/${y}` };
+  };
+
+  let start = '', end = '', label = 'Tutto lo storico';
+  if (f.period === 'current-month') {
+    const r = monthRange(year, month); start = r.start; end = r.end; label = r.label;
+  } else if (f.period === 'last-month') {
+    const pm = month === 0 ? 11 : month - 1;
+    const py = month === 0 ? year - 1 : year;
+    const r = monthRange(py, pm); start = r.start; end = r.end; label = r.label;
+  } else if (f.period === 'current-year') {
+    start = `${year}-01-01`; end = `${year}-12-31`; label = `Anno ${year}`;
+  } else if (f.period === 'custom') {
+    start = f.startDate || ''; end = f.endDate || '';
+    label = (start || end) ? `${start ? dateIt(start) : '…'} – ${end ? dateIt(end) : '…'}` : 'Intervallo personalizzato';
+  }
+  const projPart = f.project === 'all' ? 'all' : f.project;
+  const projLabel = f.project === 'all' ? 'Tutti i progetti' : ((state.projects.find(p => p.id === f.project) || {}).name || 'Progetto');
+  return { key: `proj:${projPart}|range:${start || '*'}..${end || '*'}`, label, projLabel };
+}
+
+// Numerazione progressiva delle note: registro per contesto salvato nelle
+// impostazioni (sincronizzate). Ogni numero è progressivo per anno.
+function noteRegistry() {
+  if (!state.settings.noteRegistry || typeof state.settings.noteRegistry !== 'object') {
+    state.settings.noteRegistry = {};
+  }
+  return state.settings.noteRegistry;
+}
+function noteNumFmt(n, year) { return `${String(n).padStart(4, '0')}/${year}`; }
+function getNote(ctxKey) { return noteRegistry()[ctxKey] || null; }
+function nextNoteSeq(year) {
+  const reg = noteRegistry();
+  let max = 0;
+  for (const k in reg) { if (reg[k] && reg[k].year === year && reg[k].n > max) max = reg[k].n; }
+  return max + 1;
+}
+// Add N days to an ISO date (yyyy-mm-dd). Aritmetica in UTC: il risultato non
+// dipende dal fuso locale né dai cambi di ora legale.
+function addDaysIso(iso, n) {
+  const base = isValidIsoDate(iso) ? iso : todayIso();
+  const [y, m, d] = base.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  const p = (x) => String(x).padStart(2, '0');
+  return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
+}
+
+// Due status of a note given its residual: 'overdue' | 'soon' (<=7 days) | 'ok' | null.
+function dueStatus(due, residual) {
+  if (!isValidIsoDate(due)) return null;
+  if ((Number(residual) || 0) <= 0.005) return null; // saldata: nessuna scadenza attiva
+  const t = todayIso();
+  if (due < t) return 'overdue';
+  return daysBetweenIso(t, due) <= 7 ? 'soon' : 'ok';
+}
+
+// On launch, surface notes still to be collected (uses payableSnapshot, set when a
+// note is viewed, so status is known without recomputing entries).
+function checkDueReminders() {
+  if (isClient()) return;
+  try {
+    const reg = noteRegistry();
+    const today = todayIso();
+    let overdue = 0, soon = 0;
+    for (const k in reg) {
+      const note = reg[k];
+      if (!note || !isValidIsoDate(note.dueDate) || note.payableSnapshot == null) continue;
+      const paid = paymentsForContext(k).reduce((a, p) => a + (Number(p.amount) || 0), 0);
+      if (paid >= note.payableSnapshot - 0.005) continue; // saldata
+      if (note.dueDate < today) overdue++;
+      else if (daysBetweenIso(today, note.dueDate) <= 7) soon++;
+    }
+    if (overdue > 0) toast(`${overdue} ${overdue > 1 ? 'note scadute' : 'nota scaduta'} da incassare`, 'warning');
+    else if (soon > 0) toast(`${soon} ${soon > 1 ? 'note in scadenza' : 'nota in scadenza'}`, 'warning');
+  } catch (_) {}
+}
+
+async function assignNoteNumber(ctx) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const reg = noteRegistry();
+  if (reg[ctx.key]) return; // già emessa
+  const year = Number(todayIso().slice(0, 4));
+  reg[ctx.key] = { n: nextNoteSeq(year), year, issuedAt: todayIso(), dueDate: addDaysIso(todayIso(), 30), label: `${ctx.projLabel} · ${ctx.label}` };
+  await dbPut('settings', state.settings);
+  renderPayment();
+  cloudPush();
+  toast(`Nota N. ${noteNumFmt(reg[ctx.key].n, year)} emessa`);
+}
+function revokeNoteNumber(ctxKey) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const reg = noteRegistry();
+  const note = reg[ctxKey];
+  if (!note) return;
+  openModal({
+    title: 'Annullare la numerazione?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Revocare il numero <span class="font-bold">${esc(noteNumFmt(note.n, note.year))}</span> da questa nota? Il numero non verrà riassegnato automaticamente e potrebbe creare un buco nella sequenza.</p>`,
+    confirmText: 'Annulla numero',
+    onConfirm: async () => {
+      delete reg[ctxKey];
+      await dbPut('settings', state.settings);
+      renderPayment();
+      cloudPush();
+      toast('Numerazione annullata');
+    }
+  });
+}
+
+function paymentsForContext(key) {
+  return state.payments
+    .filter(p => p.ctx === key)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+function openPaymentModal(ctx, residual, total) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const suggested = residual > 0 ? residual : total;
+  openModal({
+    title: 'Registra Pagamento',
+    bodyHTML: `
+      <p class="text-[12px] text-ink-faint mb-3">${esc(ctx.projLabel)} · ${esc(ctx.label)}</p>
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo ricevuto (€)</label>
+      <input id="fp-amount" type="number" min="0" step="0.01" class="field mb-1" value="${suggested > 0 ? suggested.toFixed(2) : ''}" />
+      <p class="text-[11px] text-ink-faint mb-3">Residuo attuale: <span class="font-bold">${esc(eur(Math.max(0, residual)))}</span> su ${esc(eur(total))}</p>
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di versamento</label>
+      <div class="seg gap-0 text-[13px] font-semibold mb-3" id="fp-type">
+        <button type="button" data-type="acconto" aria-selected="true" class="py-2">Acconto</button>
+        <button type="button" data-type="saldo" aria-selected="false" class="py-2">Saldo</button>
+      </div>
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data versamento</label>
+      <input id="fp-date" type="date" class="field mb-3" value="${todayIso()}" />
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nota (opzionale)</label>
+      <input id="fp-note" class="field" placeholder="Es. Bonifico, acconto 30%" />
+    `,
+    onMount: (card) => {
+      const seg = $('#fp-type', card);
+      const amount = $('#fp-amount', card);
+      const setType = (t) => $$('button[data-type]', seg).forEach(x => x.setAttribute('aria-selected', String(x.dataset.type === t)));
+      if (seg) $$('button[data-type]', seg).forEach(b => b.addEventListener('click', () => setType(b.dataset.type)));
+      // Suggerisce automaticamente "Saldo" se l'importo copre l'intero residuo.
+      if (amount) amount.addEventListener('input', () => {
+        const v = Number(amount.value) || 0;
+        setType(residual > 0 && v >= residual - 0.005 ? 'saldo' : 'acconto');
+      });
+    },
+    confirmText: 'Registra Pagamento',
+    onConfirm: async (card) => {
+      const amount = Number($('#fp-amount', card).value);
+      if (!(amount > 0)) { showError(card, 'Specificare un importo maggiore di 0.'); return false; }
+      const typeBtn = $('#fp-type button[aria-selected="true"]', card);
+      const pay = {
+        id: genId(),
+        ctx: ctx.key,
+        ctxLabel: `${ctx.projLabel} · ${ctx.label}`,
+        amount,
+        type: typeBtn ? typeBtn.dataset.type : 'acconto',
+        date: $('#fp-date', card).value || todayIso(),
+        note: $('#fp-note', card).value.trim(),
+        total
+      };
+      await dbPut('payments', pay);
+      state.payments.push(pay);
+      renderPayment();
+      cloudPush();
+      toast('Pagamento registrato');
+    }
+  });
+}
+
+function settleResidual(ctx, residual, total) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  if (!(residual > 0)) return;
+  const pay = {
+    id: genId(), ctx: ctx.key, ctxLabel: `${ctx.projLabel} · ${ctx.label}`,
+    amount: Math.round(residual * 100) / 100, type: 'saldo',
+    date: todayIso(), note: 'Saldo residuo', total
+  };
+  dbPut('payments', pay).then(() => {
+    state.payments.push(pay);
+    renderPayment();
+    cloudPush();
+    toast('Residuo saldato');
+  });
+}
+
+function deletePayment(id) {
+  if (!canManagePayment()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const pay = state.payments.find(p => p.id === id);
+  if (!pay) return;
+  openModal({
+    title: 'Eliminare il pagamento?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Rimuovere il pagamento di <span class="font-bold">${esc(eur(pay.amount))}</span> del ${esc(dateIt(pay.date))}? L'operazione non è reversibile.</p>`,
+    confirmText: 'Elimina',
+    onConfirm: async () => {
+      await dbDel('payments', id);
+      state.payments = state.payments.filter(p => p.id !== id);
+      renderPayment();
+      cloudPush();
+      toast('Pagamento eliminato');
+    }
+  });
+}
+
+function renderPayment() {
+  const root = $('#view-payment');
+  if (!root) return;
+  const s = state.settings;
+  
+  // La nota usa lo STESSO filtro canonico della Dashboard (progetto + tutti i
+  // periodi: mese corrente/precedente, anno corrente, intervallo personalizzato),
+  // così totali, stato pagamento e numerazione restano coerenti con la vista.
+  const filteredIds = new Set(getFilteredEntries().map(e => e.id));
+  const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
+
+  const tH = flat.reduce((acc, current) => acc + Number(current.hours || 0), 0);
+  const baseCompensation = round2(flat.reduce((acc, entry) => acc + (Number(entry.hours || 0) * Number(entry.rate || 0)), 0) + flatScopedTotal());
+
+  const { taxP: taxPercentage, vatP: vatPercentage, wTaxP: wTaxPercentage, forfettario } = effectiveFiscal(s);
+
+  const taxValue = round2((baseCompensation * taxPercentage) / 100);
+  const subtotalWithTax = round2(baseCompensation + taxValue);
+  const vatValue = round2((subtotalWithTax * vatPercentage) / 100);
+  const wTaxValue = round2((subtotalWithTax * wTaxPercentage) / 100);
+  const grandTotal = round2(subtotalWithTax + vatValue - wTaxValue);
+
+  // Stato pagamento per il contesto di fatturazione corrente.
+  const ctx = paymentContext();
+  const note = getNote(ctx.key);
+  // Marca da bollo: 2 € sulle note esenti IVA sopra 77,47 € (se abilitata).
+  const stampDuty = (vatPercentage === 0 && s.stampDuty && grandTotal > 77.47) ? 2 : 0;
+  const payable = round2(grandTotal + stampDuty);
+  const ctxPayments = paymentsForContext(ctx.key);
+  const paid = round2(ctxPayments.reduce((a, p) => a + (Number(p.amount) || 0), 0));
+  const residual = round2(payable - paid);
+  const hasTotal = payable > 0.005;
+  const payStatus = !hasTotal ? null : (residual <= 0.005 && paid > 0 ? 'paid' : (paid > 0 ? 'acconto' : 'due'));
+  // Snapshot del totale sulla nota: consente ai promemoria di sapere quali note
+  // restano da incassare senza ricalcolare le voci. Scrive solo quando cambia.
+  if (note && canManagePayment() && !sync.applyingRemote) {
+    const snap = Math.round(payable * 100) / 100;
+    if (note.payableSnapshot !== snap) { note.payableSnapshot = snap; dbPut('settings', state.settings); }
+  }
+  const due = note ? dueStatus(note.dueDate, residual) : null;
+  const statusMap = {
+    paid:    { t: 'PAGATA',            cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+    acconto: { t: 'ACCONTO RICEVUTO',  cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' },
+    due:     { t: 'DA SALDARE',        cls: 'bg-black/5 dark:bg-white/5 text-ink-soft dark:text-zinc-400 border-black/10 dark:border-white/10' }
+  };
+  const statusBadge = payStatus
+    ? `<span class="inline-block mt-2 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${statusMap[payStatus].cls}">${statusMap[payStatus].t}</span>`
+    : '';
+
+  const payTypeChip = (t) => t === 'saldo'
+    ? '<span class="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Saldo</span>'
+    : '<span class="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">Acconto</span>';
+  const paymentsListHTML = ctxPayments.length
+    ? ctxPayments.map(p => `
+        <div class="flex items-center gap-2 py-2 border-t border-black/5 dark:border-white/5 text-[12px]">
+          <div class="flex-1 min-w-0">
+            <span class="font-bold text-ink dark:text-zinc-200 tabular-nums">${esc(eur(p.amount))}</span>
+            <span class="ml-1.5">${payTypeChip(p.type)}</span>
+            <span class="ml-1.5 text-ink-faint">${esc(dateIt(p.date))}</span>
+            ${p.note ? `<div class="text-ink-faint mt-0.5 truncate">${esc(p.note)}</div>` : ''}
+          </div>
+          ${canManagePayment() ? `<button data-pay-action="del" data-id="${esc(p.id)}" title="Elimina pagamento" class="w-7 h-7 rounded-full hover:bg-red-500/10 text-ink-faint hover:text-red-500 flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>` : ''}
+        </div>`).join('')
+    : `<p class="text-[12px] text-ink-faint py-2">Nessun pagamento registrato per questo contesto.</p>`;
+
+  const paymentsCard = `
+    <div class="no-print bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm mb-5">
+      <div class="flex items-center justify-between gap-2 mb-0.5">
+        <h3 class="text-[13px] font-bold text-ink dark:text-zinc-200">Stato pagamento</h3>
+        <div class="flex items-center gap-1.5">
+          ${due === 'overdue' ? `<span class="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400">Scaduta</span>` : (due === 'soon' ? `<span class="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400">In scadenza</span>` : '')}
+          ${payStatus ? `<span class="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${statusMap[payStatus].cls}">${statusMap[payStatus].t}</span>` : ''}
+        </div>
+      </div>
+      <p class="text-[11px] text-ink-soft dark:text-zinc-400 mb-3">${esc(ctx.projLabel)} · ${esc(ctx.label)}</p>
+      <div class="flex items-center justify-between gap-2 mb-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] px-3 py-2">
+        <div class="text-[11px] text-ink-soft dark:text-zinc-400">
+          ${note
+            ? `Numero nota: <span class="font-extrabold text-ink dark:text-white tabular-nums">N. ${esc(noteNumFmt(note.n, note.year))}</span> <span class="text-ink-faint">· emessa il ${esc(dateIt(note.issuedAt))}</span>`
+            : `<span class="text-ink-faint">Nessun numero progressivo assegnato a questa nota.</span>`}
+        </div>
+        ${canManagePayment()
+          ? (note
+              ? `<button id="btn-revoke-note" class="text-[11px] font-bold text-ink-faint hover:text-red-500 transition-soft shrink-0">Annulla</button>`
+              : `<button id="btn-assign-note" class="text-[11px] font-bold text-accent hover:text-accent-hover transition-soft shrink-0 whitespace-nowrap">Assegna numero</button>`)
+          : ''}
+      </div>
+      ${note ? `
+      <div class="flex items-center justify-between gap-2 mb-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] px-3 py-2">
+        <div class="text-[11px] text-ink-soft dark:text-zinc-400">Scadenza pagamento${due === 'overdue' ? ` <span class="text-red-500 font-bold">· scaduta</span>` : (due === 'soon' ? ` <span class="text-amber-600 dark:text-amber-400 font-bold">· imminente</span>` : '')}</div>
+        ${canManagePayment()
+          ? `<input id="note-due" type="date" value="${esc(note.dueDate || '')}" class="bg-transparent text-[12px] font-semibold text-ink dark:text-zinc-200 outline-none cursor-pointer" />`
+          : `<span class="text-[12px] font-semibold text-ink dark:text-zinc-200">${esc(dateIt(note.dueDate))}</span>`}
+      </div>` : ''}
+      <div class="grid grid-cols-3 gap-2 text-center mb-3">
+        <div class="rounded-xl bg-black/[0.02] dark:bg-white/[0.02] py-2">
+          <div class="text-[10px] uppercase tracking-wide text-ink-faint font-bold">Totale</div>
+          <div class="text-[14px] font-extrabold text-ink dark:text-white tabular-nums">${esc(eur(payable))}</div>
+        </div>
+        <div class="rounded-xl bg-black/[0.02] dark:bg-white/[0.02] py-2">
+          <div class="text-[10px] uppercase tracking-wide text-ink-faint font-bold">Versato</div>
+          <div class="text-[14px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">${esc(eur(paid))}</div>
+        </div>
+        <div class="rounded-xl bg-black/[0.02] dark:bg-white/[0.02] py-2">
+          <div class="text-[10px] uppercase tracking-wide text-ink-faint font-bold">Residuo</div>
+          <div class="text-[14px] font-extrabold ${residual > 0.005 ? 'text-accent' : 'text-emerald-600 dark:text-emerald-400'} tabular-nums">${esc(eur(Math.max(0, residual)))}</div>
+        </div>
+      </div>
+      ${canManagePayment()
+        ? `<div class="flex flex-wrap gap-2">
+             <button id="btn-add-payment" ${hasTotal ? '' : 'disabled'} class="px-4 py-1.5 rounded-full bg-accent hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed text-white text-[12px] font-bold transition-soft">+ Registra pagamento</button>
+             ${hasTotal && residual > 0.005 ? `<button id="btn-settle-payment" class="px-4 py-1.5 rounded-full border border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 text-[12px] font-bold transition-soft">Salda residuo (${esc(eur(residual))})</button>` : ''}
+           </div>`
+        : `<p class="text-[11px] text-ink-faint">Accesso in sola lettura: la registrazione dei pagamenti non è disponibile.</p>`}
+      <div class="mt-2">${paymentsListHTML}</div>
+    </div>`;
+
+  const rows = flat.length
+    ? flat.map(e => `
+        <tr class="border-b border-black/5 dark:border-white/5">
+          <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400 whitespace-nowrap font-medium">${esc(dateIt(e.date))}</td>
+          <td class="py-2.5 pr-3 text-ink dark:text-zinc-200 font-semibold">${esc(e.project)} <span class="text-[10px] text-ink-faint tabular-nums">(${eur(e.rate)}/h)</span></td>
+          <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400 font-medium">${esc(e.spec)}</td>
+          <td class="py-2.5 text-right tabular-nums text-ink dark:text-zinc-200 font-bold">${esc(hrs(e.hours))}</td>
+        </tr>`).join('')
+    : `<tr><td colspan="4" class="py-6 text-center text-ink-faint font-medium">Nessuna voce corrisponde ai filtri di ricerca impostati.</td></tr>`;
+
+  const clientNames = [...new Set(flat.map(x => x.clientName).filter(Boolean))];
+  const clientAddresses = [...new Set(flat.map(x => x.clientAddress).filter(Boolean))];
+  const clientVats = [...new Set(flat.map(x => x.clientVat).filter(Boolean))];
+  const clientForeignVats = [...new Set(flat.map(x => x.clientForeignVat).filter(Boolean))];
+  
+  let clientDisplay = '—';
+  if (clientNames.length === 1) {
+    clientDisplay = `<strong>${esc(clientNames[0])}</strong><br>
+                     <span class="text-[11px] text-ink-soft dark:text-zinc-400">
+                       ${clientAddresses[0] ? esc(clientAddresses[0]) + '<br>' : ''}
+                       ${clientVats[0] ? 'P.IVA/CF: ' + esc(clientVats[0]) + '<br>' : ''}
+                       ${clientForeignVats[0] ? 'IVA estera: ' + esc(clientForeignVats[0]) : ''}
+                     </span>`;
+  } else if (clientNames.length > 1) {
+    clientDisplay = `<strong>Fatturazione Multi-cliente</strong><br><span class="text-[11px] text-ink-soft dark:text-zinc-400 font-medium">Ripartita su ${clientNames.length} posizioni</span>`;
+  }
+
+  root.innerHTML = `
+    <div class="no-print bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm mb-5">
+      <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+        <div>
+          <h3 class="text-[13px] font-bold text-ink dark:text-zinc-200">Filtri di fatturazione attivi</h3>
+          <p class="text-[11px] text-ink-soft dark:text-zinc-400 mt-0.5">La nota mostrerà solo le voci filtrate nella Dashboard.</p>
+        </div>
+        <div class="flex items-center gap-2 no-print">
+          <button id="btn-sync-dashboard-filters" type="button" aria-label="Filtra le voci della nota" title="Filtra voci" class="w-9 h-9 rounded-full border border-black/10 dark:border-white/10 text-ink-soft dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center">
+            <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+          </button>
+          <button id="btn-print" type="button" aria-label="Stampa la nota in PDF" title="Stampa PDF" class="w-9 h-9 rounded-full bg-accent hover:bg-accent-hover text-white transition-soft flex items-center justify-center shadow-sm">
+            <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><path d="M7 18H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2"/><rect x="7" y="14" width="10" height="7" rx="1"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    ${paymentsCard}
+
+    <div class="print-area bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder shadow-sm p-4 sm:p-8 dark:text-zinc-100 overflow-x-auto">
+      
+      <div class="flex flex-col sm:flex-row justify-between items-start gap-4 pb-5 border-b border-black/10 dark:border-white/10">
+        <div>
+          <div class="text-[20px] font-extrabold tracking-tight text-accent">NOTA DI PAGAMENTO</div>
+          <div class="text-[11px] font-bold text-ink-faint dark:text-zinc-500 uppercase tracking-wider mt-2">Mittente:</div>
+          <div class="text-[14px] font-bold text-ink dark:text-white">${esc(s.holderName || '—')}</div>
+        </div>
+        <div class="text-left sm:text-right text-[12px] text-ink-soft dark:text-zinc-400">
+          ${note ? `<div class="text-[14px] font-extrabold text-ink dark:text-white tabular-nums">Nota N. ${esc(noteNumFmt(note.n, note.year))}</div>` : ''}
+          <div>Emissione: <strong class="text-ink dark:text-white">${esc(dateIt(note ? note.issuedAt : todayIso()))}</strong></div>
+          ${statusBadge}
+          <div class="mt-3 text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0">
+            <div class="text-[10px] font-bold uppercase tracking-wide text-ink-faint">Destinatario Cliente:</div>
+            <div class="text-ink dark:text-white mt-1 leading-normal">${clientDisplay}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto w-full">
+        <table class="print-table w-full text-[13px] mt-6 min-w-[500px]">
+          <thead>
+            <tr class="text-left text-[11px] uppercase tracking-wide text-ink-faint border-b border-black/10 dark:border-white/10">
+              <th class="py-2 pr-3 font-bold">Data</th>
+              <th class="py-2 pr-3 font-bold">Dettagli Tariffa</th>
+              <th class="py-2 pr-3 font-bold">Descrizione Attività</th>
+              <th class="py-2 font-bold text-right">Ore</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+
+      ${s.causale ? `<div class="mt-5 text-[12px] text-ink-soft dark:text-zinc-400"><span class="text-[10px] uppercase tracking-wide text-ink-faint font-bold">Causale:</span> <span class="font-semibold text-ink dark:text-zinc-200">${esc(s.causale)}</span></div>` : ''}
+      ${forfettario ? `<div class="mt-2 text-[11px] text-ink-faint dark:text-zinc-500 leading-snug italic">Operazione in franchigia da IVA (art. 1, c. 54-89, L. 190/2014) · compenso non soggetto a ritenuta d'acconto.</div>` : ''}
+
+      <div class="mt-6 flex justify-end print-keep">
+        <div class="w-full sm:w-80 text-[13px] space-y-2">
+          <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Compenso prestazioni</span><span class="tabular-nums">${esc(eur(baseCompensation))}</span></div>
+          <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Totale Ore</span><span class="tabular-nums font-bold">${esc(hrs(tH))}</span></div>
+          
+          ${taxPercentage > 0 ? `
+            <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold">
+              <span>Rivalsa Previdenziale (${taxPercentage}%)</span>
+              <span class="tabular-nums">${esc(eur(taxValue))}</span>
+            </div>
+          ` : ''}
+
+          ${vatPercentage > 0 ? `
+            <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold">
+              <span>I.V.A. (${vatPercentage}%)</span>
+              <span class="tabular-nums">${esc(eur(vatValue))}</span>
+            </div>
+          ` : ''}
+
+          ${wTaxPercentage > 0 ? `
+            <div class="flex justify-between text-red-500 font-semibold">
+              <span>Ritenuta d'Acconto (${wTaxPercentage}%)</span>
+              <span class="tabular-nums">-${esc(eur(wTaxValue))}</span>
+            </div>
+          ` : ''}
+
+          ${stampDuty > 0 ? `
+            <div class="flex justify-between pt-2.5 mt-1 border-t border-black/10 dark:border-white/10 text-ink-soft dark:text-zinc-400 font-semibold"><span>Subtotale</span><span class="tabular-nums">${esc(eur(grandTotal))}</span></div>
+            <div class="flex justify-between text-ink-soft dark:text-zinc-400 font-semibold"><span>Marca da bollo</span><span class="tabular-nums">${esc(eur(stampDuty))}</span></div>
+            <div class="flex justify-between text-[16px] font-extrabold"><span>Totale documento</span><span class="tabular-nums text-accent">${esc(eur(payable))}</span></div>
+          ` : `
+            <div class="flex justify-between pt-2.5 mt-1 border-t border-black/10 dark:border-white/10 text-[16px] font-extrabold">
+              <span>Netto a pagare</span><span class="tabular-nums text-accent">${esc(eur(payable))}</span>
+            </div>
+          `}
+
+          ${paid > 0 ? `
+            <div class="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold pt-1.5"><span>Già versato</span><span class="tabular-nums">-${esc(eur(paid))}</span></div>
+            <div class="flex justify-between text-[15px] font-extrabold ${residual <= 0.005 ? 'text-emerald-600 dark:text-emerald-400' : 'text-ink dark:text-white'}"><span>${residual <= 0.005 ? 'Saldato' : 'Residuo da pagare'}</span><span class="tabular-nums">${esc(eur(Math.max(0, residual)))}</span></div>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="mt-8 pt-5 border-t border-black/10 dark:border-white/10 print-keep">
+        <div class="text-[10px] uppercase tracking-wider text-ink-faint font-bold mb-3">Estremi di Liquidazione</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-[13px]">
+          <div>
+            <span class="text-ink-faint font-medium text-[11px] block">Intestatario</span>
+            <span class="text-ink dark:text-zinc-200 font-semibold mt-0.5 block">${esc(s.holderName || '—')}</span>
+          </div>
+          <div>
+            <span class="text-ink-faint font-medium text-[11px] block">Codice IBAN</span>
+            <span class="mt-0.5 block">
+              ${!s.iban ? `<span class="text-ink dark:text-zinc-200 font-semibold">—</span>` :
+                canSeeIban()
+                ? `<span id="iban-screen" class="text-ink dark:text-zinc-200 font-bold tabular-nums break-all no-print">${esc(maskIban(s.iban))}</span>
+                   <span class="hidden print:inline text-ink dark:text-zinc-200 font-bold tabular-nums break-all">${esc(groupIban(s.iban))}</span>
+                   <button id="iban-toggle" type="button" aria-pressed="false" class="no-print ml-2 text-[11px] font-bold text-accent hover:underline">Mostra</button>
+                   <button id="iban-copy" type="button" class="no-print ml-2 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline">Copia</button>`
+                : `<span class="no-print inline-flex items-center gap-1.5 text-ink-soft dark:text-zinc-400 font-bold text-[12px]">
+                     <span>🔒 Riservato</span>
+                     <button id="iban-login" type="button" class="text-accent hover:underline">Accedi</button>
+                   </span>
+                   <span class="hidden print:inline text-ink-soft dark:text-zinc-400 font-semibold">Riservato (Accesso richiesto)</span>`
+              }
+            </span>
+          </div>
+          <div>
+            <span class="text-ink-faint font-medium text-[11px] block">BIC / SWIFT</span>
+            <span class="text-ink dark:text-zinc-200 font-semibold mt-0.5 block tabular-nums">${esc(s.bic || '—')}</span>
+          </div>
+        </div>
+      </div>
+
+    </div>`;
+
+  const prtBtn = $('#btn-print');
+  if (prtBtn) prtBtn.addEventListener('click', async () => {
+    prtBtn.disabled = true;
+    try { await loadPdfLib(); } catch (_) {} // exportNotePDF falls back to print if unavailable
+    try { exportNotePDF(); } finally { prtBtn.disabled = false; }
+  });
+
+  const addPayBtn = $('#btn-add-payment');
+  if (addPayBtn) addPayBtn.addEventListener('click', () => openPaymentModal(ctx, residual, payable));
+  const settleBtn = $('#btn-settle-payment');
+  if (settleBtn) settleBtn.addEventListener('click', () => settleResidual(ctx, residual, payable));
+  const assignNoteBtn = $('#btn-assign-note');
+  if (assignNoteBtn) assignNoteBtn.addEventListener('click', () => assignNoteNumber(ctx));
+  const revokeNoteBtn = $('#btn-revoke-note');
+  if (revokeNoteBtn) revokeNoteBtn.addEventListener('click', () => revokeNoteNumber(ctx.key));
+  const dueEl = $('#note-due');
+  if (dueEl) dueEl.addEventListener('change', async () => {
+    const n = getNote(ctx.key);
+    if (!n || !canManagePayment()) return;
+    n.dueDate = dueEl.value || null;
+    await dbPut('settings', state.settings);
+    renderPayment();
+    cloudPush();
+  });
+  root.querySelectorAll('[data-pay-action="del"]').forEach(btn => {
+    btn.addEventListener('click', () => deletePayment(btn.dataset.id));
+  });
+
+  const syncFiltBtn = $('#btn-sync-dashboard-filters');
+  if (syncFiltBtn) syncFiltBtn.addEventListener('click', () => setView('dashboard'));
+
+  const ibanToggle = $('#iban-toggle');
+  if (ibanToggle) {
+    const screenEl = $('#iban-screen');
+    let shown = false;
+    ibanToggle.addEventListener('click', () => {
+      shown = !shown;
+      if (screenEl) screenEl.innerText = shown ? groupIban(s.iban) : maskIban(s.iban);
+      ibanToggle.innerText = shown ? 'Nascondi' : 'Mostra';
+      ibanToggle.setAttribute('aria-pressed', String(shown));
+    });
+  }
+
+  const ibanCopy = $('#iban-copy');
+  if (ibanCopy && s.iban) {
+    ibanCopy.addEventListener('click', () => {
+      copyText(s.iban.replace(/\s+/g, '')).then(() => toast('IBAN copiato negli appunti'));
+    });
+  }
+
+  const ibanLogin = $('#iban-login');
+  if (ibanLogin) {
+    ibanLogin.addEventListener('click', () => {
+      toast('Esegui il login per visualizzare l\'IBAN', 'warning');
+      setView('settings');
+    });
+  }
+}
+
+/* ---------------------------------------------------------------------
+   IMPOSTAZIONI E DATI FISCALI AVANZATI
+--------------------------------------------------------------------- */
+function renderSettings() {
+  const root = $('#view-settings');
+  if (!root) return;
+  const s = state.settings;
+  const client = isClient();
+  const manage = canManagePayment();
+
+  if (client) {
+    const cp = s.clientProfile || {};
+    root.innerHTML = `
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-4">Profilo e Sicurezza</h2>
+      ${accountPanelHTML()}
+
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-3">
+        <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Collegamento al Professionista</div>
+        ${sync.share && sync.share.linked ? `
+          <div class="flex items-center gap-2 text-[13px] text-emerald-600 dark:text-emerald-400 font-bold"><span>●</span> Collegato — i dati si aggiornano in automatico</div>
+        ` : `
+          <div class="flex items-center gap-2 text-[13px] text-ink-soft dark:text-zinc-400 font-semibold"><span class="text-amber-500">○</span> In attesa di associazione</div>
+        `}
+        <p class="text-[12px] text-ink-soft dark:text-zinc-400 leading-relaxed">Il collegamento è gestito dal professionista: quando associa la tua email${sync.user && sync.user.email ? ` (<span class="font-semibold">${esc(sync.user.email)}</span>)` : ''}, i dati che ti riguardano compaiono qui in automatico, senza codici né file.</p>
+      </div>
+
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-4">
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">I Miei Dati</div>
+          <p class="text-[12px] text-ink-soft dark:text-zinc-400 mt-1 leading-relaxed">Questi recapiti sono salvati nel tuo account e sincronizzati sui tuoi dispositivi.</p>
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Nome / Ragione sociale</label>
+          <input id="cp-name" class="field" value="${esc(cp.name || '')}" placeholder="Es. Mario Rossi / Acme S.r.l." />
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">P.IVA / Codice Fiscale</label>
+          <input id="cp-vat" class="field tabular-nums" value="${esc(cp.vat || '')}" placeholder="IT01234567890" />
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Indirizzo</label>
+          <input id="cp-address" class="field" value="${esc(cp.address || '')}" placeholder="Via, civico, CAP, città" />
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Email</label>
+            <input id="cp-email" type="email" autocomplete="email" class="field" value="${esc(cp.email || '')}" placeholder="nome@email.it" />
+          </div>
+          <div>
+            <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Telefono</label>
+            <input id="cp-phone" class="field" value="${esc(cp.phone || '')}" placeholder="+39 ..." />
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <button id="cp-save" class="px-5 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-bold transition-soft shadow-sm">Salva i miei dati</button>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-4 mt-4">
+        <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Dati per i Versamenti (Sola Lettura)</div>
+        <div>
+          <div class="text-[11px] text-ink-faint font-semibold">Titolare Beneficiario</div>
+          <div class="text-[14px] font-bold text-ink dark:text-zinc-100">${esc(s.holderName || '—')}</div>
+        </div>
+        <div>
+          <div class="text-[11px] text-ink-faint font-semibold">IBAN</div>
+          <div class="flex items-center gap-2 mt-1">
+            <span id="s-iban-screen" class="text-[14px] font-bold text-ink dark:text-zinc-100 tabular-nums break-all">${esc(s.iban ? maskIban(s.iban) : '—')}</span>
+            ${s.iban ? `<button id="s-iban-reveal" type="button" aria-pressed="false" class="text-[12px] font-bold text-accent hover:underline">Mostra</button>` : ''}
+          </div>
+        </div>
+        <div>
+          <div class="text-[11px] text-ink-faint font-semibold">BIC / SWIFT</div>
+          <div class="text-[14px] font-bold text-ink dark:text-zinc-100 tabular-nums">${esc(s.bic || '—')}</div>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4">
+        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Schema di Colori</label>
+        <select id="s-theme-ro" class="field">
+          <option value="auto" ${s.theme === 'auto' ? 'selected' : ''}>Segui sistema (Auto)</option>
+          <option value="light" ${s.theme === 'light' ? 'selected' : ''}>Tema Chiaro</option>
+          <option value="dark" ${s.theme === 'dark' ? 'selected' : ''}>Tema Scuro</option>
+        </select>
+      </div>`;
+
+    const cpSave = $('#cp-save');
+    if (cpSave) cpSave.addEventListener('click', saveClientProfile);
+
+    const rev = $('#s-iban-reveal');
+    const scr = $('#s-iban-screen');
+    if (rev && scr) {
+      let shown = false;
+      rev.addEventListener('click', () => {
+        shown = !shown;
+        scr.innerText = shown ? groupIban(s.iban) : maskIban(s.iban);
+        rev.innerText = shown ? 'Nascondi' : 'Mostra';
+        rev.setAttribute('aria-pressed', String(shown));
+      });
+    }
+
+    const themeRo = $('#s-theme-ro');
+    if (themeRo) themeRo.addEventListener('change', () => {
+      state.settings.theme = themeRo.value;
+      dbPut('settings', state.settings);
+      syncTheme(themeRo.value);
+    });
+
+    bindAccountPanel();
+    return;
+  }
+
+  const paymentPanel = manage ? `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-4 mt-4">
+      <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Coordinate Professionali per Nota</div>
+      <div>
+        <label class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">Intestatario Nota (Mittente)</label>
+        <input id="s-holder" class="field" value="${esc(s.holderName)}" placeholder="Nome, cognome, P.IVA e informazioni fiscali" />
+      </div>
+      <div>
+        <label class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">Codice IBAN</label>
+        <div class="relative">
+          <input id="s-iban" type="password" autocomplete="off" class="field tabular-nums pr-24 font-bold" value="${esc(s.iban)}" placeholder="IT.." />
+          <button id="s-iban-toggle" type="button" aria-pressed="false" class="absolute inset-y-0 right-0 px-3 my-1 mr-1 rounded-[9px] text-[12px] font-bold text-accent hover:bg-accent-soft transition-soft">Mostra</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">BIC / SWIFT</label>
+        <input id="s-bic" class="field tabular-nums" value="${esc(s.bic)}" placeholder="XXXXXXXX" />
+      </div>
+    </div>` : `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4">
+      <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold mb-2">Coordinate Professionali</div>
+      <div class="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+        <span class="text-lg">🔒</span>
+        <div>
+          <div class="text-[13px] font-bold text-ink dark:text-white">Dati sensibili crittografati</div>
+          <p class="text-[12px] text-ink-soft dark:text-zinc-400 mt-0.5 leading-relaxed">Solo l'account del Proprietario può gestire gli estremi di pagamento fiscali.</p>
+        </div>
+      </div>
+    </div>`;
+
+  root.innerHTML = `
+    <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-4">Profilo e Impostazioni Generali</h2>
+
+    ${accountPanelHTML()}
+
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-4">
+      <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Modello Economico Globale</div>
+      <div>
+        <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Regime fiscale</label>
+        <select id="s-regime" class="field">
+          <option value="ordinario" ${(s.regime || 'ordinario') === 'ordinario' ? 'selected' : ''}>Ordinario (rivalsa, IVA, ritenuta)</option>
+          <option value="forfettario" ${s.regime === 'forfettario' ? 'selected' : ''}>Forfettario (esente IVA, senza ritenuta)</option>
+        </select>
+        <p class="text-[11px] text-ink-faint dark:text-zinc-500 mt-1 leading-snug">In <strong>forfettario</strong> la nota non applica IVA né ritenuta d'acconto: quei campi vengono ignorati nel calcolo. La rivalsa INPS resta opzionale.</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Coefficiente redditività (%)</label>
+          <input id="s-coeff" type="number" min="0" max="100" step="1" class="field" value="${esc(s.coefficiente != null ? s.coefficiente : 78)}" />
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Imposta sostitutiva (%)</label>
+          <input id="s-impsost" type="number" min="0" max="100" step="1" class="field" value="${esc(s.impostaSostitutiva != null ? s.impostaSostitutiva : 5)}" />
+        </div>
+      </div>
+      <p class="text-[11px] text-ink-faint dark:text-zinc-500 -mt-2 leading-snug">Usati nel <strong>Riepilogo fiscale annuale</strong> (Report) per stimare l'imposta in regime forfettario.</p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Tariffa base (€/h)</label>
+          <input id="s-rate" type="number" min="0" step="0.5" class="field" value="${esc(s.hourlyRate)}" />
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Extra fisso (€)</label>
+          <input id="s-extra" type="number" min="0" step="0.5" class="field" value="${esc(s.extra)}" />
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Rivalsa INPS (%)</label>
+          <input id="s-tax" type="number" min="0" max="100" step="1" class="field" value="${esc(s.taxRate || 0)}" />
+        </div>
+        <div>
+          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">IVA (%)</label>
+          <input id="s-vat" type="number" min="0" max="100" step="1" class="field" value="${esc(s.vatRate || 0)}" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Ritenuta d'Acconto (%) <span class="text-red-500 font-bold">(Sottratta dal netto)</span></label>
+        <input id="s-withholding" type="number" min="0" max="100" step="1" class="field" value="${esc(s.withholdingTaxRate || 0)}" />
+      </div>
+      <div>
+        <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Arrotondamento cronometro</label>
+        <select id="s-rounding" class="field">
+          <option value="0" ${!Number(s.roundingMinutes) ? 'selected' : ''}>Nessuno (tempo esatto)</option>
+          <option value="6" ${Number(s.roundingMinutes) === 6 ? 'selected' : ''}>Per eccesso a 6 min (0,1 h)</option>
+          <option value="15" ${Number(s.roundingMinutes) === 15 ? 'selected' : ''}>Per eccesso a 15 min</option>
+          <option value="30" ${Number(s.roundingMinutes) === 30 ? 'selected' : ''}>Per eccesso a 30 min</option>
+          <option value="60" ${Number(s.roundingMinutes) === 60 ? 'selected' : ''}>Per eccesso a 1 ora</option>
+        </select>
+        <p class="text-[11px] text-ink-faint dark:text-zinc-500 mt-1 leading-snug">Le sessioni del cronometro vengono arrotondate per eccesso a questo incremento (resta modificabile prima di salvare).</p>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4 space-y-4">
+      <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Dati del Documento</div>
+      <div>
+        <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Causale predefinita</label>
+        <input id="s-causale" class="field" value="${esc(s.causale || '')}" placeholder="Es. Prestazione professionale" />
+      </div>
+      <label class="flex items-start gap-3 cursor-pointer select-none">
+        <input id="s-stampduty" type="checkbox" ${s.stampDuty ? 'checked' : ''} class="mt-0.5 w-4 h-4 accent-accent" />
+        <span class="text-[13px] text-ink-soft dark:text-zinc-300 leading-snug">Applica <strong class="text-ink dark:text-white">marca da bollo 2,00 €</strong> sulle note esenti IVA con importo superiore a 77,47 € (regime forfettario / prestazione occasionale).</span>
+      </label>
+    </div>
+
+    ${paymentPanel}
+
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4">
+      <label class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">Schema di Colori</label>
+      <select id="s-theme" class="field">
+        <option value="auto" ${s.theme === 'auto' ? 'selected' : ''}>Segui sistema (Auto)</option>
+        <option value="light" ${s.theme === 'light' ? 'selected' : ''}>Tema Chiaro</option>
+        <option value="dark" ${s.theme === 'dark' ? 'selected' : ''}>Tema Scuro</option>
+      </select>
+    </div>
+
+    <div class="flex justify-end mt-4">
+      <button id="s-save" class="px-5 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-bold transition-soft shadow-sm">Salva Configurazione</button>
+    </div>
+
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-6">
+      <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold mb-3">Manutenzione Locale Sicura</div>
+      <div class="flex flex-wrap gap-2">
+        <button id="exp-csv" class="px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-bold transition-soft">Esporta Tabella CSV</button>
+        <button id="exp-json" class="px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-bold transition-soft">Esporta Database JSON</button>
+        <button id="imp-json" class="px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-bold transition-soft text-accent">Ripristina da JSON</button>
+        <input id="imp-file" type="file" accept="application/json,.json" class="hidden" />
+      </div>
+      <p class="text-[11px] text-ink-faint dark:text-zinc-500 mt-3 font-semibold">Nota: Ripristinando un JSON sovrascriverai in modo definitivo l'archivio locale.</p>
+      <div class="border-t border-black/5 dark:border-white/10 mt-4 pt-4">
+        <button id="sync-reset" class="px-4 py-2 rounded-full border border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 text-[13px] font-bold transition-soft">Sblocca sincronizzazione</button>
+        <p class="text-[11px] text-ink-faint dark:text-zinc-500 mt-3 font-semibold leading-relaxed">Svuota la cache cloud e l'app shell (service worker) e ricarica. Utile se la sincronizzazione resta bloccata su "In Sincronia…". <span class="font-bold">I tuoi dati (progetti, ore, clienti…) NON vengono toccati</span> e restano in locale e sul cloud.</p>
+      </div>
+    </div>`;
+
+  const sSave = $('#s-save');
+  if (sSave) sSave.addEventListener('click', saveSettings);
+
+  const ibanInput = $('#s-iban');
+  const ibanBtn = $('#s-iban-toggle');
+  if (ibanInput && ibanBtn) {
+    ibanBtn.addEventListener('click', () => {
+      const show = ibanInput.type === 'password';
+      ibanInput.type = show ? 'text' : 'password';
+      ibanBtn.innerText = show ? 'Nascondi' : 'Mostra';
+      ibanBtn.setAttribute('aria-pressed', String(show));
+    });
+  }
+
+  $('#exp-csv').addEventListener('click', exportCSV);
+  $('#exp-json').addEventListener('click', exportJSON);
+  
+  const impJson = $('#imp-json');
+  const impFile = $('#imp-file');
+  if (impJson && impFile) {
+    impJson.addEventListener('click', () => impFile.click());
+    impFile.addEventListener('change', importJSON);
+  }
+  const syncReset = $('#sync-reset');
+  if (syncReset) syncReset.addEventListener('click', confirmSyncReset);
+  bindAccountPanel();
+}
+
+async function saveSettings() {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const rate = Number($('#s-rate').value);
+  const extra = Number($('#s-extra').value);
+  const tax = Number($('#s-tax').value);
+  const vat = Number($('#s-vat').value);
+  const withholding = Number($('#s-withholding').value);
+  const theme = $('#s-theme').value;
+  const regime = ($('#s-regime') && $('#s-regime').value === 'forfettario') ? 'forfettario' : 'ordinario';
+  const roundingMinutes = $('#s-rounding') ? (Number($('#s-rounding').value) || 0) : (Number(state.settings.roundingMinutes) || 0);
+  const coefficiente = $('#s-coeff') ? (Number($('#s-coeff').value) || 0) : (Number(state.settings.coefficiente) || 78);
+  const impostaSostitutiva = $('#s-impsost') ? (Number($('#s-impsost').value) || 0) : (Number(state.settings.impostaSostitutiva) || 5);
+
+  if (isNaN(rate) || rate < 0) { toast('Tariffa oraria non corretta', 'error'); return; }
+  if (isNaN(extra) || extra < 0) { toast('Valore extra forfettario non valido', 'error'); return; }
+  if (isNaN(tax) || tax < 0 || tax > 100) { toast('Rivalsa fiscale non corretta', 'error'); return; }
+  if (isNaN(vat) || vat < 0 || vat > 100) { toast('IVA non valida', 'error'); return; }
+  if (isNaN(withholding) || withholding < 0 || withholding > 100) { toast('Ritenuta d\'acconto non corretta', 'error'); return; }
+
+  const holderEl = $('#s-holder'), ibanEl = $('#s-iban'), bicEl = $('#s-bic');
+  const causaleEl = $('#s-causale'), stampDutyEl = $('#s-stampduty');
+
+  // Spread dei settings esistenti per non perdere campi non presenti nel form
+  // (es. noteRegistry della numerazione note).
+  state.settings = {
+    ...state.settings,
+    id: 'app',
+    hourlyRate: rate,
+    extra: extra,
+    taxRate: tax,
+    vatRate: vat,
+    withholdingTaxRate: withholding,
+    regime: regime,
+    roundingMinutes: roundingMinutes,
+    coefficiente: coefficiente,
+    impostaSostitutiva: impostaSostitutiva,
+    holderName: holderEl ? holderEl.value.trim() : (state.settings.holderName || ''),
+    iban: ibanEl ? ibanEl.value.trim() : (state.settings.iban || ''),
+    bic: bicEl ? bicEl.value.trim() : (state.settings.bic || ''),
+    causale: causaleEl ? causaleEl.value.trim() : (state.settings.causale || ''),
+    stampDuty: stampDutyEl ? !!stampDutyEl.checked : !!state.settings.stampDuty,
+    theme: theme
+  };
+  
+  await dbPut('settings', state.settings);
+  syncTheme(theme);
+  cloudPush();
+  toast('Configurazione applicata con successo');
+}
+
+// Salvataggio del profilo personale del Cliente: sono i SUOI recapiti, archiviati
+// nel suo account e sincronizzati. Non passa dal gate canEdit() (che protegge i
+// dati del Proprietario): un Cliente può sempre gestire i propri dati.
+async function saveClientProfile() {
+  const val = (id) => { const el = $('#' + id); return el ? el.value.trim() : ''; };
+  const email = val('cp-email');
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('Formato email non valido', 'error'); return; }
+
+  // Spread per preservare ogni altro campo delle impostazioni.
+  state.settings = {
+    ...state.settings,
+    id: 'app',
+    clientProfile: {
+      name: val('cp-name'),
+      vat: val('cp-vat'),
+      address: val('cp-address'),
+      email: email,
+      phone: val('cp-phone')
+    }
+  };
+
+  await dbPut('settings', state.settings);
+  cloudPush();
+  toast('I tuoi dati sono stati salvati');
+}
+
+/* ---------------------------------------------------------------------
+   EXPORTS CORE
+--------------------------------------------------------------------- */
+function download(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  if (/[";\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function exportCSV() {
+  const sep = ';';
+  const flat = allEntriesFlat();
+  const lines = [];
+  lines.push(['Progetto', 'Descrizione Attività', 'Data', 'Ore', 'Tariffa applicata'].map(csvCell).join(sep));
+  for (const e of flat) {
+    lines.push([e.project, e.spec, dateIt(e.date), String(e.hours).replace('.', ','), String(e.rate).replace('.', ',')].map(csvCell).join(sep));
+  }
+  lines.push('');
+  lines.push([csvCell('Ore Totali Filtrate'), '', '', csvCell(String(totalHours()).replace('.', ','))].join(sep));
+  lines.push([csvCell('Imponibile Totale (€)'), '', '', csvCell(String(totalCompensation()).replace('.', ','))].join(sep));
+  
+  download(`hourflow_timesheet_${todayIso()}.csv`, '\uFEFF' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+  toast('Report CSV esportato correttamente');
+}
+
+function exportJSON() {
+  const dump = {
+    app: 'hourflow',
+    version: 3,
+    exportedAt: new Date().toISOString(),
+    settings: state.settings,
+    projects: state.projects,
+    entries: state.entries,
+    clients: state.clients,
+    payments: state.payments,
+    expenses: state.expenses,
+    quotes: state.quotes
+  };
+  download(`hourflow_db_${todayIso()}.json`, JSON.stringify(dump, null, 2), 'application/json');
+  toast('Archivio esportato in formato JSON');
+}
+
+function validateBackup(obj) {
+  if (!obj || typeof obj !== 'object') return { ok: false, error: 'Struttura file non valida.' };
+  if (!Array.isArray(obj.projects) || !Array.isArray(obj.entries)) {
+    return { ok: false, error: 'Database JSON privo delle tabelle necessarie.' };
+  }
+  if (!obj.settings || typeof obj.settings !== 'object') {
+    return { ok: false, error: 'Nessun file di configurazione rilevato nel pacchetto.' };
+  }
+  return { ok: true, data: obj };
+}
+
+function importJSON(ev) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try { parsed = JSON.parse(reader.result); }
+    catch (_) { toast('File corrotto o non leggibile', 'error'); return; }
+    const res = validateBackup(parsed);
+    if (!res.ok) { toast(res.error, 'error'); return; }
+    const d = res.data;
+    openModal({
+      title: 'Confermare Ripristino?',
+      danger: true,
+      bodyHTML: `<p class="text-[14px]">Ripristinando questo pacchetto verranno importati <span class="font-bold text-accent">${d.projects.length}</span> progetti, <span class="font-bold text-accent">${d.entries.length}</span> sessioni e <span class="font-bold text-accent">${(d.clients || []).length}</span> clienti. Tutti i dati correnti verranno persi definitivamente.</p>`,
+      confirmText: 'Sì, Sovrascrivi database',
+      onConfirm: async () => {
+        try {
+          await dbClear('projects');
+          await dbClear('entries');
+          await dbClear('clients');
+          await dbClear('payments');
+          await dbClear('expenses');
+          await dbClear('quotes');
+          await dbPut('settings', d.settings);
+          // Import difensivo: scarta record non-oggetto e garantisce un id,
+          // così un singolo record corrotto non interrompe l'intero ripristino.
+          for (const p of d.projects) {
+            if (p && typeof p === 'object') { if (!p.id) p.id = genId(); await dbPut('projects', p); }
+          }
+          for (const e of d.entries) {
+            if (e && typeof e === 'object') { if (!e.id) e.id = genId(); await dbPut('entries', e); }
+          }
+          for (const c of (d.clients || [])) {
+            if (c && typeof c === 'object') { if (!c.id) c.id = genId(); await dbPut('clients', c); }
+          }
+          for (const pay of (d.payments || [])) {
+            if (pay && typeof pay === 'object') { if (!pay.id) pay.id = genId(); await dbPut('payments', pay); }
+          }
+          for (const x of (d.expenses || [])) {
+            if (x && typeof x === 'object') { if (!x.id) x.id = genId(); await dbPut('expenses', x); }
+          }
+          for (const q of (d.quotes || [])) {
+            if (q && typeof q === 'object') { if (!q.id) q.id = genId(); await dbPut('quotes', q); }
+          }
+          await loadState();
+          state.expanded.clear();
+          render();
+          cloudPush();
+          toast('Archivio ripristinato correttamente!');
+        } catch (err) {
+          toast('Impossibile ripristinare il file JSON', 'error');
+        }
+      }
+    });
+  };
+  reader.readAsText(file);
+}
+
+/* ---------------------------------------------------------------------
+   REPORT MENSILI
+--------------------------------------------------------------------- */
+const MONTH_NAMES = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+function monthLabel(key) {
+  const [y, mm] = key.split('-');
+  return `${MONTH_NAMES[Number(mm) - 1] || mm} ${y}`;
+}
+
+/* ---------------------------------------------------------------------
+   SPESE / COSTI
+--------------------------------------------------------------------- */
+const EXPENSE_CATEGORIES = ['Attrezzatura', 'Software', 'Trasferte', 'Servizi', 'Formazione', 'Tasse e contributi', 'Altro'];
+
+function expensesTotal(list) { return (list || state.expenses).reduce((a, x) => a + (Number(x.amount) || 0), 0); }
+
+function expensesByYear() {
+  const map = new Map();
+  for (const x of state.expenses) {
+    const y = String(x.date || '').slice(0, 4);
+    if (!/^\d{4}$/.test(y)) continue;
+    map.set(y, (map.get(y) || 0) + (Number(x.amount) || 0));
+  }
+  return map;
+}
+
+function renderExpenses() {
+  const root = $('#view-expenses');
+  if (!root) return;
+  const editable = canEdit();
+  const list = [...state.expenses].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const total = expensesTotal(list);
+  const thisYear = todayIso().slice(0, 4);
+  const yearTotal = list.filter(x => String(x.date || '').slice(0, 4) === thisYear).reduce((a, x) => a + (Number(x.amount) || 0), 0);
+
+  const rows = list.length ? list.map(expenseRowHTML).join('') : `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
+      <div class="flex justify-center mb-3"><svg class="w-12 h-12 text-ink-faint/40 dark:text-zinc-600" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 9.5h19"/></svg></div>
+      <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Nessuna spesa registrata.</p>
+      <p class="text-ink-faint dark:text-zinc-600 text-[13px] mt-1">${editable ? 'Aggiungi costi e trasferte per conoscere il tuo netto reale.' : 'Nessuna informazione presente.'}</p>
+    </div>`;
+
+  root.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">Spese & Costi</h2>
+      ${editable ? `
+        <button id="btn-add-expense" class="text-[14px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Nuova spesa
+        </button>` : ''}
+    </div>
+    <div class="grid grid-cols-3 gap-3 mb-5">
+      ${summaryCard('Totale spese', eur(total), 'text-red-500')}
+      ${summaryCard('Anno ' + thisYear, eur(yearTotal), 'text-ink dark:text-white')}
+      ${summaryCard('Voci', String(list.length), 'text-ink dark:text-white')}
+    </div>
+    <div class="space-y-2">${rows}</div>`;
+
+  const addBtn = $('#btn-add-expense');
+  if (addBtn) addBtn.addEventListener('click', () => editExpenseModal(null));
+  root.removeEventListener('click', handleExpenseAction);
+  root.addEventListener('click', handleExpenseAction);
+}
+
+function expenseRowHTML(x) {
+  const editable = canEdit();
+  const proj = x.projectId ? state.projects.find(p => p.id === x.projectId) : null;
+  return `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm flex items-center gap-3">
+      <div class="min-w-0 flex-1">
+        <div class="text-[14px] font-bold text-ink dark:text-white truncate">${esc(x.description || '(senza descrizione)')}</div>
+        <div class="text-[11px] text-ink-faint dark:text-zinc-500 font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
+          <span>${esc(dateIt(x.date))}</span><span>·</span>
+          <span class="px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10">${esc(x.category || 'Altro')}</span>
+          ${proj ? `<span>·</span><span class="truncate">${esc(proj.name)}</span>` : ''}
+        </div>
+      </div>
+      <div class="text-[15px] font-extrabold text-red-500 tabular-nums shrink-0">${esc(eur(x.amount))}</div>
+      ${editable ? `
+        <div class="flex items-center gap-1 shrink-0">
+          <button data-expense-action="edit" data-id="${esc(x.id)}" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center text-ink-faint hover:text-ink dark:hover:text-white transition-soft" title="Modifica">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+          </button>
+          <button data-expense-action="delete" data-id="${esc(x.id)}" class="w-8 h-8 rounded-full hover:bg-red-500/10 flex items-center justify-center text-ink-faint hover:text-red-500 transition-soft" title="Elimina">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          </button>
+        </div>` : ''}
+    </div>`;
+}
+
+function handleExpenseAction(e) {
+  const btn = e.target.closest('[data-expense-action]');
+  if (!btn) return;
+  const action = btn.dataset.expenseAction;
+  const id = btn.dataset.id;
+  if (action === 'edit') editExpenseModal(id);
+  else if (action === 'delete') deleteExpense(id);
+}
+
+function editExpenseModal(id) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
+  const x = id ? state.expenses.find(e => e.id === id) : null;
+  const projOpts = ['<option value="">Nessun progetto</option>']
+    .concat(state.projects.map(p => `<option value="${esc(p.id)}" ${x && x.projectId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`)).join('');
+  const catOpts = EXPENSE_CATEGORIES.map(c => `<option value="${esc(c)}" ${x && x.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('');
+  openModal({
+    title: x ? 'Modifica spesa' : 'Nuova spesa',
+    bodyHTML: `
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione</label>
+      <input id="fx-desc" class="field mb-3" placeholder="Es. Abbonamento software" value="${x ? esc(x.description || '') : ''}" />
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo (€)</label>
+          <input id="fx-amount" type="number" min="0" step="0.01" class="field" value="${x ? esc(x.amount) : ''}" />
+        </div>
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+          <input id="fx-date" type="date" class="field" value="${x ? esc(x.date || todayIso()) : todayIso()}" />
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Categoria</label>
+          <select id="fx-category" class="field">${catOpts}</select>
+        </div>
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Progetto (opzionale)</label>
+          <select id="fx-project" class="field">${projOpts}</select>
+        </div>
+      </div>`,
+    confirmText: x ? 'Salva spesa' : 'Aggiungi spesa',
+    onConfirm: async (card) => {
+      const desc = $('#fx-desc', card).value.trim();
+      const amount = Number($('#fx-amount', card).value);
+      const date = $('#fx-date', card).value || todayIso();
+      if (!desc) { showError(card, 'La descrizione è obbligatoria.'); return false; }
+      if (isNaN(amount) || amount <= 0) { showError(card, 'Inserisci un importo maggiore di 0.'); return false; }
+      const data = {
+        id: x ? x.id : genId(),
+        description: desc,
+        amount: Math.round(amount * 100) / 100,
+        date,
+        category: $('#fx-category', card).value || 'Altro',
+        projectId: $('#fx-project', card).value || null
+      };
+      await dbPut('expenses', data);
+      if (x) Object.assign(x, data); else state.expenses.push(data);
+      renderExpenses();
+      cloudPush();
+      toast('Spesa salvata');
+    }
+  });
+}
+
+function deleteExpense(id) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
+  const x = state.expenses.find(e => e.id === id);
+  if (!x) return;
+  openModal({
+    title: 'Eliminare la spesa?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Eliminare <span class="font-bold">${esc(x.description || 'questa spesa')}</span> (${esc(eur(x.amount))})? L'operazione non è reversibile.</p>`,
+    confirmText: 'Elimina',
+    onConfirm: async () => {
+      await dbDel('expenses', id);
+      state.expenses = state.expenses.filter(e => e.id !== id);
+      renderExpenses();
+      cloudPush();
+      toast('Spesa eliminata');
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   PREVENTIVI (quotes) — documenti standalone con voci, stato e PDF.
+--------------------------------------------------------------------- */
+const QUOTE_STATUSES = {
+  bozza:     { t: 'Bozza',     cls: 'bg-black/5 dark:bg-white/5 text-ink-soft dark:text-zinc-400 border-black/10 dark:border-white/10' },
+  inviato:   { t: 'Inviato',   cls: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30' },
+  accettato: { t: 'Accettato', cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+  rifiutato: { t: 'Rifiutato', cls: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30' }
+};
+
+function quoteNumFmt(n, year) { return `PREV-${String(n || 0).padStart(4, '0')}/${year}`; }
+function nextQuoteSeq(year) {
+  let max = 0;
+  for (const q of state.quotes) { if (q.year === year && (q.number || 0) > max) max = q.number; }
+  return max + 1;
+}
+function quoteTotal(q) {
+  const subtotal = round2((q.items || []).reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0));
+  const { vatP } = effectiveFiscal(state.settings);
+  const vat = q.applyVat ? round2(subtotal * vatP / 100) : 0;
+  return { subtotal, vat, total: round2(subtotal + vat) };
+}
+
+function renderQuotes() {
+  const root = $('#view-quotes');
+  if (!root) return;
+  const editable = canEdit();
+  const list = [...state.quotes].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const accepted = list.filter(q => q.status === 'accettato').reduce((a, q) => a + quoteTotal(q).total, 0);
+
+  const cards = list.length ? list.map(quoteCardHTML).join('') : `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
+      <div class="flex justify-center mb-3"><svg class="w-12 h-12 text-ink-faint/40 dark:text-zinc-600" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="3" width="6" height="4" rx="1.5"/><path d="M9 12h6M9 16h4"/></svg></div>
+      <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Nessun preventivo.</p>
+      <p class="text-ink-faint dark:text-zinc-600 text-[13px] mt-1">${editable ? 'Crea un preventivo per un cliente, esportalo in PDF e seguine lo stato.' : 'Nessuna informazione presente.'}</p>
+    </div>`;
+
+  root.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">Preventivi</h2>
+      ${editable ? `
+        <button id="btn-add-quote" class="text-[14px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Nuovo preventivo
+        </button>` : ''}
+    </div>
+    <div class="grid grid-cols-2 gap-3 mb-5">
+      ${summaryCard('Preventivi', String(list.length), 'text-ink dark:text-white')}
+      ${summaryCard('Accettati (valore)', eur(accepted), 'text-accent')}
+    </div>
+    <div class="space-y-3">${cards}</div>`;
+
+  const addBtn = $('#btn-add-quote');
+  if (addBtn) addBtn.addEventListener('click', () => editQuoteModal(null));
+  root.removeEventListener('click', handleQuoteAction);
+  root.addEventListener('click', handleQuoteAction);
+}
+
+function quoteCardHTML(q) {
+  const editable = canEdit();
+  const client = state.clients.find(c => c.id === q.clientId);
+  const t = quoteTotal(q);
+  const st = QUOTE_STATUSES[q.status] || QUOTE_STATUSES.bozza;
+  return `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-[14px] font-extrabold text-ink dark:text-white tabular-nums">${esc(quoteNumFmt(q.number, q.year))}</span>
+            <span class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full border ${st.cls}">${st.t}</span>
+          </div>
+          <div class="text-[12px] text-ink-soft dark:text-zinc-400 mt-0.5 truncate">${esc(client ? client.name : 'Cliente non assegnato')}</div>
+          <div class="text-[11px] text-ink-faint dark:text-zinc-500 mt-0.5">${esc(dateIt(q.date))}${q.validUntil ? ` · valido fino al ${esc(dateIt(q.validUntil))}` : ''} · ${(q.items || []).length} voci</div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-[16px] font-extrabold text-accent tabular-nums">${esc(eur(t.total))}</div>
+          ${t.vat > 0 ? `<div class="text-[10px] text-ink-faint">IVA incl.</div>` : ''}
+        </div>
+      </div>
+      <div class="mt-3 pt-3 border-t border-black/5 dark:border-white/5 flex items-center gap-2 flex-wrap no-print">
+        <button data-quote-action="pdf" data-id="${esc(q.id)}" class="text-[12px] font-bold text-ink-soft dark:text-zinc-300 hover:text-accent transition-soft flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v6H7z"/></svg>
+          PDF
+        </button>
+        ${editable ? `
+        <button data-quote-action="edit" data-id="${esc(q.id)}" class="text-[12px] font-bold text-ink-soft dark:text-zinc-300 hover:text-accent transition-soft">Modifica</button>
+        ${q.status === 'accettato' ? (q.convertedProjectId
+          ? `<span class="text-[12px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Progetto creato</span>`
+          : `<button data-quote-action="to-project" data-id="${esc(q.id)}" class="text-[12px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>Crea progetto</button>`) : ''}
+        <div class="flex-1"></div>
+        <button data-quote-action="delete" data-id="${esc(q.id)}" class="text-[12px] font-bold text-ink-faint hover:text-red-500 transition-soft">Elimina</button>` : ''}
+      </div>
+    </div>`;
+}
+
+function handleQuoteAction(e) {
+  const btn = e.target.closest('[data-quote-action]');
+  if (!btn) return;
+  const action = btn.dataset.quoteAction;
+  const id = btn.dataset.id;
+  if (action === 'edit') editQuoteModal(id);
+  else if (action === 'delete') deleteQuote(id);
+  else if (action === 'pdf') exportQuotePDF(id);
+  else if (action === 'to-project') createProjectFromQuote(id);
+}
+
+function quoteItemRowHTML(it) {
+  it = it || {};
+  return `
+    <div class="q-item grid grid-cols-12 gap-1.5 mb-2 items-center">
+      <input class="q-desc field col-span-6 !py-1.5 text-[13px]" placeholder="Descrizione" value="${esc(it.description || '')}" />
+      <input class="q-qty field col-span-2 !py-1.5 text-[13px] text-center" type="number" min="0" step="0.5" placeholder="Q.tà" value="${it.qty != null ? esc(it.qty) : ''}" />
+      <input class="q-price field col-span-3 !py-1.5 text-[13px] text-right" type="number" min="0" step="0.01" placeholder="€" value="${it.unitPrice != null ? esc(it.unitPrice) : ''}" />
+      <button type="button" class="q-del col-span-1 text-ink-faint hover:text-red-500 transition-soft flex items-center justify-center" title="Rimuovi voce">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>`;
+}
+
+function readQuoteItems(card) {
+  return $$('.q-item', card).map(row => ({
+    description: $('.q-desc', row).value.trim(),
+    qty: Number($('.q-qty', row).value) || 0,
+    unitPrice: Number($('.q-price', row).value) || 0
+  })).filter(it => it.description || it.qty || it.unitPrice);
+}
+
+function editQuoteModal(id) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
+  const q = id ? state.quotes.find(x => x.id === id) : null;
+  const clientOpts = ['<option value="">— Seleziona cliente —</option>']
+    .concat(state.clients.map(c => `<option value="${esc(c.id)}" ${q && q.clientId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`)).join('');
+  const statusOpts = Object.keys(QUOTE_STATUSES)
+    .map(k => `<option value="${k}" ${(q ? q.status : 'bozza') === k ? 'selected' : ''}>${QUOTE_STATUSES[k].t}</option>`).join('');
+  const items = (q && q.items && q.items.length) ? q.items : [{}];
+  const { vatP } = effectiveFiscal(state.settings);
+
+  openModal({
+    title: q ? `Modifica ${quoteNumFmt(q.number, q.year)}` : 'Nuovo preventivo',
+    bodyHTML: `
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div class="col-span-2">
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Cliente</label>
+          <select id="q-client" class="field">${clientOpts}</select>
+        </div>
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+          <input id="q-date" type="date" class="field" value="${q ? esc(q.date || todayIso()) : todayIso()}" />
+        </div>
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Valido fino al</label>
+          <input id="q-valid" type="date" class="field" value="${q ? esc(q.validUntil || '') : ''}" />
+        </div>
+      </div>
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Voci</label>
+      <div class="grid grid-cols-12 gap-1.5 mb-1 text-[10px] uppercase tracking-wide text-ink-faint font-bold px-1">
+        <span class="col-span-6">Descrizione</span><span class="col-span-2 text-center">Q.tà</span><span class="col-span-3 text-right">Prezzo</span><span class="col-span-1"></span>
+      </div>
+      <div id="q-items">${items.map(quoteItemRowHTML).join('')}</div>
+      <button type="button" id="q-add-item" class="text-[12px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1 mb-3">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+        Aggiungi voce
+      </button>
+
+      <label class="flex items-center gap-2 cursor-pointer select-none mb-3">
+        <input id="q-vat" type="checkbox" ${q && q.applyVat ? 'checked' : ''} class="w-4 h-4 accent-accent" />
+        <span class="text-[13px] text-ink-soft dark:text-zinc-300">Applica IVA (${vatP || 0}%) al totale</span>
+      </label>
+
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Stato</label>
+          <select id="q-status" class="field">${statusOpts}</select>
+        </div>
+        <div class="flex flex-col justify-end">
+          <div class="text-right text-[11px] text-ink-faint uppercase tracking-wide font-bold">Totale</div>
+          <div id="q-total" class="text-right text-[18px] font-extrabold text-accent tabular-nums">${esc(eur(0))}</div>
+        </div>
+      </div>
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Note (opzionale)</label>
+      <textarea id="q-notes" class="field h-16 resize-none" placeholder="Condizioni, tempistiche, modalità di pagamento…">${q ? esc(q.notes || '') : ''}</textarea>`,
+    confirmText: q ? 'Salva preventivo' : 'Crea preventivo',
+    onMount: (card) => {
+      const recompute = () => {
+        const its = readQuoteItems(card);
+        const subtotal = its.reduce((a, it) => a + it.qty * it.unitPrice, 0);
+        const vat = $('#q-vat', card).checked ? subtotal * (vatP || 0) / 100 : 0;
+        const tEl = $('#q-total', card);
+        if (tEl) tEl.textContent = eur(subtotal + vat);
+      };
+      const addBtn = $('#q-add-item', card);
+      if (addBtn) addBtn.addEventListener('click', () => {
+        const cont = $('#q-items', card);
+        cont.insertAdjacentHTML('beforeend', quoteItemRowHTML());
+        recompute();
+      });
+      const itemsCont = $('#q-items', card);
+      if (itemsCont) itemsCont.addEventListener('click', (e) => {
+        const del = e.target.closest('.q-del');
+        if (!del) return;
+        const row = del.closest('.q-item');
+        if (row) row.remove();
+        recompute();
+      });
+      card.addEventListener('input', recompute);
+      recompute();
+    },
+    onConfirm: async (card) => {
+      const clientId = $('#q-client', card).value;
+      const date = $('#q-date', card).value || todayIso();
+      const its = readQuoteItems(card);
+      if (!clientId) { showError(card, 'Seleziona un cliente.'); return false; }
+      if (!its.length) { showError(card, 'Aggiungi almeno una voce con importo.'); return false; }
+      const year = Number(date.slice(0, 4)) || Number(todayIso().slice(0, 4));
+      const data = {
+        id: q ? q.id : genId(),
+        number: q ? q.number : nextQuoteSeq(year),
+        year: q ? q.year : year,
+        clientId,
+        date,
+        validUntil: $('#q-valid', card).value || null,
+        items: its,
+        applyVat: $('#q-vat', card).checked,
+        status: $('#q-status', card).value || 'bozza',
+        notes: $('#q-notes', card).value.trim()
+      };
+      await dbPut('quotes', data);
+      if (q) Object.assign(q, data); else state.quotes.push(data);
+      renderQuotes();
+      cloudPush();
+      toast(q ? 'Preventivo aggiornato' : `Preventivo ${quoteNumFmt(data.number, data.year)} creato`);
+    }
+  });
+}
+
+function deleteQuote(id) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
+  const q = state.quotes.find(x => x.id === id);
+  if (!q) return;
+  openModal({
+    title: 'Eliminare il preventivo?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Eliminare <span class="font-bold">${esc(quoteNumFmt(q.number, q.year))}</span>? L'operazione non è reversibile.</p>`,
+    confirmText: 'Elimina',
+    onConfirm: async () => {
+      await dbDel('quotes', id);
+      state.quotes = state.quotes.filter(x => x.id !== id);
+      renderQuotes();
+      cloudPush();
+      toast('Preventivo eliminato');
+    }
+  });
+}
+
+// Bridge: turn an accepted quote into a new project pre-linked to its client.
+// The note/billing flow stays hour-based; this just sets up the project to track on.
+function createProjectFromQuote(id) {
+  if (!canEdit()) { toast('Account in sola lettura', 'error'); return; }
+  const q = state.quotes.find(x => x.id === id);
+  if (!q) return;
+  if (q.convertedProjectId && state.projects.some(p => p.id === q.convertedProjectId)) {
+    toast('Progetto già creato da questo preventivo', 'warning'); return;
+  }
+  const client = state.clients.find(c => c.id === q.clientId);
+  const defaultName = (q.items && q.items[0] && q.items[0].description)
+    ? q.items[0].description
+    : `Da ${quoteNumFmt(q.number, q.year)}`;
+  const qTot = quoteTotal(q).total;
+  openModal({
+    title: 'Crea progetto dal preventivo',
+    bodyHTML: `
+      <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Verrà creato un progetto collegato a <span class="font-bold text-ink dark:text-white">${esc(client ? client.name : 'cliente non assegnato')}</span>, dal preventivo <span class="font-bold">${esc(quoteNumFmt(q.number, q.year))}</span>.</p>
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome progetto</label>
+      <input id="qp-name" class="field mb-3" value="${esc(defaultName)}" />
+
+      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
+      <div class="seg gap-0 text-[13px] font-semibold mb-3" id="f-billing">
+        <button type="button" data-bt="hourly" aria-selected="false" onclick="projBilling(this,'hourly')" class="flex-1 py-2">A ore</button>
+        <button type="button" data-bt="flat" aria-selected="true" onclick="projBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
+      </div>
+      <div id="f-rate-wrap" class="hidden">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(vuoto = globale)</span></label>
+        <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
+      </div>
+      <div id="f-flat-wrap">
+        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
+        <input id="f-flat" type="number" min="0" step="1" class="field" value="${qTot}" />
+        <p class="text-[11px] text-ink-faint mt-1">Preimpostato sul totale del preventivo.</p>
+      </div>`,
+    confirmText: 'Crea progetto',
+    onConfirm: async (card) => {
+      const name = $('#qp-name', card).value.trim();
+      if (!name) { showError(card, 'Il nome del progetto è obbligatorio.'); return false; }
+      const btSel = $('#f-billing button[aria-selected="true"]', card);
+      const billingType = btSel ? btSel.dataset.bt : 'flat';
+      const flatAmount = Number($('#f-flat', card).value) || 0;
+      const rate = $('#f-rate', card).value;
+      if (billingType === 'flat' && flatAmount <= 0) { showError(card, 'Indica l\'importo a forfait.'); return false; }
+      const p = { id: genId(), name, createdAt: todayIso(), hourlyRate: rate !== '' ? Number(rate) : null, clientId: q.clientId || null, billingType, flatAmount: billingType === 'flat' ? flatAmount : 0 };
+      await dbPut('projects', p);
+      state.projects.push(p);
+      state.expanded.add(p.id);
+      q.convertedProjectId = p.id;
+      await dbPut('quotes', q);
+      setView('dashboard');
+      cloudPush();
+      toast('Progetto creato dal preventivo');
+    }
+  });
+}
+
+async function exportQuotePDF(id) {
+  const q = state.quotes.find(x => x.id === id);
+  if (!q) return;
+  try { await loadPdfLib(); } catch (_) {}
+  if (!(window.jspdf && window.jspdf.jsPDF)) { toast('Modulo PDF non disponibile', 'error'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
+  const M = 40;
+  const accent = [255, 149, 0], ink = [29, 29, 31], soft = [110, 110, 115];
+  const s = state.settings;
+  const t = quoteTotal(q);
+  const client = state.clients.find(c => c.id === q.clientId);
+  const money = (n) => (Number(n) || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' EUR';
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(...accent);
+  doc.text('PREVENTIVO', M, 52);
+  let ry = 44; doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold'); doc.setTextColor(...ink);
+  doc.text(quoteNumFmt(q.number, q.year), W - M, ry, { align: 'right' }); ry += 14;
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...soft);
+  doc.text(`Data: ${dateIt(q.date)}`, W - M, ry, { align: 'right' }); ry += 14;
+  if (q.validUntil) doc.text(`Valido fino al: ${dateIt(q.validUntil)}`, W - M, ry, { align: 'right' });
+
+  const y = 88;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...soft); doc.text('DA', M, y);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...ink); doc.text(s.holderName || '-', M, y + 14);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...soft); doc.text('PER', M, y + 36);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...ink); doc.text(client ? client.name : '-', M, y + 50);
+  let dy = y + 64;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...soft);
+  if (client && client.address) { doc.text(String(client.address), M, dy); dy += 12; }
+  if (client && client.vatCode) { doc.text('P.IVA/CF: ' + client.vatCode, M, dy); dy += 12; }
+  if (client && client.foreignVat) { doc.text('IVA estera: ' + client.foreignVat, M, dy); dy += 12; }
+
+  const body = (q.items || []).map(it => [it.description || '', String(it.qty || 0), money(it.unitPrice), money((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))]);
+  doc.autoTable({
+    startY: Math.max(dy + 10, y + 92),
+    head: [['Descrizione', 'Q.tà', 'Prezzo', 'Importo']],
+    body: body.length ? body : [['—', '—', '—', '—']],
+    theme: 'grid',
+    headStyles: { fillColor: [245, 245, 247], textColor: ink, fontStyle: 'bold', fontSize: 8 },
+    bodyStyles: { fontSize: 9, textColor: ink },
+    columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    margin: { left: M, right: M }
+  });
+
+  let ty = doc.lastAutoTable.finalY + 18;
+  const rightVal = (label, val, bold) => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 12 : 10);
+    doc.setTextColor(...(bold ? accent : ink));
+    doc.text(label, W - M - 150, ty); doc.text(val, W - M, ty, { align: 'right' }); ty += bold ? 20 : 15;
+  };
+  rightVal('Imponibile', money(t.subtotal), false);
+  if (t.vat > 0) rightVal('IVA', money(t.vat), false);
+  rightVal('Totale', money(t.total), true);
+
+  if (q.notes) {
+    ty += 8; doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...soft);
+    doc.text(doc.splitTextToSize(`Note: ${q.notes}`, W - 2 * M), M, ty);
+  }
+
+  doc.save(`preventivo_${quoteNumFmt(q.number, q.year).replace('/', '-')}.pdf`);
+  toast('Preventivo esportato in PDF');
+}
+
+function monthlyAggregate() {
+  const flat = allEntriesFlat();
+  const map = new Map();
+  for (const e of flat) {
+    const key = String(e.date || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(key)) continue;
+    if (!map.has(key)) map.set(key, { hours: 0, comp: 0, count: 0 });
+    const m = map.get(key);
+    m.hours += Number(e.hours) || 0;
+    m.comp += (Number(e.hours) || 0) * (Number(e.rate) || 0);
+    m.count += 1;
+  }
+  for (const p of state.projects) {
+    if (p.billingType !== 'flat') continue;
+    const key = String(p.createdAt || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(key)) continue;
+    if (!map.has(key)) map.set(key, { hours: 0, comp: 0, count: 0 });
+    map.get(key).comp += Number(p.flatAmount) || 0;
+  }
+  return map;
+}
+
+function yearlyAggregate() {
+  const flat = allEntriesFlat();
+  const map = new Map();
+  for (const e of flat) {
+    const key = String(e.date || '').slice(0, 4);
+    if (!/^\d{4}$/.test(key)) continue;
+    if (!map.has(key)) map.set(key, { hours: 0, comp: 0, count: 0 });
+    const m = map.get(key);
+    m.hours += Number(e.hours) || 0;
+    m.comp += (Number(e.hours) || 0) * (Number(e.rate) || 0);
+    m.count += 1;
+  }
+  for (const p of state.projects) {
+    if (p.billingType !== 'flat') continue;
+    const key = String(p.createdAt || '').slice(0, 4);
+    if (!/^\d{4}$/.test(key)) continue;
+    if (!map.has(key)) map.set(key, { hours: 0, comp: 0, count: 0 });
+    map.get(key).comp += Number(p.flatAmount) || 0;
+  }
+  return map;
+}
+
+// Regime-aware fiscal estimate for a yearly gross compensation, using current settings.
+function annualFiscal(comp) {
+  const s = state.settings;
+  const { forfettario, taxP, vatP, wTaxP } = effectiveFiscal(s);
+  if (forfettario) {
+    const coeff = Number(s.coefficiente) || 0;
+    const impRate = Number(s.impostaSostitutiva) || 0;
+    const imponibile = comp * coeff / 100;
+    const imposta = imponibile * impRate / 100;
+    return { forfettario, comp, imponibile, imposta, coeff, impRate };
+  }
+  const rivalsa = comp * taxP / 100;
+  const sub = comp + rivalsa;
+  const iva = sub * vatP / 100;
+  const ritenuta = sub * wTaxP / 100;
+  const netto = sub + iva - ritenuta;
+  return { forfettario, comp, rivalsa, iva, ritenuta, netto, taxP, vatP, wTaxP };
+}
+
+// Annual fiscal recap card list (one per year), ordered most-recent first.
+function annualSummaryHTML() {
+  const ymap = yearlyAggregate();
+  const years = [...ymap.keys()].sort().reverse();
+  if (!years.length) return '';
+  const forf = (state.settings.regime || 'ordinario') === 'forfettario';
+  const exp = expensesByYear();
+  const line = (label, val, cls = '') =>
+    `<div class="flex justify-between text-[12px] py-0.5"><span class="text-ink-soft dark:text-zinc-400">${esc(label)}</span><span class="font-semibold tabular-nums ${cls} dark:text-zinc-200">${esc(eur(val))}</span></div>`;
+  const cards = years.map(y => {
+    const f = annualFiscal(ymap.get(y).comp);
+    const body = forf
+      ? line('Compenso lordo', f.comp) + line(`Imponibile (${f.coeff}%)`, f.imponibile) + line(`Imposta sostitutiva (${f.impRate}%)`, f.imposta, 'text-red-500')
+      : line('Compenso', f.comp)
+        + (f.rivalsa ? line(`Rivalsa (${f.taxP}%)`, f.rivalsa) : '')
+        + (f.iva ? line(`IVA (${f.vatP}%)`, f.iva) : '')
+        + (f.ritenuta ? line(`Ritenuta (${f.wTaxP}%)`, f.ritenuta, 'text-red-500') : '')
+        + line('Netto stimato', f.netto, 'text-accent');
+    const sp = exp.get(y) || 0;
+    const speseBlock = sp ? line('Spese anno', sp, 'text-red-500') + line('Compenso netto spese', (f.comp - sp), 'text-accent') : '';
+    return `
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm">
+        <div class="flex items-baseline justify-between mb-2">
+          <div class="text-[15px] font-bold tracking-tight dark:text-white">${esc(y)}</div>
+          <div class="text-[10px] uppercase tracking-wide font-bold text-ink-faint">${forf ? 'Forfettario' : 'Ordinario'}</div>
+        </div>
+        ${body}${speseBlock}
+      </div>`;
+  }).join('');
+  return `
+    <div class="flex items-center justify-between mt-8 mb-3 gap-3">
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">Riepilogo fiscale annuale</h2>
+      <button id="ann-export" class="text-[13px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"/><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/></svg>
+        Esporta CSV
+      </button>
+    </div>
+    <p class="text-[11px] text-ink-faint dark:text-zinc-500 mb-3 leading-snug">Stima sui compensi dell'anno con le impostazioni fiscali correnti. Da verificare sempre con il commercialista.</p>
+    <div class="grid sm:grid-cols-2 gap-3">${cards}</div>`;
+}
+
+function exportAnnualCSV() {
+  const ymap = yearlyAggregate();
+  const years = [...ymap.keys()].sort();
+  if (!years.length) { toast('Nessun dato da esportare', 'error'); return; }
+  const forf = (state.settings.regime || 'ordinario') === 'forfettario';
+  const sep = ';';
+  const num = (n) => (Number(n) || 0).toFixed(2).replace('.', ',');
+  const header = forf
+    ? ['Anno', 'Compenso lordo', 'Imponibile', 'Imposta sostitutiva']
+    : ['Anno', 'Compenso', 'Rivalsa', 'IVA', 'Ritenuta', 'Netto stimato'];
+  const lines = years.map(y => {
+    const f = annualFiscal(ymap.get(y).comp);
+    return (forf
+      ? [y, num(f.comp), num(f.imponibile), num(f.imposta)]
+      : [y, num(f.comp), num(f.rivalsa), num(f.iva), num(f.ritenuta), num(f.netto)]
+    ).join(sep);
+  });
+  download(`hourflow_riepilogo_annuale_${todayIso()}.csv`, '\uFEFF' + [header.join(sep), ...lines].join('\r\n'), 'text/csv;charset=utf-8');
+  toast('Riepilogo annuale esportato');
+}
+
+function renderReports() {
+  const root = $('#view-report');
+  if (!root) return;
+  const map = monthlyAggregate();
+  const months = [...map.keys()].sort().reverse();
+
+  if (!months.length) {
+    root.innerHTML = `
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-4">Report Mensili</h2>
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
+        <div class="text-3xl mb-3">📅</div>
+        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">Ancora nessuna sessione da aggregare.</p>
+      </div>`;
+    return;
+  }
+
+  const totHours = months.reduce((a, k) => a + map.get(k).hours, 0);
+  const totComp = months.reduce((a, k) => a + map.get(k).comp, 0);
+  const maxComp = Math.max(...months.map(k => map.get(k).comp), 1);
+  const avgComp = totComp / months.length;
+
+  const rows = months.map(k => {
+    const m = map.get(k);
+    const pct = Math.max(2, Math.round((m.comp / maxComp) * 100));
+    return `
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm">
+        <div class="flex items-baseline justify-between gap-3">
+          <div class="text-[15px] font-bold tracking-tight dark:text-white">${esc(monthLabel(k))}</div>
+          <div class="text-[15px] font-extrabold text-accent tabular-nums">${esc(eur(m.comp))}</div>
+        </div>
+        <div class="mt-2 h-2 rounded-full bg-black/[0.05] dark:bg-white/[0.06] overflow-hidden">
+          <div class="h-full rounded-full bg-accent" style="width:${pct}%"></div>
+        </div>
+        <div class="mt-2 text-[11px] text-ink-faint dark:text-zinc-500 font-medium flex items-center gap-2 flex-wrap">
+          <span>${m.count} session${m.count === 1 ? 'e' : 'i'}</span><span>·</span>
+          <span class="font-bold text-ink-soft dark:text-zinc-400">${esc(hrs(m.hours))}</span><span>·</span>
+          <span>media ${esc(eur(m.hours > 0 ? m.comp / m.hours : 0))}/h</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="flex items-center justify-between mb-4 gap-3">
+      <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">Report Mensili</h2>
+      <button id="rep-export" class="text-[13px] font-bold text-accent hover:text-accent-hover transition-soft flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"/><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/></svg>
+        Esporta CSV
+      </button>
+    </div>
+
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      ${summaryCard('Mesi attivi', String(months.length), 'text-ink dark:text-white')}
+      ${summaryCard('Ore totali', hrs(totHours), 'text-ink dark:text-white')}
+      ${summaryCard('Media mensile', eur(avgComp), 'text-accent')}
+    </div>
+
+    <div class="space-y-3">${rows}</div>
+
+    ${annualSummaryHTML()}
+
+    <div class="mt-6 bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm flex items-center justify-between">
+      <span class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">Totale complessivo</span>
+      <span class="text-[16px] font-extrabold text-accent tabular-nums">${esc(eur(totComp))}</span>
+    </div>`;
+
+  const exp = $('#rep-export', root);
+  if (exp) exp.addEventListener('click', exportMonthlyCSV);
+  const annExp = $('#ann-export', root);
+  if (annExp) annExp.addEventListener('click', exportAnnualCSV);
+}
+
+function exportMonthlyCSV() {
+  const map = monthlyAggregate();
+  const months = [...map.keys()].sort().reverse();
+  if (!months.length) { toast('Nessun dato da esportare', 'error'); return; }
+  const sep = ';';
+  const header = ['Mese', 'Sessioni', 'Ore', 'Compenso'].join(sep);
+  const lines = months.map(k => {
+    const m = map.get(k);
+    return [monthLabel(k), m.count, String(m.hours).replace('.', ','), String(m.comp.toFixed(2)).replace('.', ',')].join(sep);
+  });
+  download(`hourflow_report_mensile_${todayIso()}.csv`, '\uFEFF' + [header, ...lines].join('\r\n'), 'text/csv;charset=utf-8');
+  toast('Report mensile esportato');
+}
+
+/* ---------------------------------------------------------------------
+   GUIDE VIEW (Manuale Integrato)
+--------------------------------------------------------------------- */
+// Badge icona in stile iOS: quadrato arrotondato a tinta unita con glifo bianco.
+function gIcon(bg, glyph) {
+  return `<span class="w-7 h-7 shrink-0 rounded-[7px] ${bg} flex items-center justify-center shadow-sm">` +
+         `<svg class="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
+}
+
+function guideSection(icon, title, bodyHTML) {
+  // Converte **grassetto** in <strong> (la sintassi markdown non sarebbe interpretata).
+  const body = String(bodyHTML).replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-ink dark:text-zinc-200">$1</strong>');
+  return `
+    <details class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder overflow-hidden shadow-sm group">
+      <summary class="cursor-pointer select-none list-none px-5 py-4 flex items-center gap-3 hover:bg-black/[.015] dark:hover:bg-white/[0.01] transition-soft">
+        ${icon}
+        <span class="flex-1 text-[15px] font-bold tracking-tight dark:text-zinc-100">${esc(title)}</span>
+        <svg class="w-4 h-4 shrink-0 text-ink-faint dark:text-zinc-600 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </summary>
+      <div class="px-5 pb-5 pt-1 text-[13px] text-ink-soft dark:text-zinc-400 leading-relaxed space-y-2.5 border-t border-black/[0.02] dark:border-white/[0.02]">${body}</div>
+    </details>`;
+}
+
+function renderGuide() {
+  const root = $('#view-guide');
+  if (!root) return;
+  const client = isClient();
+  const title = client ? 'Manuale di Consultazione — Cliente' : 'Manuale di Utilizzo Professionale';
+  const intro = client
+    ? 'La tua guida per consultare le note di pagamento, verificare lo stato dei versamenti e accedere ai tuoi dati in sicurezza.'
+    : 'Tutte le potenzialità di HourFlow spiegate nel dettaglio.';
+  root.innerHTML = `
+    <h2 class="text-[13px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-2">${title}</h2>
+    <p class="text-[14px] text-ink-soft dark:text-zinc-400 mb-4 leading-relaxed font-medium">${intro}</p>
+    <div class="space-y-3">
+      ${client ? clientGuideSections() : ownerGuideSections()}
+    </div>`;
+}
+
+// Manuale completo per l'account Proprietario.
+function ownerGuideSections() {
+  return `
+      ${guideSection(gIcon('bg-blue-500', '<path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/>'), 'Dashboard & Filtri Avanzati', `
+        <p>La **Dashboard** è la tua centrale di controllo operativa. Da qui puoi tenere sotto controllo le ore totali registrate, la tariffa di base e il compenso finanziario calcolato.</p>
+        <p>Grazie ai **Filtri di Visualizzazione**, puoi segmentare istantaneamente il tuo lavoro per:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Periodo Temporale:** Visualizza solo le ore del mese in corso, del mese precedente, dell'anno corrente o imposta un intervallo di date "dal / al" personalizzato.</li>
+          <li>**Filtro Progetto:** Isola un singolo progetto per analizzarne i guadagni e la ripartizione finanziaria.</li>
+        </ul>
+        <p>Usa la **barra di ricerca** per trovare al volo un progetto o un'attività per nome. Tutti gli indicatori, il grafico analitico e la Nota di pagamento si aggiornano in tempo reale rispettando fedelmente i filtri impostati.</p>`)}
+
+      ${guideSection(gIcon('bg-orange-500', '<circle cx="12" cy="13" r="8"/><path d="M12 13V9"/><path d="M9 2h6"/><path d="M18.5 6.5l1.2-1.2"/>'), 'Cronometro di precisione real-time', `
+        <p>Avvia una sessione di lavoro in tempo reale toccando il pulsante **cronometro** situato su qualsiasi riga di progetto.</p>
+        <p>Il cronometro di HourFlow è stato progettato per massimizzare le prestazioni del dispositivo:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Risparmio Batteria:** Quando la scheda del browser è ridotta a icona o in background, il motore riduce i consumi ricalcolando il tempo al millisecondo solo quando ritorni visibile.</li>
+          <li>**Uscita Sicura:** Anche se rinfreschi la pagina o spegni il browser, il cronometro riprenderà la conta dall'istante esatto di avvio.</li>
+          <li>**Arrotondamento:** Dalle **Impostazioni** puoi attivare l'arrotondamento per eccesso della sessione a 6, 15, 30 o 60 minuti. Al salvataggio vedi sia il tempo reale sia quello arrotondato che verrà conteggiato.</li>
+        </ul>`)}
+
+      ${guideSection(gIcon('bg-indigo-500', '<path d="M3 7a2 2 0 012-2h3.5l2 2H19a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>'), 'Progetti & Sessioni', `
+        <p>Crea un nuovo incarico con **+ Nuovo progetto**: assegni un nome, scegli il **tipo di compenso** e colleghi il **cliente** dall'anagrafica.</p>
+        <p>**A ore o a forfait:** con *A ore* imposti una **tariffa oraria dedicata** (vuota = usa quella globale) e il compenso si calcola sulle ore registrate. Con *A forfait* fissi un **importo concordato**: le ore vengono comunque tracciate, ma la fatturazione usa quella cifra fissa, a prescindere dal tempo impiegato. Un preventivo accettato può creare direttamente un progetto a forfait con il suo importo.</p>
+        <p>Per ogni progetto puoi:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Aggiungere sessioni** manualmente — data, descrizione dell'attività e ore — oltre che tramite il cronometro.</li>
+          <li>**Modificare** nome e tariffa con l'icona matita, oppure **eliminare** il progetto e le singole sessioni con l'icona cestino.</li>
+          <li>**Espandere** la riga del progetto per consultare l'elenco completo delle sessioni registrate, con ore e importi.</li>
+        </ul>`)}
+
+      ${guideSection(gIcon('bg-emerald-500', '<path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/>'), 'Nota Pro, Rivalsa, IVA e Ritenuta', `
+        <p>La sezione **Nota Pro** compila istantaneamente una fattura/ricevuta intestata al cliente selezionato.</p>
+        <p>Dalle **Impostazioni** puoi calibrare il calcolo fiscale a seconda della tua posizione contributiva:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Rivalsa INPS:** Solitamente impostata al 4% per i professionisti iscritti alla Gestione Separata. Viene calcolata sull'imponibile base.</li>
+          <li>**I.V.A.:** Imposta l'aliquota di legge (es. 22%). Viene calcolata sulla somma di imponibile base e rivalsa.</li>
+          <li>**Ritenuta d'Acconto:** Imposta la ritenuta (es. 20%). Viene calcolata sulla somma di imponibile base e rivalsa e sottratta automaticamente per determinare il Netto a Pagare.</li>
+        </ul>
+        <p>**Regime fiscale:** dalle Impostazioni scegli tra **Ordinario** e **Forfettario**. In regime forfettario IVA e ritenuta d'acconto vengono azzerate automaticamente e in nota (e nel PDF) compare la dicitura di legge sull'operazione in franchigia (art. 1, c. 54-89, L. 190/2014).</p>
+        <p>Sopra la nota trovi il riquadro **Stato pagamento**: puoi assegnare un **numero progressivo** alla nota (sequenziale per anno, es. N. 0007/2026, riportato anche in stampa) e registrare un **acconto** (versamento parziale) o un **saldo**, con importo, data e nota. La nota mostra **Totale**, **Versato** e **Residuo** e passa automaticamente da **Da saldare** ad **Acconto ricevuto** fino a **Pagata**; lo stato compare anche in stampa. Numero e pagamenti sono agganciati al contesto di fatturazione corrente (cliente/progetto e periodo selezionati nei filtri). Puoi impostare una **scadenza** per la nota (predefinita a +30 giorni): le note non saldate mostrano un avviso **in scadenza** o **scaduta** per aiutarti nei solleciti.</p>
+        <p>Dalle **Impostazioni** puoi definire una **Causale predefinita** (riportata in nota) e attivare la **marca da bollo da 2,00 €**, applicata automaticamente alle note esenti IVA sopra 77,47 €.</p>`)}
+
+      ${guideSection(gIcon('bg-teal-500', '<path d="M3 4h18v4H3z"/><path d="M3 8v12h18V8"/><path d="M8 12v5"/><path d="M12 11v6"/><path d="M16 13v4"/>'), 'Report Mensili', `
+        <p>La sezione **Report** aggrega automaticamente il lavoro **mese per mese**: ore, numero di sessioni, compenso e tariffa media oraria, con una barra di confronto tra i mesi e i totali complessivi.</p>
+        <p>Con **Esporta CSV** scarichi il riepilogo mensile pronto per Excel o Numbers, utile per dichiarazioni e consuntivi.</p>
+        <p>In fondo trovi il **Riepilogo annuale**: aggrega compensi, spese e calcolo fiscale dell'anno (coerente col regime, con coefficiente e imposta sostitutiva per il forfettario) e restituisce il **compenso netto spese**. Anche questo è esportabile in CSV.</p>`)}
+
+      ${guideSection(gIcon('bg-pink-500', '<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 9.5h19"/>'), 'Spese & Costi', `
+        <p>La sezione **Spese** ti permette di registrare costi e trasferte, così da conoscere il **guadagno reale** e non solo il fatturato. È una vista riservata al Proprietario.</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>Ogni spesa ha **descrizione, importo, categoria, data** e può essere collegata a un **progetto**.</li>
+          <li>Le spese confluiscono nel **Riepilogo annuale**, sottratte dal compenso per ottenere il netto.</li>
+          <li>Sono incluse nel backup JSON e sincronizzate sul cloud come gli altri dati.</li>
+        </ul>`)}
+
+      ${guideSection(gIcon('bg-cyan-600', '<rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="3" width="6" height="4" rx="1.5"/><path d="M9 12h6M9 16h4"/>'), 'Preventivi', `
+        <p>La sezione **Preventivi** crea documenti commerciali con più **voci** (descrizione, quantità, prezzo) e totale calcolato in tempo reale, con IVA opzionale coerente col regime fiscale.</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Numerazione automatica** per anno (es. PREV-0007/2026).</li>
+          <li>**Stato:** Bozza → Inviato → Accettato / Rifiutato, con badge colorato.</li>
+          <li>**Esporta PDF** del preventivo (intestazione, voci, imponibile/IVA/totale, note).</li>
+          <li>**Crea progetto:** da un preventivo **accettato** generi con un tocco un progetto già collegato al cliente, pronto da tracciare a ore. Il preventivo resta segnato come convertito.</li>
+        </ul>`)}
+
+      ${guideSection(gIcon('bg-violet-500', '<circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0111 0"/><path d="M16 5.5a3 3 0 010 5.4"/><path d="M18.5 20a5.5 5.5 0 00-3-4.9"/>'), 'Anagrafica Clienti', `
+        <p>La sezione **Clienti** raccoglie le anagrafiche complete dei tuoi committenti: denominazione, **P.IVA / Codice Fiscale**, indirizzo della sede, email e telefono.</p>
+        <p>Ogni cliente può essere associato a uno o più progetti e i suoi dati vengono richiamati automaticamente nell'intestazione della **Nota Pro**. Per proteggere lo storico di fatturazione, un cliente collegato a progetti attivi non è eliminabile finché non lo scolleghi.</p>`)}
+
+      ${guideSection(gIcon('bg-sky-500', '<path d="M7 18A4 4 0 016.5 10a5.5 5.5 0 0110.7 1.3A3.4 3.4 0 0117 18z"/><path d="M9.5 14.5L12 12l2.5 2.5"/><path d="M12 12v6"/>'), 'Account & Sincronizzazione Cloud', `
+        <p>Con l'accesso tramite **email e password** i tuoi dati vengono sincronizzati in tempo reale su tutti i dispositivi, con allineamento per **singola voce**: progetti, sessioni e clienti restano coerenti anche lavorando offline su più dispositivi, senza sovrascritture accidentali.</p>
+        <p>Sono previsti due livelli di accesso:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Proprietario:** pieno controllo su modifiche, tariffe e coordinate di pagamento.</li>
+          <li>**Cliente:** consultazione protetta della nota, in **sola lettura**, senza poter modificare o eliminare nulla.</li>
+        </ul>
+        <p>Il badge in alto a destra indica in ogni momento se sei **Sincronizzato**, in sincronia o non connesso.</p>`)}
+
+      ${guideSection(gIcon('bg-zinc-500', '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="white" stroke="none"/>'), "Privacy dell'IBAN", `
+        <p>A schermo l'IBAN è mostrato **mascherato** — prime e ultime 4 cifre visibili — per proteggerlo da sguardi indiscreti. Con **Mostra** lo riveli temporaneamente, con **Copia** lo trasferisci negli appunti.</p>
+        <p>In **stampa** l'IBAN viene sempre riportato per intero e raggruppato in blocchi da 4, così la nota resta valida per il pagamento. Per gli account **Cliente** le coordinate restano riservate.</p>`)}
+
+      ${guideSection(gIcon('bg-rose-500', '<path d="M7 9V3h10v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v6H7z"/><circle cx="16.5" cy="12" r="0.8" fill="white" stroke="none"/>'), 'Stampa & Esportazione PDF', `
+        <p>Dalla **Nota Pro**, il pulsante con l'icona stampante genera un **PDF nativo** scaricabile con impaginazione A4 pulita, completo di numero nota, dati, totali, stato pagamento e coordinate.</p>
+        <p>Su iOS il PDF viene salvato tra i file/condivisione. Se il modulo PDF non fosse disponibile, HourFlow ripiega automaticamente sulla stampa del browser.</p>`)}
+
+      ${guideSection(gIcon('bg-amber-500', '<path d="M4 14v3.5A1.5 1.5 0 005.5 19h13a1.5 1.5 0 001.5-1.5V14"/><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/>'), 'Backup & Ripristino', `
+        <p>Dalle **Impostazioni** proteggi e trasferisci il tuo archivio:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Esporta Database JSON:** un backup completo — progetti, sessioni, clienti e impostazioni — da conservare o ripristinare.</li>
+          <li>**Esporta Tabella CSV:** l'elenco delle sessioni in formato foglio di calcolo, pronto per Excel o Numbers.</li>
+          <li>**Ripristino:** reimporta un file JSON per riportare l'archivio a uno stato salvato. L'import è difensivo: un singolo record corrotto non interrompe l'intera operazione.</li>
+        </ul>`)}
+
+      ${guideSection(gIcon('bg-slate-700', '<path d="M20 14.5A8 8 0 119.5 4a6.5 6.5 0 0010.5 10.5z"/>'), 'Tema & Aspetto', `
+        <p>L'icona **luna / sole** in alto inverte all'istante il tema **chiaro** o **scuro**. La preferenza viene salvata e sincronizzata; è disponibile anche la modalità **automatica**, che segue le impostazioni di sistema del dispositivo.</p>`)}`;
+}
+
+// Manuale dedicato all'account Cliente: sola consultazione, niente operazioni
+// di modifica (cronometro, creazione progetti, fiscalità, backup, pagamenti).
+function clientGuideSections() {
+  return `
+      ${guideSection(gIcon('bg-sky-500', '<path d="M7 18A4 4 0 016.5 10a5.5 5.5 0 0110.7 1.3A3.4 3.4 0 0117 18z"/><path d="M9.5 14.5L12 12l2.5 2.5"/><path d="M12 12v6"/>'), 'Il tuo accesso Cliente', `
+        <p>Hai effettuato l'accesso come **Cliente**: una modalità di **sola consultazione**, pensata per permetterti di seguire il lavoro svolto e le note di pagamento in totale sicurezza.</p>
+        <p>Puoi **visualizzare** progetti, ore, note e report, ma non puoi modificare o eliminare dati: l'archivio resta sotto il pieno controllo del professionista. I tuoi dati si **sincronizzano** automaticamente su tutti i tuoi dispositivi.</p>`)}
+
+      ${guideSection(gIcon('bg-blue-500', '<path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/>'), 'Dashboard & Filtri', `
+        <p>La **Dashboard** riepiloga le ore registrate, la tariffa applicata e il compenso complessivo.</p>
+        <p>Con i **Filtri** puoi consultare il lavoro per **periodo** (mese corrente, mese precedente, anno o intervallo personalizzato) o isolare un singolo **progetto**. La **ricerca** ti aiuta a trovare rapidamente un progetto o un'attività. Indicatori e grafico si aggiornano in tempo reale.</p>`)}
+
+      ${guideSection(gIcon('bg-emerald-500', '<path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/>'), 'Leggere la Nota di Pagamento', `
+        <p>La sezione **Nota Pro** mostra la nota a te intestata, con il dettaglio delle prestazioni, le eventuali voci fiscali (rivalsa, IVA, ritenuta, marca da bollo) e il **Netto a pagare**.</p>
+        <p>Il riquadro **Stato pagamento** ti dice a colpo d'occhio la situazione:</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>**Da saldare:** nessun versamento ancora registrato.</li>
+          <li>**Acconto ricevuto:** è stato versato un importo parziale; trovi **Versato** e **Residuo**.</li>
+          <li>**Pagata:** la nota risulta saldata per intero.</li>
+        </ul>
+        <p>Se è prevista una **scadenza**, la nota non ancora saldata può mostrarla evidenziando se è **in scadenza** o **scaduta**.</p>
+        <p>La registrazione dei pagamenti è gestita dal professionista; tu la vedi sempre aggiornata in tempo reale.</p>`)}
+
+      ${guideSection(gIcon('bg-teal-500', '<path d="M3 4h18v4H3z"/><path d="M3 8v12h18V8"/><path d="M8 12v5"/><path d="M12 11v6"/><path d="M16 13v4"/>'), 'Report Mensili', `
+        <p>La sezione **Report** riepiloga il lavoro **mese per mese**: ore, numero di sessioni e compenso, con un confronto visivo tra i periodi.</p>
+        <p>Con **Esporta CSV** puoi scaricare il riepilogo per i tuoi archivi.</p>`)}
+
+      ${guideSection(gIcon('bg-zinc-500', '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="white" stroke="none"/>'), 'Coordinate di pagamento', `
+        <p>Le coordinate per il pagamento sono riportate sulla nota. A schermo l'**IBAN** è mostrato **mascherato** per riservatezza: usa **Mostra** per rivelarlo e **Copia** per inserirlo nel bonifico.</p>
+        <p>Nel **PDF/stampa** della nota l'IBAN compare per intero e raggruppato in blocchi da 4, pronto per effettuare il versamento.</p>`)}
+
+      ${guideSection(gIcon('bg-rose-500', '<path d="M7 9V3h10v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v6H7z"/><circle cx="16.5" cy="12" r="0.8" fill="white" stroke="none"/>'), 'Scaricare la Nota in PDF', `
+        <p>Dalla **Nota Pro**, il pulsante con l'icona stampante genera un **PDF nativo** della nota, con impaginazione A4 pulita: comodo da archiviare o allegare alla disposizione di pagamento.</p>
+        <p>Su iOS il PDF viene salvato tramite il pannello di condivisione (“Salva su File”).</p>`)}
+
+      ${guideSection(gIcon('bg-slate-600', '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>'), 'Account & Sicurezza', `
+        <p>Accedi con **email e password**. Il tuo livello **Cliente** è in sola lettura e i dati restano sincronizzati e protetti sul cloud.</p>
+        <p>Dalle **Impostazioni** puoi gestire la tua sessione, verificare l'email e disconnetterti in sicurezza dal dispositivo.</p>`)}
+
+      ${guideSection(gIcon('bg-slate-700', '<path d="M20 14.5A8 8 0 119.5 4a6.5 6.5 0 0010.5 10.5z"/>'), 'Tema & Aspetto', `
+        <p>L'icona **luna / sole** in alto inverte all'istante il tema **chiaro** o **scuro**. È disponibile anche la modalità **automatica**, che segue le impostazioni del tuo dispositivo.</p>`)}`;
+}
+
+/* ---------------------------------------------------------------------
+   GESTIONE EVENTI ACCOUNT PANEL (BINDACOUNTOPANEL)
+--------------------------------------------------------------------- */
+function bindAccountPanel() {
+  if (!sync.enabled) return;
+  if (sync.user) {
+    const out = $('#a-signout');
+    if (out) out.addEventListener('click', doSignOut);
+    const ver = $('#a-verify');
+    if (ver) ver.addEventListener('click', doSendVerification);
+    const pr = $('#a-passreset');
+    if (pr) pr.addEventListener('click', doSendPasswordReset);
+    return;
+  }
+  const emailEl = $('#a-email');
+  const passEl = $('#a-pass');
+  const errEl = $('#a-error');
+  const roleSeg = $('#a-role');
+  const roleHint = $('#a-role-hint');
+  let chosenRole = 'owner';
+
+  if (roleSeg) {
+    $$('button[data-role]', roleSeg).forEach(btn => {
+      btn.addEventListener('click', () => {
+        chosenRole = btn.dataset.role;
+        $$('button[data-role]', roleSeg).forEach(b => b.setAttribute('aria-selected', String(b === btn)));
+        if (roleHint) {
+          roleHint.innerText = chosenRole === 'client'
+            ? 'Livello Cliente: visualizzazione protetta della fattura e dell\'IBAN senza possibilità di modificare.'
+            : 'Livello Proprietario: abilitazione modifiche, coordinate IBAN e tariffe.';
+        }
+      });
+    });
+  }
+
+  const readCreds = () => ({ email: (emailEl.value || '').trim(), password: passEl.value || '' });
+  const showErr = (m) => { if (errEl) { errEl.textContent = m; errEl.classList.remove('hidden'); } };
+  const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  const guard = (c, isSignup) => {
+    if (!c.email) { showErr('Email obbligatoria.'); return false; }
+    if (!validEmail(c.email)) { showErr('Formato email non valido.'); return false; }
+    if (!c.password) { showErr('Inserisci la password d\'accesso.'); return false; }
+    if (isSignup && c.password.length < 6) { showErr('La password deve contenere almeno 6 caratteri.'); return false; }
+    if (errEl) errEl.classList.add('hidden');
+    return true;
+  };
+
+  const signin = $('#a-signin');
+  const signup = $('#a-signup');
+  if (signin) signin.addEventListener('click', () => { const c = readCreds(); if (guard(c, false)) doSignIn(c.email, c.password); });
+  if (signup) signup.addEventListener('click', () => { const c = readCreds(); if (guard(c, true)) doSignUp(c.email, c.password, chosenRole); });
+  if (passEl) passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = readCreds(); if (guard(c, false)) doSignIn(c.email, c.password); } });
+}
+
+/* ---------------------------------------------------------------------
+   CLOUD ENGINE (Firebase & Real-time Integration)
+--------------------------------------------------------------------- */
+// Schema cloud: 2 = sottocollezioni per-record (users/{uid}/{store}/{id}).
+// 1 = vecchio documento unico con array (migrato automaticamente al primo accesso).
+const CLOUD_SCHEMA = 2;
+const SYNC_STORES = ['projects', 'entries', 'clients', 'payments', 'expenses', 'quotes'];
+
+const sync = {
+  enabled: false,
+  ready: false,
+  auth: null,
+  db: null,
+  user: null,
+  role: null,        
+  pendingRole: null, 
+  unsub: null,          // listener documento padre (settings/ruolo)
+  colUnsubs: [],        // listener delle sottocollezioni
+  applyingRemote: false,
+  pushTimer: null,
+  reloadTimer: null,
+  status: 'off',
+  // "Ombra" delle versioni note sul server: store -> Map(id -> updatedAt).
+  // Serve a calcolare il diff in push (cosa creare/aggiornare/eliminare).
+  server: { projects: new Map(), entries: new Map(), clients: new Map(), payments: new Map(), expenses: new Map(), quotes: new Map() },
+  // Idratazione: una sottocollezione e' "idratata" dopo il primo snapshot.
+  // Finche' non lo e', NON si propagano eliminazioni (evita di azzerare il
+  // server prima di aver letto cosa contiene).
+  hydrated: { projects: false, entries: false, clients: false, payments: false, expenses: false, quotes: false },
+  serverSettingsAt: 0,
+  // Condivisione (architettura A): pubblicazione statement per cliente lato
+  // Proprietario; scoperta+lettura live lato Cliente tramite la propria email.
+  share: { unsub: null, linksUnsub: null, pubTimer: null, linked: false, curKey: null, statementRef: null, pollTimer: null, lastAppliedAt: 0 }
+};
+
+function isAuthed() { return !!(sync.enabled && sync.user); }
+function currentRole() {
+  if (!sync.enabled) return 'owner';
+  if (!sync.user) return 'guest';
+  return sync.role === 'client' ? 'client' : 'owner';
+}
+function isClient()  { return currentRole() === 'client'; }
+function isGuest()   { return currentRole() === 'guest'; }
+function canEdit()   { return !isClient(); }
+function canSeeIban() { return !sync.enabled || isAuthed(); }
+function canManagePayment() { return canSeeIban() && !isClient(); }
+function roleLabel(r) { return r === 'client' ? 'Cliente' : (r === 'guest' ? 'Ospite' : 'Proprietario'); }
+
+function firebaseConfigured() {
+  const c = window.FIREBASE_CONFIG || {};
+  return typeof firebase !== 'undefined' && !!c.apiKey && !!c.projectId;
+}
+
+function userDocRef() {
+  if (!sync.user) return null;
+  return sync.db.collection('users').doc(sync.user.uid);
+}
+
+// Riferimento alla sottocollezione per-record: users/{uid}/{store}
+function colRef(store) {
+  if (!sync.user) return null;
+  return sync.db.collection('users').doc(sync.user.uid).collection(store);
+}
+
+// Marca lo stadio corrente della sincronizzazione (a fini diagnostici): se il
+// watchdog scatta, sappiamo ESATTAMENTE dove si era fermato il flusso.
+function syncStage(s) {
+  sync.stage = s;
+  try { console.log('[sync] stadio:', s); } catch (_) {}
+}
+
+let _syncWatchdog = null;
+function setSyncStatus(status) {
+  sync.status = status;
+  // Watchdog centrale: lo stato "syncing" NON puo' restare appeso all'infinito,
+  // qualunque sia il punto di blocco (get Firestore, listener, push...). Se dopo
+  // 12s siamo ancora in "syncing", sblocchiamo e mostriamo l'errore con lo stadio
+  // raggiunto, lasciando comunque utilizzabili i dati locali gia' caricati.
+  clearTimeout(_syncWatchdog);
+  if (status === 'syncing') {
+    _syncWatchdog = setTimeout(() => {
+      if (sync.status !== 'syncing') return;
+      try { console.warn('[sync] watchdog scattato — ultimo stadio:', sync.stage); } catch (_) {}
+      sync.applyingRemote = false;            // non lasciare il push bloccato
+      sync.status = 'error'; updateSyncBadge(); if (state.view === 'settings') renderSettings();
+      if (maybeRecoverWedgedFirestore(new Error('sync-timeout'))) return;
+      toast('Sincronizzazione non completata (stadio: ' + (sync.stage || '?') + '). Dati locali disponibili.', 'warning');
+    }, 12000);
+  }
+  updateSyncBadge();
+  if (state.view === 'settings') renderSettings();
+}
+
+function updateSyncBadge() {
+  const el = $('#sync-badge');
+  if (!el) return;
+  if (!sync.enabled) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const map = {
+    signedout: { t: 'Non Connesso', c: 'bg-black/5 dark:bg-white/5 text-ink-soft', dot: '○' },
+    syncing:   { t: 'In Sincronia…', c: 'bg-accent-soft text-accent', dot: '⟳' },
+    synced:    { t: 'Sincronizzato', c: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', dot: '●' },
+    error:     { t: 'Errore cloud', c: 'bg-[#ff3b30]/10 text-[#ff3b30]', dot: '⚠' },
+    off:       { t: '', c: '', dot: '' }
+  };
+  const m = map[sync.status] || map.signedout;
+  el.className = `shrink-0 text-[12px] font-bold rounded-full px-2 sm:px-2.5 py-1 transition-soft flex items-center gap-1.5 ${m.c}`;
+  el.innerHTML = `<span>${m.dot}</span><span class="hidden sm:inline">${esc(m.t)}</span>`;
+  el.onclick = () => setView('settings');
+  updateUserBadge();
+}
+
+function roleLabel() {
+  const r = currentRole();
+  if (r === 'client') return 'Cliente';
+  if (r === 'owner') return 'Proprietario';
+  return '';
+}
+
+function userDisplayName() {
+  const s = state.settings || {};
+  if (isClient()) {
+    if (s.clientProfile && s.clientProfile.name) return s.clientProfile.name;
+  } else if (s.holderName) {
+    return s.holderName;
+  }
+  if (sync.user && sync.user.email) return sync.user.email;
+  return '';
+}
+
+// Mostra "Nome · Ruolo" accanto al titolo, in base all'account collegato.
+function updateUserBadge() {
+  const el = $('#user-badge');
+  if (!el) return;
+  if (!(sync.enabled && sync.user)) { el.classList.add('hidden'); el.classList.remove('flex'); return; }
+  const name = userDisplayName();
+  const role = roleLabel();
+  const client = isClient();
+  el.classList.remove('hidden'); el.classList.add('flex');
+  el.innerHTML = `
+    <span class="hidden sm:inline truncate font-semibold text-ink-soft dark:text-zinc-300">${esc(name)}</span>
+    ${role ? `<span class="shrink-0 font-bold rounded-full px-2 py-0.5 ${client ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400' : 'bg-accent-soft text-accent'}">${esc(role)}</span>` : ''}`;
+}
+
+function initSync() {
+  if (!firebaseConfigured()) { sync.enabled = false; updateSyncBadge(); return; }
+  try {
+    firebase.initializeApp(window.FIREBASE_CONFIG);
+    sync.auth = firebase.auth();
+    sync.db = firebase.firestore();
+    // Safari/WebKit blocca il trasporto WebChannel di Firestore ("access control
+    // checks"). Forzare il long-polling (anziche' il solo auto-detect) e' la
+    // configurazione piu' robusta per Safari. Va impostato PRIMA di ogni altra
+    // operazione (enablePersistence, onSnapshot, ecc.).
+    try { sync.db.settings({ experimentalForceLongPolling: true }); } catch (_) {}
+    sync.enabled = true;
+    sync.ready = true;
+    // La persistenza IndexedDB di Firestore puo' "ingolfare" il client su iOS/iPadOS
+    // (ogni lettura resta appesa). Se l'auto-ripristino l'ha disattivata, la saltiamo:
+    // le letture vanno dirette in rete e i dati offline restano nel DB locale dell'app.
+    let usePersist = true;
+    try { if (localStorage.getItem('hf_skip_persist') === '1') usePersist = false; } catch (_) {}
+    if (usePersist) {
+      try { sync.db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
+    } else {
+      try { console.warn('[sync] persistenza Firestore disattivata (auto-ripristino)'); } catch (_) {}
+    }
+    sync.auth.onAuthStateChanged(onAuthChanged);
+    // In modalità app/PWA (soprattutto iOS) le connessioni realtime vengono
+    // sospese in background: al ritorno in primo piano si ri-aggancia il flusso.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || !sync.user) return;
+      if (isClient()) attachClientStatementByEmail();
+      else publishAllStatements();
+    });
+    setSyncStatus('signedout');
+  } catch (err) {
+    sync.enabled = false;
+    updateSyncBadge();
+  }
+}
+
+function onAuthChanged(user) {
+  sync.user = user || null;
+  if (user) {
+    if (sync.pendingRole) sync.role = sync.pendingRole;
+    startCloudListener();
+  } else {
+    sync.role = null;
+    sync.pendingRole = null;
+    stopCloudListener();
+    resetSyncShadow();
+    setSyncStatus('signedout');
+  }
+  render();
+}
+
+// Svuota l'ombra del server e i flag di idratazione (al logout o cambio utente).
+function resetSyncShadow() {
+  for (const s of SYNC_STORES) { sync.server[s] = new Map(); sync.hydrated[s] = false; }
+  sync.serverSettingsAt = 0;
+}
+
+async function startCloudListener() {
+  if (!sync.user) return;
+  setSyncStatus('syncing');
+  syncStage('start');
+  stopCloudListener();
+  resetSyncShadow();
+  try {
+    await initialHydrate();        // caricamento iniziale deterministico (one-shot .get)
+  } catch (err) {
+    setSyncStatus('error');
+    if (!maybeRecoverWedgedFirestore(err)) toast(syncErrorMsg(err), 'error');
+    return;
+  }
+  // Se nel frattempo l'utente e' cambiato/uscito (onAuthChanged puo' rifirare),
+  // non proseguire con riferimenti non piu' validi: evita TypeError silenziosi
+  // che lascerebbero il badge appeso su "syncing".
+  if (!sync.user) { setSyncStatus('signedout'); return; }
+  syncStage('attach-listeners');
+  try {
+    attachParentDocListener();
+    if (isClient()) {
+      // Cliente: trova lo statement che lo riguarda (per email) e lo legge live;
+      // nessun listener sui propri record per non sovrascrivere i dati condivisi.
+      attachClientStatementByEmail();
+    } else {
+      attachRecordListeners();      // merge per-record realtime
+      publishAllStatements();       // (ri)pubblica gli statement dei clienti associati
+    }
+  } catch (err) {
+    setSyncStatus('error');
+    toast(syncErrorMsg(err), 'error');
+    return;
+  }
+  syncStage('done');
+  setSyncStatus('synced');
+}
+
+function stopCloudListener() {
+  if (sync.unsub) { sync.unsub(); sync.unsub = null; }
+  for (const u of sync.colUnsubs) { try { u(); } catch (_) {} }
+  sync.colUnsubs = [];
+  if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+  if (sync.share.linksUnsub) { try { sync.share.linksUnsub(); } catch (_) {} sync.share.linksUnsub = null; }
+  sync.share.linked = false;
+  sync.share.curKey = null;
+  sync.share.statementRef = null;
+  sync.share.lastAppliedAt = 0;
+  clearInterval(sync.share.pollTimer); sync.share.pollTimer = null;
+  clearTimeout(sync.share.pubTimer);
+  clearTimeout(sync.reloadTimer);
+}
+
+// Caricamento iniziale deterministico via .get() (l'ordine d'arrivo tra documento
+// padre e sottocollezioni nei listener NON e' garantito, quindi non ci si appoggia
+// ad esso). Account inesistente -> push dello stato locale. Account esistente ->
+// il cloud e' autoritativo: si sostituiscono i record locali (inclusi i dati demo
+// di un'installazione nuova), coerentemente col comportamento storico.
+// Lettura Firestore a prova di stallo: tenta il server, ma se entro `ms` non
+// risponde (canale realtime sospeso in modalita' app/PWA su iOS) ripiega sulla
+// cache locale di Firestore. Senza questa rete di sicurezza la prima idratazione
+// poteva restare appesa per sempre -> badge bloccato su "In Sincronia...".
+function getWithTimeout(ref, serverMs = 9000, cacheMs = 2500) {
+  const bound = (p, ms) => {
+    let t;
+    const timeout = new Promise((_, reject) => { t = setTimeout(() => reject(new Error('sync-timeout')), ms); });
+    return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+  };
+  // Prima il server (limite generoso, regge anche reti lente); se non risponde,
+  // la cache locale (deve essere istantanea). Entrambi i tentativi sono limitati,
+  // quindi questa funzione NON puo' restare appesa: o risolve o rigetta entro ~11s.
+  return bound(ref.get(), serverMs).catch(() => bound(ref.get({ source: 'cache' }), cacheMs));
+}
+
+// Auto-ripristino per client Firestore "ingolfato" (tipico di iOS/iPadOS quando la
+// persistenza IndexedDB si blocca): se la prima lettura va in timeout e non l'abbiamo
+// gia' tentato in questa sessione, disattiva la persistenza e ricarica UNA volta.
+// Ritorna true se ha avviato il ripristino (cosi' il chiamante non mostra il toast d'errore).
+function maybeRecoverWedgedFirestore(err) {
+  const code = String((err && (err.code || err.message)) || '');
+  const looksWedged = /sync-timeout|unavailable|deadline-exceeded|failed-precondition/i.test(code);
+  if (!looksWedged) return false;
+  try {
+    if (sessionStorage.getItem('hf_recovered') === '1') return false; // gia' tentato: non rientrare in loop
+    sessionStorage.setItem('hf_recovered', '1');
+    localStorage.setItem('hf_skip_persist', '1');
+    toast('Connessione cloud bloccata: riavvio senza cache locale…', 'warning');
+    setTimeout(() => { try { location.reload(); } catch (_) {} }, 1500);
+    return true;
+  } catch (_) { return false; }
+}
+
+async function initialHydrate() {
+  syncStage('hydrate:parent-get');
+  const snap = await getWithTimeout(userDocRef());
+
+  if (!snap.exists) {
+    for (const s of SYNC_STORES) sync.hydrated[s] = true; // niente sul cloud da leggere
+    syncStage('hydrate:push-new');
+    await pushNow();                                       // carica lo stato locale
+    return;
+  }
+
+  const data = snap.data() || {};
+  if (data.accountRole === 'client' || data.accountRole === 'owner') sync.role = data.accountRole;
+  else if (!sync.role) sync.role = 'owner';
+
+  // Migrazione una-tantum dal vecchio documento unico con array.
+  if ((!data.schema || data.schema < CLOUD_SCHEMA) && hasLegacyArrays(data)) {
+    await migrateLegacyDoc(data);
+  }
+
+  sync.applyingRemote = true;
+  try {
+    syncStage('hydrate:clear');
+    await dbClear('projects'); await dbClear('entries'); await dbClear('clients'); await dbClear('payments');
+    await dbClear('expenses'); await dbClear('quotes');
+    for (const store of SYNC_STORES) {
+      try {
+        syncStage('hydrate:get:' + store);
+        const qs = await getWithTimeout(colRef(store));
+        for (const doc of qs.docs) {
+          const at = typeof doc.data().updatedAt === 'number' ? doc.data().updatedAt : 0;
+          sync.server[store].set(doc.id, at);
+          await dbPut(store, { ...doc.data(), id: doc.id }); // applyingRemote=true: updatedAt preservato
+        }
+        sync.hydrated[store] = true;
+      } catch (e) {
+        // A store may be unreadable (e.g. Firestore rules not yet updated for a new
+        // collection): skip it so the rest of the sync still completes.
+        sync.hydrated[store] = true;
+      }
+    }
+    if (data.settings && typeof data.settings === 'object') {
+      sync.serverSettingsAt = typeof data.settingsAt === 'number' ? data.settingsAt : 0;
+      await dbPut('settings', { ...data.settings, id: 'app' });
+    }
+    syncStage('hydrate:loadState');
+    await loadState();
+    render();
+  } finally {
+    sync.applyingRemote = false;
+  }
+}
+
+function attachParentDocListener() {
+  // Documento padre: ruolo + impostazioni in tempo reale.
+  sync.unsub = userDocRef().onSnapshot(
+    (snap) => {
+      if (!snap.exists) return;
+      if (snap.metadata && snap.metadata.hasPendingWrites) return;
+      applyParentDoc(snap.data());
+    },
+    (err) => { setSyncStatus('error'); toast(syncErrorMsg(err), 'error'); }
+  );
+}
+
+function attachRecordListeners() {
+  // Sottocollezioni record: merge per-record in tempo reale.
+  for (const store of SYNC_STORES) {
+    const unsub = colRef(store).onSnapshot(
+      (qs) => handleColSnapshot(store, qs),
+      (err) => { setSyncStatus('error'); toast(syncErrorMsg(err), 'error'); }
+    );
+    sync.colUnsubs.push(unsub);
+  }
+}
+
+function attachRealtimeListeners() {
+  attachParentDocListener();
+  attachRecordListeners();
+}
+
+// Documento padre in tempo reale: solo ruolo + impostazioni (oggetto singolo,
+// last-write-wins per timestamp). I record viaggiano nelle sottocollezioni.
+async function applyParentDoc(data) {
+  if (!data) return;
+  sync.applyingRemote = true;
+  try {
+    if (data.accountRole === 'client' || data.accountRole === 'owner') {
+      sync.role = data.accountRole;
+    } else if (!sync.role) {
+      sync.role = 'owner';
+    }
+    const at = typeof data.settingsAt === 'number' ? data.settingsAt : 0;
+    if (data.settings && typeof data.settings === 'object' && at > sync.serverSettingsAt) {
+      sync.serverSettingsAt = at;
+      // Merge sopra le impostazioni correnti: per il Cliente preserva l'overlay
+      // dei dati del Proprietario ricevuti via statement (IBAN, tariffe, ecc.).
+      const settings = { ...state.settings, ...data.settings, id: 'app' };
+      await dbPut('settings', settings);
+      state.settings = settings;
+      render();
+      if (!isClient()) schedulePublish();   // tariffe/IBAN aggiornati -> ripubblica
+    }
+  } catch (err) {
+    console.error('applyParentDoc failed', err);
+  } finally {
+    sync.applyingRemote = false;
+  }
+}
+
+function hasLegacyArrays(data) {
+  return Array.isArray(data.projects) || Array.isArray(data.entries) || Array.isArray(data.clients);
+}
+
+// Migrazione: copia gli array del vecchio documento nelle sottocollezioni e
+// ripulisce il documento padre. Idempotente (gira solo finche' schema < CLOUD_SCHEMA).
+// Lo stato locale viene poi ripopolato da initialHydrate via .get().
+async function migrateLegacyDoc(data) {
+  const ts = Date.now();
+  const FieldValue = firebase.firestore.FieldValue;
+  const groups = {
+    projects: Array.isArray(data.projects) ? data.projects : [],
+    entries:  Array.isArray(data.entries)  ? data.entries  : [],
+    clients:  Array.isArray(data.clients)  ? data.clients  : []
+  };
+
+  const batches = [];
+  let batch = sync.db.batch(); let ops = 0;
+  const rotate = () => { batches.push(batch); batch = sync.db.batch(); ops = 0; };
+
+  for (const store of SYNC_STORES) {
+    for (const rec of groups[store]) {
+      if (!rec || typeof rec !== 'object') continue;
+      if (!rec.id) rec.id = genId();
+      if (typeof rec.updatedAt !== 'number') rec.updatedAt = ts;
+      batch.set(colRef(store).doc(String(rec.id)), rec);
+      if (++ops >= 450) rotate();
+    }
+  }
+
+  // Rimuove gli array legacy dal documento padre e segna lo schema nuovo.
+  batch.set(userDocRef(), {
+    schema: CLOUD_SCHEMA,
+    projects: FieldValue.delete(),
+    entries: FieldValue.delete(),
+    clients: FieldValue.delete(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  batches.push(batch);
+
+  for (const b of batches) await b.commit();
+  toast('Sincronizzazione aggiornata al nuovo modello per-record.');
+}
+
+// Pull per-record: applica i cambiamenti remoti con confronto updatedAt.
+// Il remoto vince solo se non e' piu' vecchio del locale.
+function handleColSnapshot(store, qs) {
+  sync.applyingRemote = true;
+  const tasks = [];
+  // Il corpo e' protetto: un'eccezione qui (es. store imprevisto) NON deve
+  // lasciare applyingRemote incastrato a true, altrimenti il push si blocca.
+  try {
+    qs.docChanges().forEach((chg) => {
+      const id = chg.doc.id;
+      const pending = chg.doc.metadata && chg.doc.metadata.hasPendingWrites;
+      if (chg.type === 'removed') {
+        sync.server[store].delete(id);
+        if (pending) return;                 // eco della nostra eliminazione
+        tasks.push(removeRecordLocally(store, id));
+        return;
+      }
+      const data = chg.doc.data() || {};
+      const remoteAt = typeof data.updatedAt === 'number' ? data.updatedAt : 0;
+      sync.server[store].set(id, remoteAt);
+      if (pending) return;                   // eco della nostra scrittura
+      const local = state[store].find(x => x.id === id);
+      if (!local || remoteAt > (local.updatedAt || 0)) {
+        tasks.push(dbPut(store, { ...data, id }));
+      }
+    });
+  } catch (err) {
+    console.error('handleColSnapshot failed', err);
+  }
+  Promise.all(tasks).catch((err) => console.error('handleColSnapshot tasks failed', err)).finally(() => {
+    sync.applyingRemote = false;
+    sync.hydrated[store] = true;
+    scheduleReload();
+    if (!isClient()) schedulePublish();   // ripubblica gli statement dei clienti collegati
+  });
+}
+
+async function removeRecordLocally(store, id) {
+  if (!state[store].some(x => x.id === id)) return;
+  await dbDel(store, id);
+}
+
+// Ricarica lo stato e ridisegna, accorpando i molti snapshot del caricamento iniziale.
+function scheduleReload() {
+  clearTimeout(sync.reloadTimer);
+  sync.reloadTimer = setTimeout(async () => {
+    await loadState();
+    render();
+  }, 150);
+}
+
+// Push diff-based: documento padre (impostazioni/ruolo) + un upsert/delete per
+// ogni record cambiato rispetto all'ombra del server.
+async function pushNow() {
+  if (!sync.user) return;
+  setSyncStatus('syncing');
+  try {
+    const FieldValue = firebase.firestore.FieldValue;
+    const client = isClient();
+
+    // (1) Documento padre: impostazioni come oggetto singolo (LWW per timestamp).
+    // Il Cliente pubblica SOLO le proprie impostazioni (tema/profilo/collegamento),
+    // mai i dati del Proprietario ricevuti via statement.
+    const settingsAt = Date.now();
+    await userDocRef().set({
+      accountRole: sync.role || 'owner',
+      settings: client ? clientOwnSettings() : state.settings,
+      settingsAt,
+      schema: CLOUD_SCHEMA,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    // Aggiornato solo a scrittura riuscita: se il set fallisce, il prossimo push
+    // non deve credere che le impostazioni siano già sul server.
+    sync.serverSettingsAt = settingsAt;
+
+    // (2) Record: solo il Proprietario sincronizza le proprie sottocollezioni.
+    if (!client) {
+      for (const store of SYNC_STORES) {
+        const seen = new Set();
+        let batch = sync.db.batch(); let ops = 0; let staged = [];
+        // Il mirror sync.server si aggiorna SOLO a commit riuscito: se si
+        // aggiornasse prima e il batch fallisse, i record risulterebbero già
+        // sincronizzati e non verrebbero mai ritentati (perdita dati silenziosa).
+        const commit = async () => {
+          if (ops > 0) {
+            await batch.commit();
+            for (const apply of staged) apply();
+            batch = sync.db.batch(); ops = 0; staged = [];
+          }
+        };
+
+        // Upsert: record assenti sul server o piu' recenti del server.
+        for (const rec of state[store]) {
+          if (!rec || !rec.id) continue;
+          const id = String(rec.id);
+          seen.add(id);
+          const known = sync.server[store].get(id);
+          const at = typeof rec.updatedAt === 'number' ? rec.updatedAt : Date.now();
+          if (known === undefined || at > known) {
+            batch.set(colRef(store).doc(id), { ...rec, id, updatedAt: at });
+            staged.push(() => sync.server[store].set(id, at));
+            if (++ops >= 450) await commit();
+          }
+        }
+
+        // Eliminazioni: presenti sul server ma non piu' in locale. Solo a
+        // sottocollezione idratata, per non cancellare dati non ancora letti.
+        if (sync.hydrated[store]) {
+          for (const id of Array.from(sync.server[store].keys())) {
+            if (!seen.has(id)) {
+              batch.delete(colRef(store).doc(id));
+              staged.push(() => sync.server[store].delete(id));
+              if (++ops >= 450) await commit();
+            }
+          }
+        }
+        await commit();
+      }
+      schedulePublish();   // aggiorna gli statement dei clienti collegati
+    }
+    setSyncStatus('synced');
+  } catch (err) {
+    setSyncStatus('error');
+    toast(syncErrorMsg(err), 'error');
+  }
+}
+
+function cloudPush() {
+  if (!sync.enabled || !sync.user || sync.applyingRemote) return;
+  setSyncStatus('syncing');
+  clearTimeout(sync.pushTimer);
+  sync.pushTimer = setTimeout(pushNow, 400);
+}
+
+// Aggiornamento manuale: ristabilisce i listener e ricarica i dati dal cloud.
+// Utile in modalità app (PWA) dove non c'è il pulsante di ricarica del browser,
+// e come rete di sicurezza se un aggiornamento in tempo reale viene perso.
+async function forceRefresh() {
+  if (!sync.enabled || !sync.user) {
+    try { await loadState(); } catch (_) {}
+    render();
+    toast('Aggiornato');
+    return;
+  }
+  setSyncStatus('syncing');
+  try {
+    await startCloudListener();
+    toast('Dati aggiornati');
+  } catch (err) {
+    setSyncStatus('error');
+    toast('Errore di aggiornamento', 'error');
+  }
+}
+
+/* ---------------------------------------------------------------------
+   CONDIVISIONE OWNER -> CLIENTE (Architettura A: statement pubblicato)
+   - Associazione guidata dal Proprietario tramite l'EMAIL dell'account Cliente.
+   - Il Proprietario pubblica users/{ownerUid}/statements/{clientId} (solo i dati
+     di quel cliente) e un indice links/{ownerUid_clientId} per la scoperta.
+   - Il Cliente, al login, trova lo statement che lo riguarda tramite la propria
+     email e lo legge in tempo reale: nessun codice, nessun import di file.
+--------------------------------------------------------------------- */
+
+// Impostazioni "proprie" del Cliente (le uniche che il suo account spinge).
+function clientOwnSettings() {
+  const s = state.settings || {};
+  return {
+    id: 'app',
+    theme: s.theme || 'auto',
+    clientProfile: s.clientProfile || { name: '', vat: '', address: '', email: '', phone: '' }
+  };
+}
+
+// Filtra i contesti (proj:<id>) appartenenti ai progetti del cliente, escludendo
+// "proj:all" che e' trasversale e rivelerebbe dati di altri clienti.
+function ctxBelongsToProjects(key, projIds) {
+  const m = /^proj:([^|]+)\|/.exec(key || '');
+  return !!(m && m[1] !== 'all' && projIds.has(m[1]));
+}
+
+// Statement (estratto) per un singolo cliente, indirizzato alla sua email.
+function buildClientStatement(clientId, viewerEmail) {
+  const projects = state.projects.filter(p => p.clientId === clientId);
+  const projIds = new Set(projects.map(p => p.id));
+  const entries = state.entries.filter(e => projIds.has(e.projectId));
+  const payments = state.payments.filter(p => ctxBelongsToProjects(p.ctx, projIds));
+  const reg = (state.settings && state.settings.noteRegistry) || {};
+  const noteRegistry = {};
+  for (const k in reg) if (ctxBelongsToProjects(k, projIds)) noteRegistry[k] = reg[k];
+  const client = state.clients.find(c => c.id === clientId) || null;
+  const s = state.settings || {};
+  const settings = {
+    holderName: s.holderName || '', iban: s.iban || '', bic: s.bic || '',
+    causale: s.causale || '', stampDuty: !!s.stampDuty,
+    hourlyRate: Number(s.hourlyRate) || 0, extra: Number(s.extra) || 0,
+    taxRate: Number(s.taxRate) || 0, vatRate: Number(s.vatRate) || 0,
+    withholdingTaxRate: Number(s.withholdingTaxRate) || 0,
+    noteRegistry
+  };
+  return {
+    ownerUid: sync.user.uid, clientId, viewerEmail: String(viewerEmail || '').toLowerCase(),
+    updatedAt: Date.now(),
+    payload: { projects, entries, payments, clients: client ? [client] : [], settings }
+  };
+}
+
+// Proprietario: scrive statement + indice per UN cliente. Propaga gli errori.
+async function publishStatementFor(c) {
+  const owner = sync.user.uid;
+  const email = String(c.accountEmail || '').trim().toLowerCase();
+  if (!email) return;
+  const stmt = buildClientStatement(c.id, email);
+  await sync.db.collection('users').doc(owner).collection('statements').doc(c.id).set(stmt);
+  await sync.db.collection('links').doc(owner + '_' + c.id).set({
+    ownerUid: owner, clientId: c.id, viewerEmail: email, clientName: c.name || '', updatedAt: Date.now()
+  });
+}
+
+// Proprietario: pubblica/aggiorna statement e indice per ogni cliente associato.
+async function publishAllStatements() {
+  if (!sync.user || isClient()) return;
+  let lastErr = null;
+  for (const c of state.clients) {
+    if (!(c.accountEmail && String(c.accountEmail).trim())) continue;
+    try { await publishStatementFor(c); }
+    catch (err) { lastErr = err; }
+  }
+  if (lastErr) { setSyncStatus('error'); toast('Pubblicazione dati cliente non riuscita: ' + syncErrorMsg(lastErr), 'error'); }
+}
+
+function schedulePublish() {
+  if (!sync.user || isClient()) return;
+  clearTimeout(sync.share.pubTimer);
+  sync.share.pubTimer = setTimeout(publishAllStatements, 600);
+}
+
+// Proprietario: associa l'account del cliente indicandone l'email di accesso.
+async function associateClientAccount(clientId) {
+  if (isClient()) { toast('Solo il Proprietario puo\u0027 associare gli account', 'error'); return; }
+  const c = state.clients.find(x => x.id === clientId);
+  if (!c) return;
+  openModal({
+    title: 'Associa account cliente',
+    bodyHTML: `
+      <p class="text-[14px] text-ink-soft dark:text-zinc-300 mb-3">Inserisci l'<span class="font-bold">email con cui il cliente accede</span> a HourFlow. Da quel momento, accedendo, vedra\u0027 in automatico i dati che lo riguardano \u2014 senza codici ne\u0027 file.</p>
+      <input id="assoc-email" type="email" autocomplete="off" class="field" value="${esc(c.accountEmail || c.email || '')}" placeholder="email@cliente.it" />`,
+    confirmText: 'Associa',
+    onConfirm: async (card) => {
+      const el = $('#assoc-email', card);
+      const email = (el ? el.value : '').trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showError(card, 'Inserisci un\u0027email valida'); return false; }
+      const updated = { ...c, accountEmail: email, updatedAt: Date.now() };
+      await dbPut('clients', updated);
+      state.clients = state.clients.map(x => x.id === clientId ? updated : x);
+      cloudPush();
+      try {
+        await publishStatementFor(updated);   // scrittura verificata (propaga errori)
+        toast('Account associato: il cliente vedrà i dati a breve');
+      } catch (err) {
+        toast('Associazione NON riuscita: ' + syncErrorMsg(err) + ' — pubblica le regole Firestore aggiornate', 'error');
+      }
+      renderClients();
+    }
+  });
+}
+
+// Proprietario: rimuove l'associazione (cancella statement e indice).
+function removeClientAssociation(clientId) {
+  if (isClient()) return;
+  const c = state.clients.find(x => x.id === clientId);
+  if (!c) return;
+  openModal({
+    title: 'Rimuovere l\u0027associazione?',
+    danger: true,
+    bodyHTML: `<p class="text-[14px]">Il cliente <span class="font-bold">${esc(c.name)}</span> non vedra\u0027 piu\u0027 i dati condivisi.</p>`,
+    confirmText: 'Rimuovi',
+    onConfirm: async () => {
+      const owner = sync.user.uid;
+      const updated = { ...c, accountEmail: '', updatedAt: Date.now() };
+      await dbPut('clients', updated);
+      state.clients = state.clients.map(x => x.id === clientId ? updated : x);
+      cloudPush();
+      try { await sync.db.collection('users').doc(owner).collection('statements').doc(clientId).delete(); } catch (_) {}
+      try { await sync.db.collection('links').doc(owner + '_' + clientId).delete(); } catch (_) {}
+      toast('Associazione rimossa');
+      renderClients();
+    }
+  });
+}
+
+// Cliente: trova (in tempo reale) lo statement indirizzato alla propria email e
+// lo legge. Se l'associazione arriva dopo il login, compare comunque da sola.
+function attachClientStatementByEmail() {
+  if (sync.share.linksUnsub) { try { sync.share.linksUnsub(); } catch (_) {} sync.share.linksUnsub = null; }
+  if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+  clearInterval(sync.share.pollTimer); sync.share.pollTimer = null;
+  sync.share.curKey = null;
+  sync.share.statementRef = null;
+  const email = (sync.user && sync.user.email ? sync.user.email : '').toLowerCase();
+  if (!email) return;
+  // I dati condivisi si aprono solo a identità verificata: Firebase permette di
+  // registrare account con email altrui non confermate, che altrimenti
+  // combacerebbero con viewerEmail. (La barriera server è nelle regole
+  // Firestore: request.auth.token.email_verified — vedi FIRESTORE_RULES.md.)
+  if (!sync.user.emailVerified) {
+    toast('Verifica la tua email per consultare i dati condivisi: Impostazioni → "Verifica ora", poi accedi di nuovo.', 'warning');
+    if (state.view === 'settings') renderSettings();
+    return;
+  }
+  sync.share.linksUnsub = sync.db.collection('links').where('viewerEmail', '==', email)
+    .onSnapshot((qs) => {
+      if (qs.empty) { sync.share.linked = false; sync.share.curKey = null; sync.share.statementRef = null;
+        if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+        if (state.view === 'settings') renderSettings(); return; }
+      sync.share.linked = true;
+      const link = qs.docs[0].data() || {};
+      const key = String(link.ownerUid) + '/' + String(link.clientId);
+      // Riaggancia il listener dello statement SOLO se cambia il bersaglio,
+      // così le ri-scritture dell'indice non interrompono il flusso realtime.
+      if (key !== sync.share.curKey || !sync.share.unsub) {
+        sync.share.curKey = key;
+        if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
+        const ref = sync.db.collection('users').doc(link.ownerUid).collection('statements').doc(link.clientId);
+        sync.share.statementRef = ref;
+        sync.share.unsub = ref.onSnapshot(
+          (snap) => { if (snap.exists) applyStatement(snap.data()); },
+          () => { setSyncStatus('error'); }
+        );
+      }
+      if (state.view === 'settings') renderSettings();
+    }, (err) => {
+      // Errore di lettura dell'indice (es. regole non aggiornate): rendilo visibile.
+      sync.share.linked = false;
+      setSyncStatus('error');
+      toast('Lettura dati condivisi negata: ' + syncErrorMsg(err), 'error');
+      if (state.view === 'settings') renderSettings();
+    });
+  // Rete di sicurezza: rilettura periodica nel caso il realtime cada in background.
+  sync.share.pollTimer = setInterval(pollStatement, 30000);
+}
+
+// Cliente: rilegge lo statement e lo applica solo se più recente di quello già visto.
+function pollStatement() {
+  if (!sync.share.statementRef || document.visibilityState !== 'visible') return;
+  sync.share.statementRef.get()
+    .then((snap) => {
+      if (snap && snap.exists) {
+        const data = snap.data() || {};
+        const at = typeof data.updatedAt === 'number' ? data.updatedAt : 0;
+        if (at > (sync.share.lastAppliedAt || 0)) applyStatement(data);
+      }
+    })
+    .catch(() => {});
+}
+
+// Cliente: applica lo statement ricevuto allo stato locale (sola lettura).
+async function applyStatement(data) {
+  const p = (data && data.payload) || {};
+  sync.share.lastAppliedAt = typeof data.updatedAt === 'number' ? data.updatedAt : (sync.share.lastAppliedAt || 0);
+  sync.applyingRemote = true;
+  try {
+    await dbClear('projects'); await dbClear('entries'); await dbClear('clients'); await dbClear('payments');
+    for (const r of (p.projects || [])) await dbPut('projects', r);
+    for (const r of (p.entries || [])) await dbPut('entries', r);
+    for (const r of (p.payments || [])) await dbPut('payments', r);
+    for (const r of (p.clients || [])) await dbPut('clients', r);
+    const own = state.settings || {};
+    const merged = { ...own, ...(p.settings || {}), id: 'app',
+      theme: own.theme, clientProfile: own.clientProfile };
+    await dbPut('settings', merged);
+    await loadState();
+    render();
+    setSyncStatus('synced');
+  } finally { sync.applyingRemote = false; }
+}
+
+function syncErrorMsg(err) {
+  const code = (err && err.code) ? String(err.code) : '';
+  if (code.indexOf('permission-denied') !== -1) {
+    return 'Permesso Firestore negato. Verifica regole di scrittura.';
+  }
+  return 'Errore cloud: ' + code;
+}
+
+function authError(code) {
+  const map = {
+    'auth/invalid-email': 'Formato email non corretto.',
+    'auth/missing-password': 'Digitare la password.',
+    'auth/weak-password': 'Scegliere una password di almeno 6 caratteri.',
+    'auth/email-already-in-use': 'Email già associata ad un account esistente.',
+    'auth/wrong-password': 'Credenziali non corrette.'
+  };
+  return map[code] || 'Errore autenticazione.';
+}
+
+async function doSignIn(email, password) {
+  try {
+    sync.pendingRole = null;
+    await sync.auth.signInWithEmailAndPassword(email, password);
+    toast('Login effettuato correttamente');
+  } catch (err) {
+    showAuthError(authError(err.code));
+    toast(authError(err.code), 'error');
+  }
+}
+
+async function doSignUp(email, password, role) {
+  try {
+    sync.pendingRole = (role === 'client') ? 'client' : 'owner';
+    sync.role = sync.pendingRole;
+    await sync.auth.createUserWithEmailAndPassword(email, password);
+    toast('Registrazione completata');
+  } catch (err) {
+    sync.pendingRole = null;
+    showAuthError(authError(err.code));
+    toast(authError(err.code), 'error');
+  }
+}
+
+async function doSignOut() {
+  try { await sync.auth.signOut(); toast('Uscito correttamente'); }
+  catch (err) { toast('Impossibile disconnettere', 'error'); }
+}
+
+async function doSendVerification() {
+  if (!sync.user) return;
+  try {
+    await sync.user.sendEmailVerification();
+    toast('Email di controllo recapitata');
+  } catch (err) {
+    toast(authError(err.code), 'error');
+  }
+}
+
+async function doSendPasswordReset() {
+  if (!(sync.auth && sync.user && sync.user.email)) { toast('Nessun account connesso', 'error'); return; }
+  try {
+    await sync.auth.sendPasswordResetEmail(sync.user.email);
+    toast('Email per reimpostare la password inviata a ' + sync.user.email);
+  } catch (err) {
+    toast(authError(err.code), 'error');
+  }
+}
+
+function showAuthError(message) {
+  const box = $('#a-error');
+  if (box) { box.textContent = message; box.classList.remove('hidden'); }
+}
+
+function accountPanelHTML() {
+  if (!sync.enabled) {
+    return `
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mb-4">
+        <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold mb-2">Infrastruttura Cloud</div>
+        <p class="text-[13px] text-ink-soft dark:text-zinc-400 leading-relaxed font-semibold">Configura l'oggetto <code class="text-accent">FIREBASE_CONFIG</code> nel sorgente per abilitare la sincronizzazione automatica multi-dispositivo.</p>
+      </div>`;
+  }
+  if (sync.user) {
+    const statusBase = { syncing: 'Sincronia in corso…', synced: 'Tutti i dati sono salvati', error: 'Rete assente o errore', signedout: '—', off: '—' }[sync.status] || '';
+    // In "syncing"/"error" mostriamo anche lo stadio raggiunto: aiuta a capire dove si ferma.
+    const statusText = ((sync.status === 'syncing' || sync.status === 'error') && sync.stage)
+      ? `${statusBase} · ${sync.stage}` : statusBase;
+    const role = currentRole();
+    const roleBadge = role === 'client'
+      ? `<span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-500">Cliente</span>`
+      : `<span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-accent/15 text-accent">Proprietario</span>`;
+    const verified = !!sync.user.emailVerified;
+    const verifyRow = verified
+      ? `<div class="mt-3 flex items-center gap-1.5 text-[12px] text-emerald-600 dark:text-emerald-400 font-bold"><span>✓</span> Identità verificata</div>`
+      : `<div class="mt-3 flex items-center justify-between gap-2 text-[12px] text-ink-soft dark:text-zinc-400 font-medium">
+           <span class="flex items-center gap-1.5"><span class="text-amber-500">⚠️</span> Indirizzo non verificato</span>
+           <button id="a-verify" class="px-3 py-1.5 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[12px] font-bold transition-soft">Verifica ora</button>
+         </div>`;
+    const roleNote = role === 'client'
+      ? `<p class="mt-3 text-[12px] text-ink-faint dark:text-zinc-500 font-medium">L'account del Cliente ha solo diritto di consultazione senza possibilità di sovrascrivere o eliminare sessioni.</p>`
+      : '';
+    return `
+      <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mb-4">
+        <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-3">Profilo Connesso</div>
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-[14px] font-bold truncate text-ink dark:text-white">${esc(sync.user.email || 'Account')}</span>
+              ${roleBadge}
+            </div>
+            <div class="text-[12px] text-ink-soft dark:text-zinc-400 font-semibold mt-0.5">${esc(statusText)}</div>
+          </div>
+          <button id="a-signout" class="shrink-0 px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-bold transition-soft">Esci</button>
+        </div>
+        ${verifyRow}
+        ${roleNote}
+        <div class="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+          <button id="a-passreset" class="text-[12px] font-bold text-accent hover:text-accent-hover transition-soft">Cambia password</button>
+          <span class="text-[11px] text-ink-faint dark:text-zinc-500 ml-2">— riceverai un'email per reimpostarla</span>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mb-4">
+      <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 mb-3">Autenticazione Cloud</div>
+      <div class="space-y-3">
+        <input id="a-email" type="email" autocomplete="email" class="field" placeholder="Indirizzo Email" />
+        <input id="a-pass" type="password" autocomplete="current-password" class="field" placeholder="Password (almeno 6 caratteri)" />
+        <div>
+          <div class="text-[11px] font-bold text-ink-soft dark:text-zinc-400 mb-1.5">Livello di Accesso <span class="text-ink-faint">(solo per nuove registrazioni)</span></div>
+          <div class="seg w-full text-[13px] font-bold" role="tablist" id="a-role">
+            <button type="button" data-role="owner" role="tab" aria-selected="true" class="flex-1 py-2">Proprietario</button>
+            <button type="button" data-role="client" role="tab" aria-selected="false" class="flex-1 py-2">Cliente</button>
+          </div>
+          <p class="text-[11px] text-ink-faint dark:text-zinc-500 mt-2 font-medium" id="a-role-hint">Livello Proprietario: abilitazione modifiche, coordinate IBAN e tariffe.</p>
+        </div>
+        <div id="a-error" class="hidden text-[13px] font-bold text-[#ff3b30]"></div>
+        <div class="flex gap-2 pt-1">
+          <button id="a-signin" class="flex-1 px-4 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white text-[14px] font-bold transition-soft shadow-sm">Entra</button>
+          <button id="a-signup" class="px-4 py-2.5 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[14px] font-bold transition-soft">Registrati</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---------------------------------------------------------------------
+   BOOTSTRAP PROCEDURAL (Auto-Recovery & Setup)
+--------------------------------------------------------------------- */
+// Event binding di base (nav, tema, logo): idempotente, così il percorso
+// d'emergenza di boot() non registra listener duplicati su quelli già attivi.
+let _coreEventsBound = false;
+function bindCoreEvents() {
+  if (_coreEventsBound) return;
+  _coreEventsBound = true;
+
+  $$('#nav button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+  const navC = navScrollContainer();
+  if (navC) navC.addEventListener('scroll', updateNavFade, { passive: true });
+  window.addEventListener('resize', syncNavScroll);
+
+  const themeBtn = $('#theme-toggle');
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      const isCurrentlyDark = document.body.classList.contains('dark');
+      const nextTheme = isCurrentlyDark ? 'light' : 'dark';
+      state.settings.theme = nextTheme;
+      try { dbPut('settings', state.settings); } catch (_) {}
+      syncTheme(nextTheme);
+    });
+  }
+
+  const homeLogo = $('#home-logo');
+  if (homeLogo) homeLogo.addEventListener('click', () => setView('dashboard'));
+}
+
+async function boot() {
+  try {
+    try { _db = await openDB(); } catch (dbErr) { initFallbackStorage(); }
+
+    await seedIfEmpty();
+    await loadState();
+
+    bindCoreEvents();
+    syncNavScroll();
+
+    syncTheme(state.settings.theme || 'auto');
+    bindAutoTheme();
+    setView('dashboard');
+    initSync();
+    registerServiceWorker();
+    setTimeout(checkDueReminders, 1200);
+    
+    if (_useFallback) {
+      setTimeout(() => { toast('Esecuzione locale protetta attiva.', 'warning'); }, 800);
+    }
+  } catch (err) {
+    initFallbackStorage();
+    state.settings = { ...DEFAULT_SETTINGS };
+    state.projects = [
+      { id: 'p1', name: 'Arcade BrickBoy', createdAt: '2026-06-17', hourlyRate: 30, clientId: 'c1' },
+      { id: 'p2', name: 'GameBoy BrickBoy', createdAt: '2026-05-22', hourlyRate: null, clientId: 'c2' },
+      { id: 'p3', name: 'Play station 1 BrickBoy', createdAt: '2026-03-30', hourlyRate: 35, clientId: 'c3' }
+    ];
+    state.clients = [
+      { id: 'c1', name: 'Retrogames SRL', address: 'Via Roma 12, Milano', vatCode: 'IT01234567890', email: 'billing@retrogames.it', phone: '' },
+      { id: 'c2', name: 'Console Club', address: 'Corso Sempione 8, Roma', vatCode: 'IT09876543210', email: 'amministrazione@consoleclub.it', phone: '' },
+      { id: 'c3', name: 'Sony Fans', address: 'Piazza Duomo 3, Torino', vatCode: '', email: '', phone: '' }
+    ];
+    state.entries = [
+      { id: 'e1', projectId: 'p1', spec: 'Seconda Iterazione Arcade', date: '2026-06-17', hours: 1.5 },
+      { id: 'e2', projectId: 'p2', spec: 'Seconda Iterazione istruzioni', date: '2026-05-22', hours: 5 },
+      { id: 'e3', projectId: 'p2', spec: 'Terza Iterazione istruzioni', date: '2026-06-11', hours: 2.25 },
+      { id: 'e4', projectId: 'p3', spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75 }
+    ];
+    state.activeTimer = null;
+
+    bindCoreEvents();
+    syncTheme('auto');
+    setView('dashboard');
+
+    setTimeout(() => { toast('Avvio in modalità d\'emergenza.', 'warning'); }, 800);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', boot);

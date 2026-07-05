@@ -10,23 +10,8 @@
 <title>HourFlow — Benvenuto</title>
 <link rel="icon" href="favicon.ico" sizes="any" />
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-  // Mirror the host app's Tailwind theme so the welcome feels native to HourFlow.
-  tailwind.config = {
-    darkMode: 'class',
-    theme: {
-      extend: {
-        colors: {
-          accent: { DEFAULT: '#FF9500', hover: '#F08600', soft: '#FFF4E5', darksoft: '#2c1e0a' },
-          ink: { DEFAULT: '#1d1d1f', soft: '#6e6e73', faint: '#a1a1a6' },
-          darkBg: '#121214', darkCard: '#1c1c1e', darkBorder: '#2c2c2e'
-        },
-        borderRadius: { xl2: '1.25rem' }
-      }
-    }
-  };
-</script>
+<!-- Tailwind precompilato condiviso con index.html (npm run build:css). -->
+<link rel="stylesheet" href="tailwind.css" />
 <style>
   :root { color-scheme: light dark; }
   html, body {

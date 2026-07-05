@@ -1,0 +1,9 @@
+{
+  "name": "hourflow",
+  "private": true,
+  "description": "HourFlow — Smart Freelance Suite. App statica: nessuna dipendenza a runtime.",
+  "scripts": {
+    "build:css": "npx --yes tailwindcss@3.4.17 -c tailwind.config.js -i tailwind.input.css -o tailwind.css --minify",
+    "serve": "npx --yes http-server . -p 8199 -c-1"
+  }
+}

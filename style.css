@@ -1,0 +1,132 @@
+  :root { color-scheme: light dark; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body { background: #f5f5f7; color: #1d1d1f; transition: background-color .3s, color .3s; }
+  body.dark { background: #121214; color: #f5f5f7; }
+
+  /* Transizioni fluide native */
+  .transition-soft { transition: all .22s cubic-bezier(.4,0,.2,1); }
+
+  /* Segmented Controls - Ottimizzati per il Responsive Mobile */
+  .seg-container { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .seg-container::-webkit-scrollbar { display: none; }
+  .seg { background: #e9e9eb; border-radius: 12px; padding: 3px; display: flex; width: 100%; min-width: max-content; }
+  .dark .seg { background: #2c2c2e; }
+  .seg button { border-radius: 9px; padding: 6px 12px; font-size: 13px; font-weight: 500; transition: all .2s ease; white-space: nowrap; flex: 1 1 auto; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .seg button[aria-selected="true"] {
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 .5px rgba(0,0,0,.04);
+    color: #1d1d1f;
+  }
+  .dark .seg button[aria-selected="true"] {
+    background: #3a3a3c;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    color: #fff;
+  }
+  .seg button[aria-selected="false"] { color: #6e6e73; }
+  .dark .seg button[aria-selected="false"] { color: #a1a1a6; }
+
+  /* Menu mobile: SOLO la barra di navigazione (#nav) scorre orizzontalmente con i
+     tab a larghezza naturale; gli altri segmented control restano a riempimento. */
+  .seg-container { scroll-behavior: smooth; scroll-snap-type: x proximity; }
+  #nav button { flex: 1 1 0; scroll-snap-align: center; padding: 7px 4px; }
+  .nav-ico { width: 18px; height: 18px; flex: 0 0 auto; }
+  .nav-label { display: none; }
+  .nav-scroll-wrap { position: relative; }
+  .nav-fade {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 34px;
+    pointer-events: none; border-radius: 0 12px 12px 0;
+    background: linear-gradient(to right, rgba(233,233,235,0), rgba(233,233,235,.96));
+    transition: opacity .2s ease;
+  }
+  .dark .nav-fade { background: linear-gradient(to right, rgba(44,44,46,0), rgba(44,44,46,.96)); }
+  .nav-fade.hide { opacity: 0; }
+  @media (min-width: 640px) {
+    #nav button { flex: 1 1 auto; padding: 4px 6px; gap: 4px; font-size: 12px; }
+    #nav .nav-ico { width: 16px; height: 16px; }
+    .nav-label { display: inline; }
+    .nav-fade { display: none; }
+  }
+
+  /* Indicatori ed effetti grafici */
+  .chev { transition: transform .22s ease; }
+  .chev.open { transform: rotate(90deg); }
+
+  /* Input stilizzati */
+  .field {
+    width: 100%; background: #fff; border: 1px solid #e2e2e6; border-radius: 12px;
+    padding: 11px 13px; font-size: 15px; color: #1d1d1f; outline: none;
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s, color .18s;
+  }
+  .dark .field { background: #1c1c1e; border-color: #2c2c2e; color: #f5f5f7; }
+  .field:focus { border-color: #FF9500; box-shadow: 0 0 0 4px rgba(255,149,0,.12); }
+  .field::placeholder { color: #b0b0b6; }
+  .dark .field::placeholder { color: #555559; }
+
+  /* Modali ad alte prestazioni */
+  .modal-backdrop { background: rgba(0,0,0,.42); backdrop-filter: saturate(140%) blur(8px); }
+  @keyframes pop { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+  .modal-card { animation: pop .22s cubic-bezier(.4,0,.2,1); }
+  .dark .modal-card { background: #1c1c1e; border: 1px solid #2c2c2e; }
+
+  /* Animazioni d'interfaccia */
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .fade { animation: fade .18s ease; }
+  @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  .toast { animation: toastIn .24s cubic-bezier(.4,0,.2,1); }
+
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+
+  @keyframes pulseRed {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .pulse-dot { animation: pulseRed 1.5s infinite; }
+
+  /* Impaginazione ottimale per stampa */
+  @media print {
+    /* Margine reale: @page margin:0 fa produrre stampe bianche su Safari.
+       La rimozione di URL/data/numero pagina del browser va fatta dalla
+       finestra di stampa (vedi note), non azzerando il margine. */
+    @page { size: A4; margin: 14mm; }
+
+    /* Fix 2ª pagina: senza questo, min-height:100vh del body forza l'altezza
+       dell'intera pagina e il contenuto trabocca su una seconda pagina. */
+    html, body { height: auto !important; min-height: 0 !important; }
+    body { display: block !important; background: #fff !important; color: #000 !important; }
+
+    .no-print { display: none !important; }
+    #app-shell { display: block !important; min-height: 0 !important; max-width: none !important; padding: 0 !important; margin: 0 !important; }
+    #view-payment { display: block !important; }
+
+    .print-area {
+      box-shadow: none !important; border: none !important; border-radius: 0 !important;
+      margin: 0 !important; padding: 0 !important;
+      overflow: visible !important;
+      background: #fff !important;
+    }
+
+    /* Leggibilità su Safari: WebKit in stampa schiarisce i colori e, se è attiva
+       la modalità scura, lascia il testo chiaro su sfondo bianco. Forzo colori
+       esatti, sfondo bianco e testo scuro leggibile. */
+    .print-area, .print-area * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color: #1d1d1f !important;
+    }
+    .print-area * { background: transparent !important; }
+    .print-area .text-accent { color: #FF9500 !important; }   /* titolo nota */
+    .print-area .text-red-500 { color: #c81e1e !important; }  /* ritenuta d'acconto */
+    .print-area .overflow-x-auto { overflow: visible !important; }
+    .print-table { width: 100% !important; min-width: 0 !important; }
+    .print-table th, .print-table td { padding: 8px 10px !important; border-bottom: 1px solid #e2e2e6 !important; }
+
+    /* non spezzare a metà i blocchi chiave se il contenuto cresce */
+    .print-table tr, .print-table thead { break-inside: avoid; }
+    .print-keep { break-inside: avoid; }
+  }
