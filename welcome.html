@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="HourFlow" />
+<title>HourFlow — Benvenuto</title>
+<link rel="icon" href="favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // Mirror the host app's Tailwind theme so the welcome feels native to HourFlow.
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          accent: { DEFAULT: '#FF9500', hover: '#F08600', soft: '#FFF4E5', darksoft: '#2c1e0a' },
+          ink: { DEFAULT: '#1d1d1f', soft: '#6e6e73', faint: '#a1a1a6' },
+          darkBg: '#121214', darkCard: '#1c1c1e', darkBorder: '#2c2c2e'
+        },
+        borderRadius: { xl2: '1.25rem' }
+      }
+    }
+  };
+</script>
+<style>
+  :root { color-scheme: light dark; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body { background: #f5f5f7; color: #1d1d1f; transition: background-color .3s, color .3s; }
+  body.dark { background: #121214; color: #f5f5f7; }
+
+  .transition-soft { transition: all .22s cubic-bezier(.4,0,.2,1); }
+  .tabnum { font-variant-numeric: tabular-nums; }
+
+  /* Ambient orange glow behind the hero wordmark */
+  .aura { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .aura::before {
+    content: ""; position: absolute; left: 50%; top: -10%;
+    width: 620px; height: 620px; transform: translateX(-50%);
+    background: radial-gradient(circle at center, rgba(255,149,0,.20), rgba(255,149,0,0) 62%);
+    filter: blur(8px);
+  }
+  body.dark .aura::before { background: radial-gradient(circle at center, rgba(255,149,0,.16), rgba(255,149,0,0) 62%); }
+
+  /* Logo tile */
+  .logo-tile {
+    background: linear-gradient(150deg, #FFB23E 0%, #FF9500 52%, #F08600 100%);
+    box-shadow: 0 10px 30px -8px rgba(255,149,0,.55), inset 0 1px 0 rgba(255,255,255,.45);
+  }
+
+  /* Entrance reveals */
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  .rise { animation: rise .7s cubic-bezier(.16,1,.3,1) both; }
+
+  /* Tour stage cross-fade */
+  @keyframes stageIn { from { opacity: 0; transform: translateY(8px) scale(.995); } to { opacity: 1; transform: none; } }
+  .stage-in { animation: stageIn .42s cubic-bezier(.16,1,.3,1) both; }
+
+  /* Progress dots */
+  .dot { width: 7px; height: 7px; border-radius: 99px; background: currentColor; opacity: .22; transition: all .3s cubic-bezier(.16,1,.3,1); }
+  .dot.active { width: 22px; opacity: 1; }
+  .dot.done { opacity: .5; }
+
+  /* Pulsing live indicator */
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1);} 50% { opacity:.35; transform: scale(.7);} }
+  .pulse-dot { animation: pulse 1.4s ease-in-out infinite; }
+
+  /* Mini fiscal bars */
+  .fbar { height: 8px; border-radius: 99px; transition: width .9s cubic-bezier(.16,1,.3,1); }
+
+  /* Sticky access bar entrance */
+  @keyframes barUp { from { transform: translateY(120%); } to { transform: none; } }
+  .bar-up { animation: barUp .5s cubic-bezier(.16,1,.3,1) both; }
+
+  .seg { background: #e9e9eb; border-radius: 12px; padding: 3px; display: inline-flex; }
+  body.dark .seg { background: #2c2c2e; }
+  .seg button { border-radius: 9px; padding: 6px 14px; font-size: 13px; font-weight: 600; transition: all .2s ease; }
+  .seg button[aria-selected="true"] { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); color: #1d1d1f; }
+  body.dark .seg button[aria-selected="true"] { background: #48484a; color: #fff; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rise, .stage-in, .bar-up, .pulse-dot { animation: none !important; }
+    .fbar, .dot, * { transition: none !important; }
+  }
+
+  .lift { transition: transform .25s cubic-bezier(.16,1,.3,1), box-shadow .25s; }
+  .lift:hover { transform: translateY(-3px); box-shadow: 0 16px 40px -18px rgba(0,0,0,.25); }
+
+  ::selection { background: rgba(255,149,0,.25); }
+</style>
+</head>
+<body class="min-h-screen flex flex-col transition-soft">
+
+<!-- ============================ TOP BAR ============================ -->
+<header class="sticky top-0 z-30 backdrop-blur-xl bg-[#f5f5f7]/80 dark:bg-[#121214]/80 border-b border-black/5 dark:border-white/5">
+  <div class="max-w-5xl mx-auto px-5 sm:px-6 py-3 flex items-center gap-3">
+    <div class="flex items-center gap-2.5">
+      <div class="logo-tile w-8 h-8 rounded-[10px] flex items-center justify-center">
+        <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 13V9"/><path d="M9 2h6"/></svg>
+      </div>
+      <div class="leading-tight">
+        <div class="font-bold text-[15px] tracking-tight dark:text-white">HourFlow</div>
+        <div class="text-[11px] text-ink-faint -mt-0.5 font-medium">Smart Freelance Suite</div>
+      </div>
+    </div>
+    <div class="flex-1"></div>
+    <button id="theme-toggle" class="w-9 h-9 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center text-ink-soft dark:text-ink-faint" title="Inverti tema" aria-label="Inverti tema">
+      <svg class="w-5 h-5 dark:hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+      <svg class="w-5 h-5 hidden dark:inline text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
+    </button>
+    <button id="skip-top" class="hidden sm:flex text-[13px] font-semibold text-ink-soft dark:text-zinc-400 hover:text-accent dark:hover:text-accent transition-soft items-center gap-1 px-2 py-1.5">
+      Entra direttamente
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="flex-1 w-full">
+
+  <!-- ============================ HERO ============================ -->
+  <section class="relative">
+    <div class="aura"></div>
+    <div class="relative max-w-5xl mx-auto px-5 sm:px-6 pt-16 sm:pt-24 pb-10 text-center">
+      <div class="rise inline-flex items-center gap-2 text-[12px] font-semibold text-accent bg-accent/10 dark:bg-accent-darksoft rounded-full px-3 py-1.5 mb-7" style="animation-delay:.05s">
+        <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-dot"></span>
+        HourFlow Engine v2.0 Professional
+      </div>
+
+      <p class="rise text-[12px] font-semibold text-ink-faint dark:text-zinc-500 mb-4 tracking-wide" style="animation-delay:.1s">Creato con cura da iTavix &amp; Claude Opus 4.8</p>
+
+      <div class="rise logo-tile w-20 h-20 rounded-[22px] mx-auto mb-7 flex items-center justify-center" style="animation-delay:.12s">
+        <svg class="w-11 h-11 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 13V9"/><path d="M9 2h6"/><path d="M18.5 6.5l1.2-1.2"/></svg>
+      </div>
+
+      <h1 class="rise text-[40px] sm:text-[58px] font-bold tracking-tight leading-[1.02] dark:text-white" style="animation-delay:.18s">
+        Il tuo tempo,<br class="sm:hidden"/> <span class="text-accent">fatturato</span> alla perfezione.
+      </h1>
+      <p class="rise max-w-xl mx-auto mt-5 text-[16px] sm:text-[18px] text-ink-soft dark:text-zinc-400 leading-relaxed font-medium" style="animation-delay:.24s">
+        HourFlow misura le ore, calcola la fiscalità italiana e prepara la nota di pagamento.
+        Una suite per freelance: dal cronometro al PDF, sincronizzata sul cloud.
+      </p>
+
+      <!-- Animated stat chips -->
+      <div class="rise grid grid-cols-3 gap-2 sm:gap-4 max-w-lg mx-auto mt-9" style="animation-delay:.3s">
+        <div class="bg-white dark:bg-darkCard rounded-2xl border border-black/5 dark:border-darkBorder px-3 py-4 shadow-sm">
+          <div class="text-[26px] sm:text-[32px] font-bold tracking-tight tabnum dark:text-white" data-count="13" data-suffix="">0</div>
+          <div class="text-[11px] sm:text-[12px] text-ink-faint font-semibold mt-0.5">Funzioni chiave</div>
+        </div>
+        <div class="bg-white dark:bg-darkCard rounded-2xl border border-black/5 dark:border-darkBorder px-3 py-4 shadow-sm">
+          <div class="text-[26px] sm:text-[32px] font-bold tracking-tight tabnum dark:text-white" data-count="3" data-suffix="">0</div>
+          <div class="text-[11px] sm:text-[12px] text-ink-faint font-semibold mt-0.5">Voci fiscali IT</div>
+        </div>
+        <div class="bg-white dark:bg-darkCard rounded-2xl border border-black/5 dark:border-darkBorder px-3 py-4 shadow-sm">
+          <div class="text-[26px] sm:text-[32px] font-bold tracking-tight tabnum dark:text-white" data-count="100" data-suffix="%">0%</div>
+          <div class="text-[11px] sm:text-[12px] text-ink-faint font-semibold mt-0.5">Sync in tempo reale</div>
+        </div>
+      </div>
+
+      <div class="rise flex flex-col sm:flex-row items-center justify-center gap-3 mt-10" style="animation-delay:.36s">
+        <button id="start-tour" class="w-full sm:w-auto bg-accent hover:bg-accent-hover text-white font-semibold text-[15px] rounded-full px-7 py-3.5 shadow-lg shadow-accent/30 transition-soft active:scale-[.98] flex items-center justify-center gap-2">
+          Scopri come funziona
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M6 13l6 6 6-6"/></svg>
+        </button>
+        <button id="skip-hero" class="w-full sm:w-auto text-[14px] font-semibold text-ink-soft dark:text-zinc-400 hover:text-accent dark:hover:text-accent transition-soft px-5 py-3.5">
+          Salta e accedi all'app
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ INTERACTIVE TOUR ============================ -->
+  <section id="tour" class="max-w-3xl mx-auto px-5 sm:px-6 pt-6 pb-32 scroll-mt-20">
+    <!-- Progress -->
+    <div class="flex items-center gap-4 mb-5">
+      <div class="text-[12px] font-bold uppercase tracking-wider text-ink-faint dark:text-zinc-500">
+        Tour <span id="step-num" class="text-accent">1</span> / <span id="step-tot">11</span>
+      </div>
+      <div id="dots" class="flex items-center gap-1.5 text-ink dark:text-white flex-1 flex-wrap"></div>
+    </div>
+
+    <!-- Stage -->
+    <div id="stage" class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder shadow-sm overflow-hidden"></div>
+
+    <!-- Controls -->
+    <div class="flex items-center gap-3 mt-5">
+      <button id="prev" class="px-5 py-3 rounded-full text-[14px] font-semibold text-ink-soft dark:text-zinc-300 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-soft active:scale-[.98] disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1.5">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M11 18l-6-6 6-6"/></svg>
+        Indietro
+      </button>
+      <div class="flex-1"></div>
+      <button id="next" class="px-7 py-3 rounded-full text-[14px] font-semibold text-white bg-accent hover:bg-accent-hover shadow-lg shadow-accent/25 transition-soft active:scale-[.98] flex items-center gap-1.5">
+        <span id="next-label">Avanti</span>
+        <svg id="next-ico" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============================ STICKY ACCESS BAR ============================ -->
+<div id="access-bar" class="fixed bottom-0 inset-x-0 z-40 hidden">
+  <div class="bar-up backdrop-blur-xl bg-white/85 dark:bg-darkCard/85 border-t border-black/5 dark:border-darkBorder">
+    <div class="max-w-3xl mx-auto px-5 sm:px-6 py-3.5 flex items-center gap-3">
+      <div class="min-w-0">
+        <div class="text-[14px] font-bold dark:text-white truncate">Pronta a iniziare?</div>
+        <div class="text-[12px] text-ink-faint font-medium truncate">Hai consultato le funzionalità di HourFlow.</div>
+      </div>
+      <div class="flex-1"></div>
+      <button id="enter-app" class="shrink-0 bg-accent hover:bg-accent-hover text-white font-semibold text-[14px] rounded-full px-6 py-3 shadow-lg shadow-accent/30 transition-soft active:scale-[.98] flex items-center gap-2">
+        Accedi a HourFlow
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 hidden">
+  <div class="bg-ink dark:bg-white text-white dark:text-ink text-[13px] font-semibold rounded-full px-4 py-2.5 shadow-xl"></div>
+</div>
+
+<footer class="border-t border-black/5 dark:border-white/5">
+  <div class="max-w-3xl mx-auto px-5 sm:px-6 py-5 text-center text-[12px] text-ink-faint font-medium">
+    Creato con cura da iTavix &amp; Claude Opus 4.8 · <span class="text-ink-soft dark:text-zinc-400">HourFlow Engine v2.0 Professional</span>
+  </div>
+</footer>
+
+<script>
+/* =====================================================================
+   HourFlow — Welcome / Onboarding controller
+   UI in Italian · code comments in English (project convention)
+   ===================================================================== */
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const APP_URL = 'index.html';                 // host app to open after consultation
+const SEEN_KEY = 'hourflow_welcome_seen_v1';  // local flag to avoid forcing the tour again
+
+/* ---------- Theme (mirrors host app: body.dark + localStorage) ---------- */
+const THEME_KEY = 'hourflow_theme';
+function safeGet(k){ try { return localStorage.getItem(k); } catch(_) { return null; } }
+function safeSet(k,v){ try { localStorage.setItem(k,v); } catch(_) {} }
+function applyTheme(mode){
+  const dark = mode === 'dark' || (mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.body.classList.toggle('dark', dark);
+}
+let themeMode = safeGet(THEME_KEY) || 'auto';
+applyTheme(themeMode);
+$('#theme-toggle').addEventListener('click', () => {
+  themeMode = document.body.classList.contains('dark') ? 'light' : 'dark';
+  safeSet(THEME_KEY, themeMode);
+  applyTheme(themeMode);
+});
+
+/* ---------- Enter the app ---------- */
+function enterApp(){
+  safeSet(SEEN_KEY, '1');
+  window.location.href = APP_URL;
+}
+$('#enter-app').addEventListener('click', enterApp);
+$('#skip-hero').addEventListener('click', enterApp);
+$('#skip-top').addEventListener('click', enterApp);
+
+/* ---------- Returning visitor: surface quick access immediately ---------- */
+if (safeGet(SEEN_KEY) === '1') { $('#skip-top').classList.remove('hidden'); }
+
+/* ---------- Hero stat counters ---------- */
+function animateCount(el){
+  const target = parseFloat(el.dataset.count);
+  const suffix = el.dataset.suffix || '';
+  const dur = 1100; const t0 = performance.now();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce){ el.textContent = target + suffix; return; }
+  function tick(now){
+    const p = Math.min(1, (now - t0) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(target * eased) + suffix;
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+$$('[data-count]').forEach(animateCount);
+
+/* =====================================================================
+   TOUR DATA — each step pairs HourFlow copy with a live mini-preview
+   ===================================================================== */
+function icon(colorBg, paths){
+  return `<div class="w-11 h-11 rounded-2xl ${colorBg} flex items-center justify-center shrink-0 shadow-sm">
+    <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg></div>`;
+}
+
+const STEPS = [
+  {
+    color: 'bg-blue-500',
+    ico: '<path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/>',
+    title: 'Dashboard & filtri avanzati',
+    lede: 'La centrale operativa: ore totali, tariffa di base e compenso calcolato, sempre aggiornati.',
+    points: ['Filtra per periodo: mese, anno o intervallo personalizzato', 'Isola un singolo progetto o cerca per nome', 'Indicatori e grafico si aggiornano in tempo reale'],
+    vignette: vDashboard
+  },
+  {
+    color: 'bg-orange-500',
+    ico: '<circle cx="12" cy="13" r="8"/><path d="M12 13V9"/><path d="M9 2h6"/><path d="M18.5 6.5l1.2-1.2"/>',
+    title: 'Cronometro di precisione',
+    lede: 'Avvia una sessione in tempo reale da qualsiasi progetto. Conta al millisecondo.',
+    points: ['Riprende dall\'istante esatto anche dopo un refresh', 'Arrotondamento per eccesso a 6/15/30/60 min', 'Riduce i consumi in background'],
+    vignette: vTimer
+  },
+  {
+    color: 'bg-indigo-500',
+    ico: '<path d="M3 7a2 2 0 012-2h3.5l2 2H19a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
+    title: 'Progetti & sessioni',
+    lede: 'Ogni incarico ha il suo compenso — a ore o a forfait — e il cliente collegato dall\'anagrafica.',
+    points: ['A ore o a forfait: importo fisso a prescindere dalle ore', 'Sessioni a mano o col cronometro, espandi per ore e importi'],
+    vignette: vProjects
+  },
+  {
+    color: 'bg-emerald-500',
+    ico: '<path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/>',
+    title: 'Nota Pro: rivalsa, IVA, ritenuta',
+    lede: 'Compila la nota intestata al cliente e calibra il calcolo fiscale sulla tua posizione.',
+    points: ['Rivalsa INPS, IVA e ritenuta d\'acconto automatiche', 'Regime Ordinario o Forfettario (IVA/ritenuta automatiche)', 'Causale e marca da bollo sopra 77,47 €'],
+    vignette: vFiscal
+  },
+  {
+    color: 'bg-green-600',
+    ico: '<path d="M4 11.5l5 5 11-11"/><path d="M3 16v3a1 1 0 001 1h3"/>',
+    title: 'Stato pagamento & numerazione',
+    lede: 'Assegna un numero progressivo per anno e registra acconti e saldi.',
+    points: ['Da saldare → Acconto ricevuto → Pagata, in automatico', 'Mostra Totale, Versato e Residuo', 'Scadenze con avviso scaduta / in scadenza'],
+    vignette: vPayment
+  },
+  {
+    color: 'bg-violet-500',
+    ico: '<circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0111 0"/><path d="M16 5.5a3 3 0 010 5.4"/><path d="M18.5 20a5.5 5.5 0 00-3-4.9"/>',
+    title: 'Anagrafica clienti',
+    lede: 'Denominazione, P.IVA/CF, sede, email e telefono: tutto richiamato nella nota.',
+    points: ['Un cliente può avere più progetti', 'Protetto: non eliminabile finché è collegato a un progetto'],
+    vignette: vClients
+  },
+  {
+    color: 'bg-sky-500',
+    ico: '<path d="M7 18A4 4 0 016.5 10a5.5 5.5 0 0110.7 1.3A3.4 3.4 0 0117 18z"/><path d="M9.5 14.5L12 12l2.5 2.5"/><path d="M12 12v6"/>',
+    title: 'Cloud & ruoli di accesso',
+    lede: 'Accedi con email e password: i dati si sincronizzano per singola voce su ogni dispositivo.',
+    points: ['Proprietario: pieno controllo su tariffe e coordinate', 'Cliente: consultazione protetta in sola lettura'],
+    vignette: vRoles
+  },
+  {
+    color: 'bg-zinc-600',
+    ico: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="white" stroke="none"/>',
+    title: 'Privacy dell\'IBAN',
+    lede: 'A schermo l\'IBAN è mascherato. Lo riveli quando serve, lo copi con un tocco.',
+    points: ['Prime e ultime 4 cifre visibili, il resto nascosto', 'In stampa compare per intero, in blocchi da 4'],
+    vignette: vIban
+  },
+  {
+    color: 'bg-rose-500',
+    ico: '<path d="M7 9V3h10v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v6H7z"/><circle cx="16.5" cy="12" r="0.8" fill="white" stroke="none"/>',
+    title: 'PDF, report e riepilogo annuale',
+    lede: 'Genera un PDF A4 nativo della nota e aggrega il lavoro mese per mese.',
+    points: ['PDF A4 della nota; report mese per mese', 'Riepilogo fiscale annuale con export CSV'],
+    vignette: vReport
+  },
+  {
+    color: 'bg-pink-500',
+    ico: '<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 9.5h19"/>',
+    title: 'Spese & costi',
+    lede: 'Registra costi e trasferte per conoscere il guadagno reale, non solo il fatturato.',
+    points: ['Categoria, data e progetto collegato', 'Confluiscono nel netto del riepilogo annuale'],
+    vignette: vExpenses
+  },
+  {
+    color: 'bg-cyan-600',
+    ico: '<rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="3" width="6" height="4" rx="1.5"/><path d="M9 12h6M9 16h4"/>',
+    title: 'Preventivi',
+    lede: 'Crea documenti con voci e totale, seguine lo stato ed esportali in PDF.',
+    points: ['Bozza → Inviato → Accettato/Rifiutato', 'Da accettato: crea il progetto col cliente collegato'],
+    vignette: vQuotes
+  },
+  {
+    color: 'bg-amber-500',
+    ico: '<path d="M4 14v3.5A1.5 1.5 0 005.5 19h13a1.5 1.5 0 001.5-1.5V14"/><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/>',
+    title: 'Backup & ripristino',
+    lede: 'Proteggi e trasferisci l\'archivio quando vuoi, in formato aperto.',
+    points: ['Esporta il database completo in JSON', 'Import difensivo: un record corrotto non blocca tutto'],
+    vignette: vBackup
+  },
+  {
+    color: 'bg-slate-700',
+    ico: '<path d="M20 14.5A8 8 0 119.5 4a6.5 6.5 0 0010.5 10.5z"/>',
+    title: 'Tema chiaro, scuro, automatico',
+    lede: 'Inverti l\'aspetto all\'istante. La preferenza viene salvata e sincronizzata.',
+    points: ['Modalità automatica che segue il sistema', 'Provalo: tocca la luna in alto a destra'],
+    vignette: vTheme
+  }
+];
+
+/* =====================================================================
+   VIGNETTES — small live previews. Each returns HTML; an optional
+   activate(root) hook starts any animation when the step becomes visible.
+   ===================================================================== */
+function bar(label, val, color){
+  return `<div class="flex items-center gap-2 text-[12px]">
+    <span class="w-20 text-ink-faint font-medium shrink-0">${label}</span>
+    <div class="flex-1 h-2 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden">
+      <div class="fbar ${color}" style="width:0%"></div></div>
+    <span class="w-12 text-right tabnum font-semibold dark:text-zinc-200">${val}</span></div>`;
+}
+
+function vDashboard(){
+  return {
+    html: `<div class="grid grid-cols-3 gap-2 mb-4">
+        ${['Ore','Tariffa','Compenso'].map((l,i)=>`<div class="bg-black/[.03] dark:bg-white/[.04] rounded-xl p-3">
+          <div class="text-[10px] text-ink-faint font-semibold uppercase tracking-wide">${l}</div>
+          <div class="text-[18px] font-bold tabnum dark:text-white mt-0.5" data-kpi="${i}">0</div></div>`).join('')}
+      </div>
+      <div class="flex gap-1.5 flex-wrap mb-4">
+        ${['Mese','Anno','Personalizzato'].map((l,i)=>`<span class="text-[11px] font-semibold px-2.5 py-1 rounded-full ${i===0?'bg-accent text-white':'bg-black/5 dark:bg-white/5 text-ink-soft dark:text-zinc-400'}">${l}</span>`).join('')}
+      </div>
+      <div class="flex items-end gap-1.5 h-20">
+        ${[40,65,52,80,48,72,90].map(h=>`<div class="flex-1 rounded-t-md bg-accent/70 chartbar" style="height:0%" data-h="${h}"></div>`).join('')}
+      </div>`,
+    activate(root){
+      const vals = ['142h','€ 45','€ 6.390'];
+      $$('[data-kpi]', root).forEach((el,i)=>{ setTimeout(()=> el.textContent = vals[i], 120 + i*120); });
+      $$('.chartbar', root).forEach((b,i)=> setTimeout(()=> b.style.height = b.dataset.h + '%', 120 + i*60));
+    }
+  };
+}
+
+function vTimer(){
+  return {
+    html: `<div class="text-center">
+        <div class="inline-flex items-center gap-2 text-[12px] font-semibold text-red-600 dark:text-red-400 bg-red-500/10 px-3 py-1.5 rounded-full mb-4">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-600 pulse-dot"></span> Sessione in corso
+        </div>
+        <div id="clock" class="text-[44px] sm:text-[56px] font-bold tabnum tracking-tight dark:text-white leading-none">00:00:00</div>
+        <div class="text-[12px] text-ink-faint font-medium mt-2">Sito vetrina · Sviluppo front-end</div>
+        <div class="text-[13px] mt-4"><span class="text-ink-soft dark:text-zinc-400">Maturato finora </span><span id="earn" class="font-bold text-accent tabnum">€ 0,00</span></div>
+      </div>`,
+    activate(root){
+      let s = 0; const clk = $('#clock', root); const earn = $('#earn', root);
+      const rate = 45; // €/h, demo
+      this._iv = setInterval(()=>{
+        s++;
+        const h = String(Math.floor(s/3600)).padStart(2,'0');
+        const m = String(Math.floor(s%3600/60)).padStart(2,'0');
+        const sec = String(s%60).padStart(2,'0');
+        clk.textContent = `${h}:${m}:${sec}`;
+        earn.textContent = '€ ' + (s/3600*rate).toFixed(2).replace('.', ',');
+      }, 1000);
+    },
+    deactivate(){ clearInterval(this._iv); }
+  };
+}
+
+function vProjects(){
+  return {
+    html: `<div class="space-y-2">
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-black/[.03] dark:bg-white/[.04]">
+        <div class="w-9 h-9 rounded-lg bg-indigo-500/15 text-indigo-500 flex items-center justify-center font-bold text-[13px]">SV</div>
+        <div class="flex-1 min-w-0"><div class="font-semibold text-[14px] dark:text-white truncate">Sito vetrina</div><div class="text-[11px] text-ink-faint">Studio Bianchi · € 45/h</div></div>
+        <div class="text-right"><div class="font-bold text-[14px] tabnum dark:text-white">€ 1.350</div><div class="text-[11px] text-ink-faint tabnum">30 h</div></div>
+        <button class="w-8 h-8 rounded-full bg-accent/15 text-accent flex items-center justify-center"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 12V8"/></svg></button>
+      </div>
+      <div class="pl-12 pr-3 space-y-1.5">
+        ${[['12/06','Layout & hero','4 h','€ 180'],['14/06','Sezione contatti','3 h','€ 135'],['18/06','Ottimizzazioni','2,5 h','€ 112']].map(r=>`
+          <div class="flex items-center gap-2 text-[12px] py-1.5 border-b border-black/5 dark:border-white/5">
+            <span class="text-ink-faint tabnum w-10">${r[0]}</span>
+            <span class="flex-1 truncate dark:text-zinc-300">${r[1]}</span>
+            <span class="text-ink-faint tabnum">${r[2]}</span>
+            <span class="font-semibold tabnum dark:text-zinc-200 w-12 text-right">${r[3]}</span></div>`).join('')}
+      </div></div>`
+  };
+}
+
+function vFiscal(){
+  return {
+    html: `<div class="space-y-2.5">
+        ${bar('Imponibile','€ 1.350','bg-emerald-500')}
+        ${bar('+ Rivalsa 4%','€ 54','bg-teal-500')}
+        ${bar('+ IVA 22%','€ 308','bg-blue-500')}
+        ${bar('− Ritenuta 20%','−€ 281','bg-rose-500')}
+      </div>
+      <div class="mt-4 pt-3 border-t border-black/5 dark:border-white/10 flex items-center justify-between">
+        <span class="text-[13px] font-semibold text-ink-soft dark:text-zinc-400">Netto a pagare</span>
+        <span id="netto" class="text-[22px] font-bold tabnum text-accent">€ 0</span>
+      </div>`,
+    activate(root){
+      const widths = [70, 12, 50, 36];
+      $$('.fbar', root).forEach((b,i)=> setTimeout(()=> b.style.width = widths[i] + '%', 120 + i*140));
+      const n = $('#netto', root); const target = 1431; const t0 = performance.now();
+      const tick = now => { const p = Math.min(1,(now-t0)/1000); const e = 1-Math.pow(1-p,3);
+        n.textContent = '€ ' + Math.round(target*e).toLocaleString('it-IT');
+        if(p<1) requestAnimationFrame(tick); };
+      setTimeout(()=> requestAnimationFrame(tick), 300);
+    }
+  };
+}
+
+function vPayment(){
+  const states = [
+    ['Da saldare','bg-red-500/15 text-red-600 dark:text-red-400', 0],
+    ['Acconto ricevuto','bg-amber-500/15 text-amber-600 dark:text-amber-400', 55],
+    ['Pagata','bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', 100]
+  ];
+  return {
+    html: `<div class="flex items-center justify-between mb-4">
+        <div class="text-[12px] font-semibold text-ink-faint">Nota N. <span class="dark:text-zinc-300">0007/2026</span></div>
+        <span id="pstate" class="text-[12px] font-bold px-3 py-1 rounded-full ${states[0][1]}">${states[0][0]}</span>
+      </div>
+      <div class="h-2.5 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden mb-3">
+        <div id="pbar" class="h-full rounded-full bg-emerald-500 transition-all duration-700" style="width:0%"></div>
+      </div>
+      <div class="grid grid-cols-3 gap-2 text-center">
+        ${[['Totale','€ 1.431'],['Versato','€ 0'],['Residuo','€ 1.431']].map((c,i)=>`<div class="bg-black/[.03] dark:bg-white/[.04] rounded-xl py-2.5">
+          <div class="text-[10px] text-ink-faint font-semibold uppercase">${c[0]}</div>
+          <div class="text-[14px] font-bold tabnum dark:text-white mt-0.5" data-pc="${i}">${c[1]}</div></div>`).join('')}
+      </div>`,
+    activate(root){
+      const ps = $('#pstate', root), pb = $('#pbar', root);
+      const cells = $$('[data-pc]', root);
+      const seq = [
+        ['€ 0','€ 1.431'],          // da saldare
+        ['€ 800','€ 631'],          // acconto
+        ['€ 1.431','€ 0']           // pagata
+      ];
+      let i = 0;
+      const apply = () => {
+        ps.textContent = states[i][0];
+        ps.className = `text-[12px] font-bold px-3 py-1 rounded-full ${states[i][1]}`;
+        pb.style.width = states[i][2] + '%';
+        cells[1].textContent = seq[i][0]; cells[2].textContent = seq[i][1];
+      };
+      apply();
+      this._iv = setInterval(()=>{ i = (i+1) % 3; apply(); }, 1800);
+    },
+    deactivate(){ clearInterval(this._iv); }
+  };
+}
+
+function vClients(){
+  return {
+    html: `<div class="flex items-start gap-3">
+      <div class="w-12 h-12 rounded-2xl bg-violet-500/15 text-violet-500 flex items-center justify-center font-bold text-[16px]">SB</div>
+      <div class="flex-1 min-w-0">
+        <div class="font-bold text-[15px] dark:text-white">Studio Bianchi S.r.l.</div>
+        <div class="text-[12px] text-ink-faint mb-2">Cliente · 2 progetti collegati</div>
+        ${[['P.IVA','IT 0123456789 0'],['Sede','Via Roma 12, Milano'],['Email','info@studiobianchi.it']].map(r=>`
+          <div class="flex gap-2 text-[12px] py-0.5"><span class="w-12 text-ink-faint font-medium shrink-0">${r[0]}</span><span class="dark:text-zinc-300 truncate">${r[1]}</span></div>`).join('')}
+      </div></div>`
+  };
+}
+
+function vRoles(){
+  return {
+    html: `<div class="seg mb-4" role="tablist" id="role-seg">
+        <button data-r="owner" aria-selected="true" class="dark:text-zinc-200">Proprietario</button>
+        <button data-r="client" aria-selected="false" class="dark:text-zinc-200">Cliente</button>
+      </div>
+      <div id="role-grid" class="grid grid-cols-2 gap-2"></div>`,
+    activate(root){
+      const grid = $('#role-grid', root);
+      const caps = [
+        ['Modifica tariffe', true],
+        ['Coordinate IBAN', true],
+        ['Crea progetti', true],
+        ['Registra pagamenti', true],
+        ['Consulta la nota', true],
+        ['Scarica il PDF', true]
+      ];
+      // client: only read actions allowed
+      const clientAllow = [false,false,false,false,true,true];
+      const render = (owner) => {
+        grid.innerHTML = caps.map((c,i)=>{
+          const ok = owner ? c[1] : clientAllow[i];
+          return `<div class="flex items-center gap-2 text-[12px] font-medium p-2.5 rounded-xl ${ok?'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400':'bg-black/[.04] dark:bg-white/[.04] text-ink-faint line-through'}">
+            <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">${ok?'<path d="M20 6L9 17l-5-5"/>':'<path d="M18 6L6 18"/><path d="M6 6l12 12"/>'}</svg>
+            ${c[0]}</div>`;
+        }).join('');
+      };
+      render(true);
+      $$('#role-seg button', root).forEach(b=> b.addEventListener('click', ()=>{
+        $$('#role-seg button', root).forEach(x=> x.setAttribute('aria-selected', String(x===b)));
+        render(b.dataset.r === 'owner');
+      }));
+    }
+  };
+}
+
+function vIban(){
+  const full = 'IT60 X054 2811 1010 0000 0123 456';
+  const masked = 'IT60 •••• •••• •••• •••• •••• 456';
+  return {
+    html: `<div class="bg-black/[.03] dark:bg-white/[.04] rounded-xl p-4">
+        <div class="text-[10px] text-ink-faint font-semibold uppercase tracking-wide mb-1.5">Coordinate bancarie</div>
+        <div id="iban" class="font-mono text-[14px] sm:text-[15px] tracking-wide dark:text-white break-all">${masked}</div>
+        <div class="flex gap-2 mt-3">
+          <button id="iban-show" class="text-[12px] font-semibold px-3 py-1.5 rounded-full bg-black/5 dark:bg-white/5 dark:text-zinc-200 hover:bg-black/10 dark:hover:bg-white/10 transition-soft">Mostra</button>
+          <button id="iban-copy" class="text-[12px] font-semibold px-3 py-1.5 rounded-full bg-accent/15 text-accent hover:bg-accent/25 transition-soft">Copia</button>
+        </div>
+      </div>`,
+    activate(root){
+      const el = $('#iban', root), show = $('#iban-show', root);
+      let revealed = false;
+      show.addEventListener('click', ()=>{
+        revealed = !revealed;
+        el.textContent = revealed ? full : masked;
+        show.textContent = revealed ? 'Nascondi' : 'Mostra';
+      });
+      $('#iban-copy', root).addEventListener('click', ()=> showToast('IBAN copiato negli appunti'));
+    }
+  };
+}
+
+function vReport(){
+  return {
+    html: `<div class="grid sm:grid-cols-2 gap-4 items-center">
+      <div class="mx-auto w-[150px] aspect-[1/1.414] bg-white dark:bg-zinc-100 rounded-md shadow-md border border-black/10 p-3 text-zinc-900">
+        <div class="flex justify-between items-start"><div class="text-[9px] font-bold text-accent">HourFlow</div><div class="text-[7px] text-zinc-400 text-right">Nota N. 0007/2026<br/>20/06/2026</div></div>
+        <div class="mt-2 space-y-1">${[1,2,3].map(()=>`<div class="h-1 rounded bg-zinc-200"></div>`).join('')}</div>
+        <div class="mt-2 border-t border-zinc-200 pt-1.5 flex justify-between text-[8px]"><span class="text-zinc-400">Netto</span><span class="font-bold">€ 1.431</span></div>
+        <div class="mt-1 text-[7px] text-emerald-600 font-bold">● Pagata</div>
+      </div>
+      <div>
+        <div class="text-[11px] font-semibold text-ink-faint uppercase tracking-wide mb-2">Report mensile</div>
+        ${[['Apr','€ 4.1k',60],['Mag','€ 5.2k',76],['Giu','€ 6.4k',94]].map(r=>`
+          <div class="flex items-center gap-2 text-[12px] mb-1.5">
+            <span class="w-8 text-ink-faint">${r[0]}</span>
+            <div class="flex-1 h-3 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden"><div class="fbar bg-accent h-full" style="width:0%" data-w="${r[2]}"></div></div>
+            <span class="w-12 text-right font-semibold tabnum dark:text-zinc-200">${r[1]}</span></div>`).join('')}
+      </div></div>`,
+    activate(root){
+      $$('.fbar', root).forEach((b,i)=> setTimeout(()=> b.style.width = b.dataset.w + '%', 150 + i*150));
+    }
+  };
+}
+
+function vBackup(){
+  return {
+    html: `<div class="grid grid-cols-2 gap-3">
+      ${[['Esporta JSON','Backup completo','bg-amber-500','<path d="M12 4v10"/><path d="M8 10l4 4 4-4"/><path d="M4 18h16"/>'],
+         ['Esporta CSV','Per Excel / Numbers','bg-emerald-500','<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16"/><path d="M10 4v16"/>']].map(c=>`
+        <div class="bg-black/[.03] dark:bg-white/[.04] rounded-xl p-3.5 lift">
+          <div class="w-9 h-9 rounded-xl ${c[2]} flex items-center justify-center mb-2"><svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${c[3]}</svg></div>
+          <div class="text-[13px] font-bold dark:text-white">${c[0]}</div>
+          <div class="text-[11px] text-ink-faint">${c[1]}</div></div>`).join('')}
+      </div>
+      <div class="mt-3 text-[12px] text-ink-soft dark:text-zinc-400 bg-accent/10 rounded-xl p-3 flex gap-2">
+        <svg class="w-4 h-4 text-accent shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><circle cx="12" cy="16.5" r="0.6" fill="currentColor"/></svg>
+        Ripristino difensivo: un singolo record corrotto non interrompe l'import.
+      </div>`
+  };
+}
+
+function vExpenses(){
+  return {
+    html: `<div class="space-y-1.5">
+      ${[['Abbonamento software','Software','€ 29,00'],['Trasferta cliente','Trasferte','€ 84,50'],['Licenza plugin','Software','€ 49,00']].map(r=>`
+        <div class="flex items-center gap-2 text-[12px] py-1.5 border-b border-black/5 dark:border-white/5">
+          <span class="flex-1 truncate dark:text-zinc-200 font-semibold">${r[0]}</span>
+          <span class="px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-[10px] text-ink-faint">${r[1]}</span>
+          <span class="font-bold tabnum text-red-500 w-16 text-right">${r[2]}</span></div>`).join('')}
+      </div>
+      <div class="mt-3 flex items-center justify-between bg-accent/10 rounded-xl px-3 py-2">
+        <span class="text-[12px] font-semibold text-ink-soft dark:text-zinc-400">Compenso netto spese</span>
+        <span class="text-[14px] font-bold tabnum text-accent">€ 6.227</span>
+      </div>`
+  };
+}
+
+function vQuotes(){
+  return {
+    html: `<div class="bg-white dark:bg-darkCard rounded-xl border border-black/5 dark:border-darkBorder p-3.5 shadow-sm">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[13px] font-extrabold tabnum dark:text-white">PREV-0007/2026</span>
+          <span class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Accettato</span>
+        </div>
+        <div class="text-[11px] text-ink-faint mb-2">Studio Bianchi · 3 voci</div>
+        <div class="space-y-1 text-[11px]">
+          ${[['Sito vetrina','€ 1.200'],['SEO base','€ 350'],['Manutenzione','€ 180']].map(r=>`<div class="flex justify-between"><span class="dark:text-zinc-300">${r[0]}</span><span class="tabnum dark:text-zinc-200">${r[1]}</span></div>`).join('')}
+        </div>
+        <div class="mt-2 pt-2 border-t border-black/5 dark:border-white/10 flex justify-between">
+          <span class="text-[12px] font-semibold text-ink-soft dark:text-zinc-400">Totale</span>
+          <span class="text-[15px] font-extrabold tabnum text-accent">€ 1.730</span>
+        </div>
+        <button class="mt-3 w-full text-[12px] font-bold text-accent border border-accent/30 rounded-full py-1.5 flex items-center justify-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>Crea progetto
+        </button>
+      </div>`
+  };
+}
+
+function vTheme(){
+  return {
+    html: `<div class="text-center py-2">
+        <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-4 font-medium">Prova il cambio tema in tempo reale.</p>
+        <button id="demo-theme" class="inline-flex items-center gap-2 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15 rounded-full px-5 py-3 font-semibold text-[14px] dark:text-zinc-200 transition-soft active:scale-[.98]">
+          <svg class="w-5 h-5 dark:hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          <svg class="w-5 h-5 hidden dark:inline text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
+          <span class="dark:hidden">Passa allo scuro</span><span class="hidden dark:inline">Passa al chiaro</span>
+        </button>
+        <div class="text-[12px] text-ink-faint mt-4 font-medium">Disponibile anche la modalità <strong class="dark:text-zinc-300">automatica</strong>, che segue il sistema.</div>
+      </div>`,
+    activate(root){
+      $('#demo-theme', root).addEventListener('click', ()=>{
+        themeMode = document.body.classList.contains('dark') ? 'light' : 'dark';
+        safeSet(THEME_KEY, themeMode); applyTheme(themeMode);
+      });
+    }
+  };
+}
+
+/* =====================================================================
+   TOUR ENGINE
+   ===================================================================== */
+const stage = $('#stage'); const dotsWrap = $('#dots');
+let idx = 0; let activeVig = null;
+$('#step-tot').textContent = STEPS.length;
+
+// Build progress dots
+STEPS.forEach((_, i) => {
+  const d = document.createElement('button');
+  d.className = 'dot'; d.setAttribute('aria-label', 'Vai al passo ' + (i+1));
+  d.addEventListener('click', () => goTo(i));
+  dotsWrap.appendChild(d);
+});
+
+function renderStep(){
+  if (activeVig && activeVig.deactivate) activeVig.deactivate();
+  const s = STEPS[idx];
+  const v = s.vignette ? s.vignette() : { html: '' };
+  activeVig = v;
+
+  stage.innerHTML = `<div class="stage-in">
+      <div class="p-5 sm:p-6 flex items-start gap-4 border-b border-black/5 dark:border-white/5">
+        ${icon(s.color, s.ico)}
+        <div class="min-w-0">
+          <h3 class="text-[18px] sm:text-[20px] font-bold tracking-tight dark:text-white leading-tight">${s.title}</h3>
+          <p class="text-[13px] sm:text-[14px] text-ink-soft dark:text-zinc-400 mt-1 leading-relaxed">${s.lede}</p>
+        </div>
+      </div>
+      <div class="p-5 sm:p-6 grid md:grid-cols-2 gap-5 items-center">
+        <ul class="space-y-2.5">
+          ${s.points.map(p=>`<li class="flex gap-2.5 text-[13px] text-ink-soft dark:text-zinc-300 leading-snug">
+            <svg class="w-4 h-4 text-accent shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            <span>${p}</span></li>`).join('')}
+        </ul>
+        <div class="bg-[#f5f5f7] dark:bg-[#161618] rounded-2xl p-4 border border-black/5 dark:border-white/5">${v.html}</div>
+      </div>
+    </div>`;
+
+  if (v.activate) v.activate(stage);
+
+  // Progress UI
+  $('#step-num').textContent = idx + 1;
+  $$('#dots .dot').forEach((d,i)=>{
+    d.classList.toggle('active', i === idx);
+    d.classList.toggle('done', i < idx);
+  });
+
+  // Controls
+  $('#prev').disabled = idx === 0;
+  const last = idx === STEPS.length - 1;
+  $('#next-label').textContent = last ? 'Accedi a HourFlow' : 'Avanti';
+  $('#next-ico').innerHTML = last
+    ? '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>'
+    : '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>';
+
+  // Reveal sticky access bar once the user reaches the final step
+  if (last) revealAccessBar();
+}
+
+function goTo(i){
+  idx = Math.max(0, Math.min(STEPS.length - 1, i));
+  renderStep();
+}
+function next(){
+  if (idx === STEPS.length - 1) { enterApp(); return; }
+  goTo(idx + 1);
+}
+function prev(){ goTo(idx - 1); }
+
+$('#next').addEventListener('click', next);
+$('#prev').addEventListener('click', prev);
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, textarea, button')) return;
+  if (e.key === 'ArrowRight') next();
+  if (e.key === 'ArrowLeft') prev();
+});
+
+/* ---------- Access bar reveal ---------- */
+let barShown = false;
+function revealAccessBar(){
+  if (barShown) return; barShown = true;
+  $('#access-bar').classList.remove('hidden');
+}
+
+/* ---------- Start / scroll into tour ---------- */
+$('#start-tour').addEventListener('click', () => {
+  $('#tour').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+});
+
+/* ---------- Toast ---------- */
+let toastIv;
+function showToast(msg){
+  const t = $('#toast'); t.querySelector('div').textContent = msg;
+  t.classList.remove('hidden');
+  clearTimeout(toastIv);
+  toastIv = setTimeout(()=> t.classList.add('hidden'), 1800);
+}
+
+/* ---------- Pause/resume timer-based vignettes off-screen (battery) ---------- */
+document.addEventListener('visibilitychange', () => {
+  if (!activeVig) return;
+  if (document.hidden && activeVig.deactivate) activeVig.deactivate();
+  else if (!document.hidden && activeVig.activate) activeVig.activate(stage);
+});
+
+// Boot
+renderStep();
+</script>
+</body>
+</html>

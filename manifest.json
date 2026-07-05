@@ -1,0 +1,16 @@
+{
+  "name": "HourFlow — Smart Freelance Suite",
+  "short_name": "HourFlow",
+  "description": "Tracciamento ore freelance, note di pagamento, clienti e report mensili.",
+  "lang": "it",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f5f7",
+  "theme_color": "#FF9500",
+  "icons": [
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "maskable" }
+  ]
+}
