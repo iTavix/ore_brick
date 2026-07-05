@@ -393,8 +393,29 @@ function hrs(n) {
   return v.toLocaleString('it-IT', { maximumFractionDigits: 2 }) + ' h';
 }
 
+// Arrotondamento monetario a 2 decimali: i totali fiscali vanno fissati voce per
+// voce, altrimenti i float IEEE 754 fanno divergere i centesimi tra nota, PDF e storico.
+function round2(n) {
+  return Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+}
+
+// Una data ISO è valida solo se il round-trip Date la riproduce identica
+// (il solo regex accetta impossibili come 2026-02-30).
+function isValidIsoDate(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+// Giorni interi da a → b, calcolati in UTC: immune a fuso locale e ora legale.
+function daysBetweenIso(a, b) {
+  const utc = (iso) => { const [y, m, d] = iso.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((utc(b) - utc(a)) / 86400000);
+}
+
 function dateIt(iso) {
-  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '—';
+  if (!isValidIsoDate(iso)) return '—';
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
 }
@@ -533,20 +554,20 @@ function buildNoteModel() {
   const filteredIds = new Set(getFilteredEntries().map(e => e.id));
   const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
   const tH = flat.reduce((a, e) => a + (Number(e.hours) || 0), 0);
-  const baseCompensation = flat.reduce((a, e) => a + (Number(e.hours) || 0) * (Number(e.rate) || 0), 0) + flatScopedTotal();
+  const baseCompensation = round2(flat.reduce((a, e) => a + (Number(e.hours) || 0) * (Number(e.rate) || 0), 0) + flatScopedTotal());
   const { taxP, vatP, wTaxP, forfettario } = effectiveFiscal(s);
-  const taxValue = baseCompensation * taxP / 100;
-  const subtotalWithTax = baseCompensation + taxValue;
-  const vatValue = subtotalWithTax * vatP / 100;
-  const wTaxValue = subtotalWithTax * wTaxP / 100;
-  const grandTotal = subtotalWithTax + vatValue - wTaxValue;
+  const taxValue = round2(baseCompensation * taxP / 100);
+  const subtotalWithTax = round2(baseCompensation + taxValue);
+  const vatValue = round2(subtotalWithTax * vatP / 100);
+  const wTaxValue = round2(subtotalWithTax * wTaxP / 100);
+  const grandTotal = round2(subtotalWithTax + vatValue - wTaxValue);
   const stampDuty = (vatP === 0 && s.stampDuty && grandTotal > 77.47) ? 2 : 0;
-  const payable = grandTotal + stampDuty;
+  const payable = round2(grandTotal + stampDuty);
   const ctx = paymentContext();
   const note = getNote(ctx.key);
   const ctxPayments = paymentsForContext(ctx.key);
-  const paid = ctxPayments.reduce((a, p) => a + (Number(p.amount) || 0), 0);
-  const residual = payable - paid;
+  const paid = round2(ctxPayments.reduce((a, p) => a + (Number(p.amount) || 0), 0));
+  const residual = round2(payable - paid);
   const clientNames = [...new Set(flat.map(x => x.clientName).filter(Boolean))];
   const clientAddresses = [...new Set(flat.map(x => x.clientAddress).filter(Boolean))];
   const clientVats = [...new Set(flat.map(x => x.clientVat).filter(Boolean))];
@@ -1340,6 +1361,8 @@ function render() {
   if (isClient() && OWNER_ONLY_VIEWS.indexOf(state.view) !== -1) { setView('dashboard'); return; }
   applyRoleVisibility();
   updateUserBadge();
+  ensureTimerTicking(); // riattiva il ciclo orologio se un timer è stato ripristinato
+
   try {
     if (state.view === 'dashboard') renderDashboard();
     else if (state.view === 'payment') renderPayment();
@@ -1786,6 +1809,7 @@ async function startProjectTimer(projectId) {
       };
       state.activeTimer = timerObj;
       await dbPut('timer', timerObj);
+      ensureTimerTicking();
       renderDashboard();
       toast('Timer avviato correttamente');
     }
@@ -1806,11 +1830,13 @@ async function toggleTimerPause() {
 }
 
 // Round billable hours UP to the nearest increment (minutes). 0 = no rounding.
+// L'epsilon evita che un multiplo esatto dello step venga gonfiato di uno scatto
+// dai float (es. 0.2/0.1 → 2.0000000000000004 → ceil 3: 12 minuti fatturati 18).
 function roundUpHours(h, incMinutes) {
   const inc = Number(incMinutes) || 0;
   if (inc <= 0) return h;
   const step = inc / 60;
-  return Math.round(Math.ceil(h / step) * step * 100) / 100;
+  return Math.round(Math.ceil(h / step - 1e-9) * step * 100) / 100;
 }
 
 async function stopAndSaveTimer() {
@@ -1889,11 +1915,22 @@ async function discardTimer() {
    Aggiorna direttamente i nodi interessati senza toccare il DOM circostante.
 --------------------------------------------------------------------- */
 let _lastTickTime = 0;
+let _timerInterval = null;
+
+// Il ciclo a 500ms gira SOLO con un timer attivo: senza timer l'interval si
+// auto-spegne (batteria/CPU su mobile) e riparte da ensureTimerTicking().
+function ensureTimerTicking() {
+  if (state.activeTimer && !_timerInterval) {
+    _timerInterval = setInterval(updateTimerUI, 500);
+  }
+}
+
 function updateTimerUI() {
   if (!state.activeTimer) {
     const navWidget = $('#nav-timer-widget');
     if (navWidget) navWidget.classList.add('hidden');
     document.title = "HourFlow";
+    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
     return;
   }
   
@@ -1928,12 +1965,10 @@ function updateTimerUI() {
   }
 }
 
-// Precision clock cycle
-setInterval(updateTimerUI, 500);
-
 /* Gestione risparmio energetico se la pagina non è visibile */
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === 'visible') {
+    ensureTimerTicking();
     updateTimerUI();
   }
 });
@@ -2520,23 +2555,23 @@ function nextNoteSeq(year) {
   for (const k in reg) { if (reg[k] && reg[k].year === year && reg[k].n > max) max = reg[k].n; }
   return max + 1;
 }
-// Add N days to an ISO date (yyyy-mm-dd).
+// Add N days to an ISO date (yyyy-mm-dd). Aritmetica in UTC: il risultato non
+// dipende dal fuso locale né dai cambi di ora legale.
 function addDaysIso(iso, n) {
-  const base = (/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) ? iso : todayIso();
-  const d = new Date(base + 'T00:00:00');
-  d.setDate(d.getDate() + n);
+  const base = isValidIsoDate(iso) ? iso : todayIso();
+  const [y, m, d] = base.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
   const p = (x) => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
 }
 
 // Due status of a note given its residual: 'overdue' | 'soon' (<=7 days) | 'ok' | null.
 function dueStatus(due, residual) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(due || '')) return null;
+  if (!isValidIsoDate(due)) return null;
   if ((Number(residual) || 0) <= 0.005) return null; // saldata: nessuna scadenza attiva
   const t = todayIso();
   if (due < t) return 'overdue';
-  const days = Math.round((new Date(due + 'T00:00:00') - new Date(t + 'T00:00:00')) / 86400000);
-  return days <= 7 ? 'soon' : 'ok';
+  return daysBetweenIso(t, due) <= 7 ? 'soon' : 'ok';
 }
 
 // On launch, surface notes still to be collected (uses payableSnapshot, set when a
@@ -2549,11 +2584,11 @@ function checkDueReminders() {
     let overdue = 0, soon = 0;
     for (const k in reg) {
       const note = reg[k];
-      if (!note || !/^\d{4}-\d{2}-\d{2}$/.test(note.dueDate || '') || note.payableSnapshot == null) continue;
+      if (!note || !isValidIsoDate(note.dueDate) || note.payableSnapshot == null) continue;
       const paid = paymentsForContext(k).reduce((a, p) => a + (Number(p.amount) || 0), 0);
       if (paid >= note.payableSnapshot - 0.005) continue; // saldata
       if (note.dueDate < today) overdue++;
-      else if (Math.round((new Date(note.dueDate + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000) <= 7) soon++;
+      else if (daysBetweenIso(today, note.dueDate) <= 7) soon++;
     }
     if (overdue > 0) toast(`${overdue} ${overdue > 1 ? 'note scadute' : 'nota scaduta'} da incassare`, 'warning');
     else if (soon > 0) toast(`${soon} ${soon > 1 ? 'note in scadenza' : 'nota in scadenza'}`, 'warning');
@@ -2699,25 +2734,25 @@ function renderPayment() {
   const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
 
   const tH = flat.reduce((acc, current) => acc + Number(current.hours || 0), 0);
-  const baseCompensation = flat.reduce((acc, entry) => acc + (Number(entry.hours || 0) * Number(entry.rate || 0)), 0) + flatScopedTotal();
-  
+  const baseCompensation = round2(flat.reduce((acc, entry) => acc + (Number(entry.hours || 0) * Number(entry.rate || 0)), 0) + flatScopedTotal());
+
   const { taxP: taxPercentage, vatP: vatPercentage, wTaxP: wTaxPercentage, forfettario } = effectiveFiscal(s);
 
-  const taxValue = (baseCompensation * taxPercentage) / 100;
-  const subtotalWithTax = baseCompensation + taxValue; 
-  const vatValue = (subtotalWithTax * vatPercentage) / 100;
-  const wTaxValue = (subtotalWithTax * wTaxPercentage) / 100;
-  const grandTotal = subtotalWithTax + vatValue - wTaxValue;
+  const taxValue = round2((baseCompensation * taxPercentage) / 100);
+  const subtotalWithTax = round2(baseCompensation + taxValue);
+  const vatValue = round2((subtotalWithTax * vatPercentage) / 100);
+  const wTaxValue = round2((subtotalWithTax * wTaxPercentage) / 100);
+  const grandTotal = round2(subtotalWithTax + vatValue - wTaxValue);
 
   // Stato pagamento per il contesto di fatturazione corrente.
   const ctx = paymentContext();
   const note = getNote(ctx.key);
   // Marca da bollo: 2 € sulle note esenti IVA sopra 77,47 € (se abilitata).
   const stampDuty = (vatPercentage === 0 && s.stampDuty && grandTotal > 77.47) ? 2 : 0;
-  const payable = grandTotal + stampDuty;
+  const payable = round2(grandTotal + stampDuty);
   const ctxPayments = paymentsForContext(ctx.key);
-  const paid = ctxPayments.reduce((a, p) => a + (Number(p.amount) || 0), 0);
-  const residual = payable - paid;
+  const paid = round2(ctxPayments.reduce((a, p) => a + (Number(p.amount) || 0), 0));
+  const residual = round2(payable - paid);
   const hasTotal = payable > 0.005;
   const payStatus = !hasTotal ? null : (residual <= 0.005 && paid > 0 ? 'paid' : (paid > 0 ? 'acconto' : 'due'));
   // Snapshot del totale sulla nota: consente ai promemoria di sapere quali note
@@ -3685,10 +3720,10 @@ function nextQuoteSeq(year) {
   return max + 1;
 }
 function quoteTotal(q) {
-  const subtotal = (q.items || []).reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+  const subtotal = round2((q.items || []).reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0));
   const { vatP } = effectiveFiscal(state.settings);
-  const vat = q.applyVat ? subtotal * vatP / 100 : 0;
-  return { subtotal, vat, total: subtotal + vat };
+  const vat = q.applyVat ? round2(subtotal * vatP / 100) : 0;
+  return { subtotal, vat, total: round2(subtotal + vat) };
 }
 
 function renderQuotes() {
@@ -5002,21 +5037,33 @@ async function pushNow() {
     // (1) Documento padre: impostazioni come oggetto singolo (LWW per timestamp).
     // Il Cliente pubblica SOLO le proprie impostazioni (tema/profilo/collegamento),
     // mai i dati del Proprietario ricevuti via statement.
-    sync.serverSettingsAt = Date.now();
+    const settingsAt = Date.now();
     await userDocRef().set({
       accountRole: sync.role || 'owner',
       settings: client ? clientOwnSettings() : state.settings,
-      settingsAt: sync.serverSettingsAt,
+      settingsAt,
       schema: CLOUD_SCHEMA,
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
+    // Aggiornato solo a scrittura riuscita: se il set fallisce, il prossimo push
+    // non deve credere che le impostazioni siano già sul server.
+    sync.serverSettingsAt = settingsAt;
 
     // (2) Record: solo il Proprietario sincronizza le proprie sottocollezioni.
     if (!client) {
       for (const store of SYNC_STORES) {
         const seen = new Set();
-        let batch = sync.db.batch(); let ops = 0;
-        const commit = async () => { if (ops > 0) { await batch.commit(); batch = sync.db.batch(); ops = 0; } };
+        let batch = sync.db.batch(); let ops = 0; let staged = [];
+        // Il mirror sync.server si aggiorna SOLO a commit riuscito: se si
+        // aggiornasse prima e il batch fallisse, i record risulterebbero già
+        // sincronizzati e non verrebbero mai ritentati (perdita dati silenziosa).
+        const commit = async () => {
+          if (ops > 0) {
+            await batch.commit();
+            for (const apply of staged) apply();
+            batch = sync.db.batch(); ops = 0; staged = [];
+          }
+        };
 
         // Upsert: record assenti sul server o piu' recenti del server.
         for (const rec of state[store]) {
@@ -5027,7 +5074,7 @@ async function pushNow() {
           const at = typeof rec.updatedAt === 'number' ? rec.updatedAt : Date.now();
           if (known === undefined || at > known) {
             batch.set(colRef(store).doc(id), { ...rec, id, updatedAt: at });
-            sync.server[store].set(id, at);
+            staged.push(() => sync.server[store].set(id, at));
             if (++ops >= 450) await commit();
           }
         }
@@ -5038,7 +5085,7 @@ async function pushNow() {
           for (const id of Array.from(sync.server[store].keys())) {
             if (!seen.has(id)) {
               batch.delete(colRef(store).doc(id));
-              sync.server[store].delete(id);
+              staged.push(() => sync.server[store].delete(id));
               if (++ops >= 450) await commit();
             }
           }
@@ -5441,32 +5488,42 @@ function accountPanelHTML() {
 /* ---------------------------------------------------------------------
    BOOTSTRAP PROCEDURAL (Auto-Recovery & Setup)
 --------------------------------------------------------------------- */
+// Event binding di base (nav, tema, logo): idempotente, così il percorso
+// d'emergenza di boot() non registra listener duplicati su quelli già attivi.
+let _coreEventsBound = false;
+function bindCoreEvents() {
+  if (_coreEventsBound) return;
+  _coreEventsBound = true;
+
+  $$('#nav button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+  const navC = navScrollContainer();
+  if (navC) navC.addEventListener('scroll', updateNavFade, { passive: true });
+  window.addEventListener('resize', syncNavScroll);
+
+  const themeBtn = $('#theme-toggle');
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      const isCurrentlyDark = document.body.classList.contains('dark');
+      const nextTheme = isCurrentlyDark ? 'light' : 'dark';
+      state.settings.theme = nextTheme;
+      try { dbPut('settings', state.settings); } catch (_) {}
+      syncTheme(nextTheme);
+    });
+  }
+
+  const homeLogo = $('#home-logo');
+  if (homeLogo) homeLogo.addEventListener('click', () => setView('dashboard'));
+}
+
 async function boot() {
   try {
     try { _db = await openDB(); } catch (dbErr) { initFallbackStorage(); }
-    
+
     await seedIfEmpty();
     await loadState();
-    
-    $$('#nav button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
-    const navC = navScrollContainer();
-    if (navC) navC.addEventListener('scroll', updateNavFade, { passive: true });
-    window.addEventListener('resize', syncNavScroll);
-    syncNavScroll();
-    
-    const themeBtn = $('#theme-toggle');
-    if (themeBtn) {
-      themeBtn.addEventListener('click', () => {
-        const isCurrentlyDark = document.body.classList.contains('dark');
-        const nextTheme = isCurrentlyDark ? 'light' : 'dark';
-        state.settings.theme = nextTheme;
-        dbPut('settings', state.settings);
-        syncTheme(nextTheme);
-      });
-    }
 
-    const homeLogo = $('#home-logo');
-    if (homeLogo) homeLogo.addEventListener('click', () => setView('dashboard'));
+    bindCoreEvents();
+    syncNavScroll();
 
     syncTheme(state.settings.theme || 'auto');
     bindAutoTheme();
@@ -5498,22 +5555,11 @@ async function boot() {
       { id: 'e4', projectId: 'p3', spec: 'Realizzazione file studio Play Station 1', date: '2026-03-30', hours: 4.75 }
     ];
     state.activeTimer = null;
-    
-    $$('#nav button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
-    const themeBtn = $('#theme-toggle');
-    if (themeBtn) {
-      themeBtn.addEventListener('click', () => {
-        const isCurrentlyDark = document.body.classList.contains('dark');
-        const nextTheme = isCurrentlyDark ? 'light' : 'dark';
-        state.settings.theme = nextTheme;
-        syncTheme(nextTheme);
-      });
-    }
-    const homeLogo2 = $('#home-logo');
-    if (homeLogo2) homeLogo2.addEventListener('click', () => setView('dashboard'));
+
+    bindCoreEvents();
     syncTheme('auto');
     setView('dashboard');
-    
+
     setTimeout(() => { toast('Avvio in modalità d\'emergenza.', 'warning'); }, 800);
   }
 }
