@@ -76,6 +76,11 @@ function hrs(n) {
   return v.toLocaleString('it-IT', { maximumFractionDigits: 2 }) + ' h';
 }
 
+// "1 sessione" / "3 sessioni" — evita i plurali sbagliati con n = 1.
+function plural(n, sing, plur) {
+  return `${n} ${n === 1 ? sing : plur}`;
+}
+
 // Arrotondamento monetario a 2 decimali: i totali fiscali vanno fissati voce per
 // voce, altrimenti i float IEEE 754 fanno divergere i centesimi tra nota, PDF e storico.
 function round2(n) {
@@ -1079,7 +1084,7 @@ function buildFilterWidgetHTML() {
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
-          <label class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Periodo temporale</label>
+          <label for="filt-period" class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Periodo temporale</label>
           <select id="filt-period" class="field py-1.5 px-2.5 text-[13px]">
             <option value="all" ${p.period === 'all' ? 'selected' : ''}>Tutto lo storico</option>
             <option value="current-month" ${p.period === 'current-month' ? 'selected' : ''}>Mese corrente</option>
@@ -1089,7 +1094,7 @@ function buildFilterWidgetHTML() {
           </select>
         </div>
         <div>
-          <label class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Filtra Progetto</label>
+          <label for="filt-project" class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Filtra Progetto</label>
           <select id="filt-project" class="field py-1.5 px-2.5 text-[13px]">
             <option value="all" ${p.project === 'all' ? 'selected' : ''}>Tutti i progetti</option>
             ${projectOptions}
@@ -1097,11 +1102,11 @@ function buildFilterWidgetHTML() {
         </div>
         <div id="custom-date-container" class="${p.period === 'custom' ? '' : 'hidden'} col-span-1 grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Dal</label>
+            <label for="filt-start" class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Dal</label>
             <input id="filt-start" type="date" class="field py-1.5 px-2 text-[12px]" value="${p.startDate}" />
           </div>
           <div>
-            <label class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Al</label>
+            <label for="filt-end" class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Al</label>
             <input id="filt-end" type="date" class="field py-1.5 px-2 text-[12px]" value="${p.endDate}" />
           </div>
         </div>
@@ -1287,7 +1292,7 @@ function projectCard(p) {
         <div class="flex-1 min-w-0">
           <div class="text-[15px] font-bold tracking-tight truncate dark:text-white">${esc(p.name)}</div>
           <div class="text-[11px] text-ink-faint dark:text-zinc-500 flex items-center gap-2 flex-wrap mt-0.5 font-medium">
-            <span>${items.length} sessioni</span>
+            <span>${plural(items.length, 'sessione', 'sessioni')}</span>
             <span>·</span>
             <span class="font-bold text-accent">${esc(hrs(pHours))}</span>
             <span>·</span>
@@ -1353,6 +1358,7 @@ function bindDashboardEvents(root) {
 
   if (btnReset) btnReset.addEventListener('click', () => {
     state.filters = { period: 'all', startDate: '', endDate: '', project: 'all' };
+    state.expanded.clear(); // "svuota" riporta anche i progetti allo stato compresso
     renderDashboard();
   });
 
@@ -1476,7 +1482,7 @@ async function startProjectTimer(projectId) {
     title: 'Inizia Sessione di Lavoro',
     bodyHTML: `
       <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Verrà registrato il tempo effettivo per il progetto: <span class="font-bold text-ink dark:text-white">${esc(p.name)}</span>.</p>
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Cosa stai facendo? (Descrizione attività)</label>
+      <label for="f-timer-spec" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Cosa stai facendo? (Descrizione attività)</label>
       <input id="f-timer-spec" class="field" placeholder="Es. Refactoring API, stesura documentazione" />
     `,
     confirmText: 'Avvia Cronometro',
@@ -1541,11 +1547,11 @@ async function stopAndSaveTimer() {
       <p class="text-[14px] mb-3">Tempo rilevato: <span class="font-bold">${rawHours} h</span>${calculatedHours !== rawHours ? ` · arrotondato a <span class="font-bold text-accent">${calculatedHours} h</span>` : ''}. Registrare questa riga sul progetto?</p>
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+          <label for="f-final-date" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
           <input id="f-final-date" type="date" class="field" value="${todayIso()}" />
         </div>
         <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore da registrare</label>
+          <label for="f-final-hours" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore da registrare</label>
           <input id="f-final-hours" type="number" min="0" step="0.05" class="field" value="${calculatedHours}" />
         </div>
       </div>
@@ -1669,7 +1675,7 @@ function addProject(preClientId) {
   openModal({
     title: 'Aggiungi Nuovo Progetto',
     bodyHTML: `
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
+      <label for="f-name" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
       <input id="f-name" class="field mb-3" placeholder="Es. App Mobile BrickBoy" />
       
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
@@ -1678,16 +1684,16 @@ function addProject(preClientId) {
         <button type="button" data-bt="flat" aria-selected="false" onclick="projBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
       </div>
       <div id="f-rate-wrap">
-        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(lascia vuoto per usare la globale)</span></label>
+        <label for="f-rate" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(lascia vuoto per usare la globale)</span></label>
         <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
       </div>
       <div id="f-flat-wrap" class="hidden">
-        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
+        <label for="f-flat" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
         <input id="f-flat" type="number" min="0" step="1" class="field mb-1.5" placeholder="Es. 1500" />
         <p class="text-[11px] text-ink-faint mb-3">Le ore vengono comunque tracciate, ma la fatturazione usa l'importo fisso.</p>
       </div>
 
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
+      <label for="f-client-select" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
       <select id="f-client-select" class="field mb-3">
         <option value="">-- Nessun Cliente Associato --</option>
         ${clientOptions}
@@ -1774,7 +1780,7 @@ function renameProject(id) {
   openModal({
     title: 'Modifica Dettagli Progetto',
     bodyHTML: `
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
+      <label for="f-name" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome identificativo</label>
       <input id="f-name" class="field mb-3" value="${esc(p.name)}" />
 
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
@@ -1783,16 +1789,16 @@ function renameProject(id) {
         <button type="button" data-bt="flat" aria-selected="${(p.billingType||'hourly')==='flat'}" onclick="projBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
       </div>
       <div id="f-rate-wrap" class="${(p.billingType||'hourly')==='flat'?'hidden':''}">
-        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h)</label>
+        <label for="f-rate" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h)</label>
         <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" value="${p.hourlyRate != null ? p.hourlyRate : ''}" />
       </div>
       <div id="f-flat-wrap" class="${(p.billingType||'hourly')==='flat'?'':'hidden'}">
-        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
+        <label for="f-flat" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
         <input id="f-flat" type="number" min="0" step="1" class="field mb-1.5" placeholder="Es. 1500" value="${p.flatAmount != null ? p.flatAmount : ''}" />
         <p class="text-[11px] text-ink-faint mb-3">Le ore vengono comunque tracciate, ma la fatturazione usa l'importo fisso.</p>
       </div>
 
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
+      <label for="f-client-select" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Associa Cliente</label>
       <select id="f-client-select" class="field mb-3">
         <option value="">-- Nessun Cliente Associato --</option>
         ${clientOptions}
@@ -1865,11 +1871,11 @@ function renameProject(id) {
    SESSIONI: aggiunta manuale, modifica, eliminazione
 --------------------------------------------------------------------- */
 const entryFieldsHTML = (e) => `
-  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione attività</label>
+  <label for="f-spec" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione attività</label>
   <input id="f-spec" class="field mb-3" placeholder="Es. Sviluppo modulo pagamenti" value="${e ? esc(e.spec || '') : ''}" />
-  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+  <label for="f-date" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
   <input id="f-date" type="date" class="field mb-3" value="${e && e.date ? esc(e.date) : todayIso()}" />
-  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore lavorate</label>
+  <label for="f-hours" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore lavorate</label>
   <input id="f-hours" type="number" min="0" step="0.25" class="field" placeholder="Es. 2.5" value="${e && e.hours != null ? e.hours : ''}" />`;
 
 function addEntry(projectId) {
@@ -1955,7 +1961,7 @@ function deleteProject(id) {
   openModal({
     title: 'Eliminare il progetto?',
     danger: true,
-    bodyHTML: `<p class="text-[14px]">Eliminare <span class="font-bold">${esc(p.name)}</span>${related.length ? ` insieme alle sue <span class="font-bold text-[#ff3b30]">${related.length} sessioni</span>` : ''}? L'operazione non è reversibile.</p>`,
+    bodyHTML: `<p class="text-[14px]">Eliminare <span class="font-bold">${esc(p.name)}</span>${related.length ? ` insieme ${related.length === 1 ? 'alla sua' : 'alle sue'} <span class="font-bold text-[#ff3b30]">${esc(plural(related.length, 'sessione', 'sessioni'))}</span>` : ''}? L'operazione non è reversibile.</p>`,
     confirmText: 'Elimina Progetto',
     onConfirm: async () => {
       for (const e of related) await dbDel('entries', e.id);
@@ -2090,19 +2096,19 @@ function editClientModal(id) {
   openModal({
     title: c ? 'Modifica Scheda Cliente' : 'Crea Anagrafica Cliente',
     bodyHTML: `
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Denominazione / Nome Completo</label>
+      <label for="fc-name" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Denominazione / Nome Completo</label>
       <input id="fc-name" class="field mb-3" placeholder="Es. Retrogames SRL" value="${c ? esc(c.name) : ''}" />
       
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Partita IVA o Codice Fiscale</label>
+      <label for="fc-vat" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Partita IVA o Codice Fiscale</label>
       <input id="fc-vat" class="field mb-3" placeholder="Es. IT01234567890" value="${c ? esc(c.vatCode || '') : ''}" />
 
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">IVA estera <span class="text-ink-faint">(cliente extra-UE, es. Svizzera)</span></label>
+      <label for="fc-foreignvat" class="block text-[13px] font-semibold text-ink-soft mb-1.5">IVA estera <span class="text-ink-faint">(cliente extra-UE, es. Svizzera)</span></label>
       <input id="fc-foreignvat" class="field mb-3" placeholder="Es. CHE-123.456.789 MWST" value="${c ? esc(c.foreignVat || '') : ''}" />
 
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Email di Fatturazione</label>
+      <label for="fc-email" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Email di Fatturazione</label>
       <input id="fc-email" type="email" class="field mb-3" placeholder="Es. amministrazione@retrogames.it" value="${c ? esc(c.email || '') : ''}" />
 
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Sede Fiscale o Residenza</label>
+      <label for="fc-address" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Sede Fiscale o Residenza</label>
       <textarea id="fc-address" class="field h-16 resize-none" placeholder="Es. Via Roma 12, 20121 Milano (MI)">${c ? esc(c.address || '') : ''}</textarea>
     `,
     confirmText: c ? 'Salva Cliente' : 'Crea Cliente',
@@ -2322,7 +2328,7 @@ function openPaymentModal(ctx, residual, total) {
     title: 'Registra Pagamento',
     bodyHTML: `
       <p class="text-[12px] text-ink-faint mb-3">${esc(ctx.projLabel)} · ${esc(ctx.label)}</p>
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo ricevuto (€)</label>
+      <label for="fp-amount" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo ricevuto (€)</label>
       <input id="fp-amount" type="number" min="0" step="0.01" class="field mb-1" value="${suggested > 0 ? suggested.toFixed(2) : ''}" />
       <p class="text-[11px] text-ink-faint mb-3">Residuo attuale: <span class="font-bold">${esc(eur(Math.max(0, residual)))}</span> su ${esc(eur(total))}</p>
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di versamento</label>
@@ -2330,9 +2336,9 @@ function openPaymentModal(ctx, residual, total) {
         <button type="button" data-type="acconto" aria-selected="true" class="py-2">Acconto</button>
         <button type="button" data-type="saldo" aria-selected="false" class="py-2">Saldo</button>
       </div>
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data versamento</label>
+      <label for="fp-date" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data versamento</label>
       <input id="fp-date" type="date" class="field mb-3" value="${todayIso()}" />
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nota (opzionale)</label>
+      <label for="fp-note" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nota (opzionale)</label>
       <input id="fp-note" class="field" placeholder="Es. Bonifico, acconto 30%" />
     `,
     onMount: (card) => {
@@ -2426,10 +2432,11 @@ function renderPayment() {
     if (note.payableSnapshot !== payable) { note.payableSnapshot = payable; dbPut('settings', state.settings); }
   }
   const due = note ? dueStatus(note.dueDate, residual) : null;
+  // Simbolo + testo: lo stato resta leggibile anche senza distinguere i colori.
   const statusMap = {
-    paid:    { t: 'PAGATA',            cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
-    acconto: { t: 'ACCONTO RICEVUTO',  cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' },
-    due:     { t: 'DA SALDARE',        cls: 'bg-black/5 dark:bg-white/5 text-ink-soft dark:text-zinc-400 border-black/10 dark:border-white/10' }
+    paid:    { t: '✓ PAGATA',           cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+    acconto: { t: '◐ ACCONTO RICEVUTO', cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' },
+    due:     { t: '○ DA SALDARE',       cls: 'bg-black/5 dark:bg-white/5 text-ink-soft dark:text-zinc-400 border-black/10 dark:border-white/10' }
   };
   const statusBadge = payStatus
     ? `<span class="inline-block mt-2 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${statusMap[payStatus].cls}">${statusMap[payStatus].t}</span>`
@@ -2753,24 +2760,24 @@ function renderSettings() {
           <p class="text-[12px] text-ink-soft dark:text-zinc-400 mt-1 leading-relaxed">Questi recapiti sono salvati nel tuo account e sincronizzati sui tuoi dispositivi.</p>
         </div>
         <div>
-          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Nome / Ragione sociale</label>
+          <label for="cp-name" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Nome / Ragione sociale</label>
           <input id="cp-name" class="field" value="${esc(cp.name || '')}" placeholder="Es. Mario Rossi / Acme S.r.l." />
         </div>
         <div>
-          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">P.IVA / Codice Fiscale</label>
+          <label for="cp-vat" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">P.IVA / Codice Fiscale</label>
           <input id="cp-vat" class="field tabular-nums" value="${esc(cp.vat || '')}" placeholder="IT01234567890" />
         </div>
         <div>
-          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Indirizzo</label>
+          <label for="cp-address" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Indirizzo</label>
           <input id="cp-address" class="field" value="${esc(cp.address || '')}" placeholder="Via, civico, CAP, città" />
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Email</label>
+            <label for="cp-email" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Email</label>
             <input id="cp-email" type="email" autocomplete="email" class="field" value="${esc(cp.email || '')}" placeholder="nome@email.it" />
           </div>
           <div>
-            <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Telefono</label>
+            <label for="cp-phone" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Telefono</label>
             <input id="cp-phone" class="field" value="${esc(cp.phone || '')}" placeholder="+39 ..." />
           </div>
         </div>
@@ -2799,7 +2806,7 @@ function renderSettings() {
       </div>
 
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4">
-        <label class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Schema di Colori</label>
+        <label for="s-theme-ro" class="block text-[13px] font-medium text-ink-soft dark:text-zinc-400 mb-1.5">Schema di Colori</label>
         <select id="s-theme-ro" class="field">
           <option value="auto" ${s.theme === 'auto' ? 'selected' : ''}>Segui sistema (Auto)</option>
           <option value="light" ${s.theme === 'light' ? 'selected' : ''}>Tema Chiaro</option>
@@ -2837,18 +2844,18 @@ function renderSettings() {
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-4 mt-4">
       <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Coordinate Professionali per Nota</div>
       <div>
-        <label class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">Intestatario Nota (Mittente)</label>
+        <label for="s-holder" class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">Intestatario Nota (Mittente)</label>
         <input id="s-holder" class="field" value="${esc(s.holderName)}" placeholder="Nome, cognome, P.IVA e informazioni fiscali" />
       </div>
       <div>
-        <label class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">Codice IBAN</label>
+        <label for="s-iban" class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">Codice IBAN</label>
         <div class="relative">
           <input id="s-iban" type="password" autocomplete="off" class="field tabular-nums pr-24 font-bold" value="${esc(s.iban)}" placeholder="IT.." />
           <button id="s-iban-toggle" type="button" aria-pressed="false" class="absolute inset-y-0 right-0 px-3 my-1 mr-1 rounded-[9px] text-[12px] font-bold text-accent hover:bg-accent-soft transition-soft">Mostra</button>
         </div>
       </div>
       <div>
-        <label class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">BIC / SWIFT</label>
+        <label for="s-bic" class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">BIC / SWIFT</label>
         <input id="s-bic" class="field tabular-nums" value="${esc(s.bic)}" placeholder="XXXXXXXX" />
       </div>
     </div>` : `
@@ -2871,7 +2878,7 @@ function renderSettings() {
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm space-y-4">
       <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Modello Economico Globale</div>
       <div>
-        <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Regime fiscale</label>
+        <label for="s-regime" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Regime fiscale</label>
         <select id="s-regime" class="field">
           <option value="ordinario" ${(s.regime || 'ordinario') === 'ordinario' ? 'selected' : ''}>Ordinario (rivalsa, IVA, ritenuta)</option>
           <option value="forfettario" ${s.regime === 'forfettario' ? 'selected' : ''}>Forfettario (esente IVA, senza ritenuta)</option>
@@ -2880,39 +2887,39 @@ function renderSettings() {
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Coefficiente redditività (%)</label>
+          <label for="s-coeff" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Coefficiente redditività (%)</label>
           <input id="s-coeff" type="number" min="0" max="100" step="1" class="field" value="${esc(s.coefficiente != null ? s.coefficiente : 78)}" />
         </div>
         <div>
-          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Imposta sostitutiva (%)</label>
+          <label for="s-impsost" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Imposta sostitutiva (%)</label>
           <input id="s-impsost" type="number" min="0" max="100" step="1" class="field" value="${esc(s.impostaSostitutiva != null ? s.impostaSostitutiva : 5)}" />
         </div>
       </div>
       <p class="text-[11px] text-ink-faint dark:text-zinc-500 -mt-2 leading-snug">Usati nel <strong>Riepilogo fiscale annuale</strong> (Report) per stimare l'imposta in regime forfettario.</p>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
-          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Tariffa base (€/h)</label>
+          <label for="s-rate" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Tariffa base (€/h)</label>
           <input id="s-rate" type="number" min="0" step="0.5" class="field" value="${esc(s.hourlyRate)}" />
         </div>
         <div>
-          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Extra fisso (€)</label>
+          <label for="s-extra" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Extra fisso (€)</label>
           <input id="s-extra" type="number" min="0" step="0.5" class="field" value="${esc(s.extra)}" />
         </div>
         <div>
-          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Rivalsa INPS (%)</label>
+          <label for="s-tax" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Rivalsa INPS (%)</label>
           <input id="s-tax" type="number" min="0" max="100" step="1" class="field" value="${esc(s.taxRate || 0)}" />
         </div>
         <div>
-          <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">IVA (%)</label>
+          <label for="s-vat" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">IVA (%)</label>
           <input id="s-vat" type="number" min="0" max="100" step="1" class="field" value="${esc(s.vatRate || 0)}" />
         </div>
       </div>
       <div>
-        <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Ritenuta d'Acconto (%) <span class="text-red-500 font-bold">(Sottratta dal netto)</span></label>
+        <label for="s-withholding" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Ritenuta d'Acconto (%) <span class="text-red-500 font-bold">(Sottratta dal netto)</span></label>
         <input id="s-withholding" type="number" min="0" max="100" step="1" class="field" value="${esc(s.withholdingTaxRate || 0)}" />
       </div>
       <div>
-        <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Arrotondamento cronometro</label>
+        <label for="s-rounding" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Arrotondamento cronometro</label>
         <select id="s-rounding" class="field">
           <option value="0" ${!Number(s.roundingMinutes) ? 'selected' : ''}>Nessuno (tempo esatto)</option>
           <option value="6" ${Number(s.roundingMinutes) === 6 ? 'selected' : ''}>Per eccesso a 6 min (0,1 h)</option>
@@ -2927,10 +2934,10 @@ function renderSettings() {
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4 space-y-4">
       <div class="text-[11px] uppercase tracking-wider text-ink-faint dark:text-zinc-500 font-bold">Dati del Documento</div>
       <div>
-        <label class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Causale predefinita</label>
+        <label for="s-causale" class="block text-[12px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Causale predefinita</label>
         <input id="s-causale" class="field" value="${esc(s.causale || '')}" placeholder="Es. Prestazione professionale" />
       </div>
-      <label class="flex items-start gap-3 cursor-pointer select-none">
+      <label for="s-stampduty" class="flex items-start gap-3 cursor-pointer select-none">
         <input id="s-stampduty" type="checkbox" ${s.stampDuty ? 'checked' : ''} class="mt-0.5 w-4 h-4 accent-accent" />
         <span class="text-[13px] text-ink-soft dark:text-zinc-300 leading-snug">Applica <strong class="text-ink dark:text-white">marca da bollo 2,00 €</strong> sulle note esenti IVA con importo superiore a 77,47 € (regime forfettario / prestazione occasionale).</span>
       </label>
@@ -2939,7 +2946,7 @@ function renderSettings() {
     ${paymentPanel}
 
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-5 shadow-sm mt-4">
-      <label class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">Schema di Colori</label>
+      <label for="s-theme" class="block text-[13px] font-semibold text-ink-soft dark:text-zinc-400 mb-1.5">Schema di Colori</label>
       <select id="s-theme" class="field">
         <option value="auto" ${s.theme === 'auto' ? 'selected' : ''}>Segui sistema (Auto)</option>
         <option value="light" ${s.theme === 'light' ? 'selected' : ''}>Tema Chiaro</option>
@@ -3302,25 +3309,25 @@ function editExpenseModal(id) {
   openModal({
     title: x ? 'Modifica spesa' : 'Nuova spesa',
     bodyHTML: `
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione</label>
+      <label for="fx-desc" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione</label>
       <input id="fx-desc" class="field mb-3" placeholder="Es. Abbonamento software" value="${x ? esc(x.description || '') : ''}" />
       <div class="grid grid-cols-2 gap-3 mb-3">
         <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo (€)</label>
+          <label for="fx-amount" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo (€)</label>
           <input id="fx-amount" type="number" min="0" step="0.01" class="field" value="${x ? esc(x.amount) : ''}" />
         </div>
         <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+          <label for="fx-date" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
           <input id="fx-date" type="date" class="field" value="${x ? esc(x.date || todayIso()) : todayIso()}" />
         </div>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Categoria</label>
+          <label for="fx-category" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Categoria</label>
           <select id="fx-category" class="field">${catOpts}</select>
         </div>
         <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Progetto (opzionale)</label>
+          <label for="fx-project" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Progetto (opzionale)</label>
           <select id="fx-project" class="field">${projOpts}</select>
         </div>
       </div>`,
@@ -3509,15 +3516,15 @@ function editQuoteModal(id) {
     bodyHTML: `
       <div class="grid grid-cols-2 gap-3 mb-3">
         <div class="col-span-2">
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Cliente</label>
+          <label for="q-client" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Cliente</label>
           <select id="q-client" class="field">${clientOpts}</select>
         </div>
         <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
+          <label for="q-date" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
           <input id="q-date" type="date" class="field" value="${q ? esc(q.date || todayIso()) : todayIso()}" />
         </div>
         <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Valido fino al</label>
+          <label for="q-valid" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Valido fino al</label>
           <input id="q-valid" type="date" class="field" value="${q ? esc(q.validUntil || '') : ''}" />
         </div>
       </div>
@@ -3532,14 +3539,14 @@ function editQuoteModal(id) {
         Aggiungi voce
       </button>
 
-      <label class="flex items-center gap-2 cursor-pointer select-none mb-3">
+      <label for="q-vat" class="flex items-center gap-2 cursor-pointer select-none mb-3">
         <input id="q-vat" type="checkbox" ${q && q.applyVat ? 'checked' : ''} class="w-4 h-4 accent-accent" />
         <span class="text-[13px] text-ink-soft dark:text-zinc-300">Applica IVA (${vatP || 0}%) al totale</span>
       </label>
 
       <div class="grid grid-cols-2 gap-3 mb-3">
         <div>
-          <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Stato</label>
+          <label for="q-status" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Stato</label>
           <select id="q-status" class="field">${statusOpts}</select>
         </div>
         <div class="flex flex-col justify-end">
@@ -3548,7 +3555,7 @@ function editQuoteModal(id) {
         </div>
       </div>
 
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Note (opzionale)</label>
+      <label for="q-notes" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Note (opzionale)</label>
       <textarea id="q-notes" class="field h-16 resize-none" placeholder="Condizioni, tempistiche, modalità di pagamento…">${q ? esc(q.notes || '') : ''}</textarea>`,
     confirmText: q ? 'Salva preventivo' : 'Crea preventivo',
     onMount: (card) => {
@@ -3641,7 +3648,7 @@ function createProjectFromQuote(id) {
     title: 'Crea progetto dal preventivo',
     bodyHTML: `
       <p class="text-[13px] text-ink-soft dark:text-zinc-400 mb-3">Verrà creato un progetto collegato a <span class="font-bold text-ink dark:text-white">${esc(client ? client.name : 'cliente non assegnato')}</span>, dal preventivo <span class="font-bold">${esc(quoteNumFmt(q.number, q.year))}</span>.</p>
-      <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome progetto</label>
+      <label for="qp-name" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Nome progetto</label>
       <input id="qp-name" class="field mb-3" value="${esc(defaultName)}" />
 
       <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
@@ -3650,11 +3657,11 @@ function createProjectFromQuote(id) {
         <button type="button" data-bt="flat" aria-selected="true" onclick="projBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
       </div>
       <div id="f-rate-wrap" class="hidden">
-        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(vuoto = globale)</span></label>
+        <label for="f-rate" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tariffa oraria dedicata (€/h) <span class="text-ink-faint">(vuoto = globale)</span></label>
         <input id="f-rate" type="number" min="0" step="0.5" class="field mb-3" placeholder="Es. 35" />
       </div>
       <div id="f-flat-wrap">
-        <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
+        <label for="f-flat" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo a forfait (€)</label>
         <input id="f-flat" type="number" min="0" step="1" class="field" value="${qTot}" />
         <p class="text-[11px] text-ink-faint mt-1">Preimpostato sul totale del preventivo.</p>
       </div>`,
@@ -5058,7 +5065,7 @@ async function doSignUp(email, password, role) {
 }
 
 async function doSignOut() {
-  try { await sync.auth.signOut(); toast('Uscito correttamente'); }
+  try { await sync.auth.signOut(); toast('Disconnessione avvenuta correttamente'); }
   catch (err) { toast('Impossibile disconnettere', 'error'); }
 }
 

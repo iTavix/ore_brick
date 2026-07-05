@@ -14,7 +14,8 @@ const RUNTIME  = 'hourflow-runtime-v7';
 const SHELL = [
   './', './index.html', './welcome.html', './manifest.json',
   './app.js', './style.css', './tailwind.css',
-  './apple-touch-icon.png', './favicon.ico', './favicon-32.png', './favicon-16.png'
+  './apple-touch-icon.png', './favicon.ico', './favicon-32.png', './favicon-16.png',
+  './icon-192.png', './icon-512.png', './icon-maskable-512.png'
 ];
 
 self.addEventListener('install', (event) => {
