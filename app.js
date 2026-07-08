@@ -81,6 +81,12 @@ function plural(n, sing, plur) {
   return `${n} ${n === 1 ? sing : plur}`;
 }
 
+// Valore economico di una sessione: importo fisso se a forfait, altrimenti
+// ore × tariffa. Richiede una entry "mappata" da allEntriesFlat (campo rate).
+function entryValue(e) {
+  return e.billingType === 'flat' ? (Number(e.amount) || 0) : (Number(e.hours) || 0) * (Number(e.rate) || 0);
+}
+
 // Arrotondamento monetario a 2 decimali: i totali fiscali vanno fissati voce per
 // voce, altrimenti i float IEEE 754 fanno divergere i centesimi tra nota, PDF e storico.
 function round2(n) {
@@ -246,7 +252,7 @@ function buildNoteModel() {
   const flat = inScope.filter(e => !e.paid);
   const paidExcludedCount = inScope.length - flat.length;
   const tH = flat.reduce((a, e) => a + (Number(e.hours) || 0), 0);
-  const baseCompensation = round2(flat.reduce((a, e) => a + (Number(e.hours) || 0) * (Number(e.rate) || 0), 0) + flatScopedTotal());
+  const baseCompensation = round2(flat.reduce((a, e) => a + entryValue(e), 0) + flatScopedTotal());
   const { taxP, vatP, wTaxP, forfettario } = effectiveFiscal(s);
   const taxValue = round2(baseCompensation * taxP / 100);
   const subtotalWithTax = round2(baseCompensation + taxValue);
@@ -312,10 +318,15 @@ function exportNotePDF() {
     if (m.clientForeignVats && m.clientForeignVats[0]) { doc.text('IVA estera: ' + m.clientForeignVats[0], M, dy); dy += 12; }
   }
 
-  const body = m.flat.map(e => [dateIt(e.date), `${e.project} (${money(e.rate)}/h)`, e.spec || '', hrs(e.hours)]);
+  const body = m.flat.map(e => [
+    dateIt(e.date),
+    e.billingType === 'flat' ? `${e.project} (forfait)` : `${e.project} (${money(e.rate)}/h)`,
+    e.spec || '',
+    e.billingType === 'flat' ? money(e.amount) : hrs(e.hours)
+  ]);
   doc.autoTable({
     startY: Math.max(dy + 10, y + 92),
-    head: [['Data', 'Progetto', 'Descrizione', 'Ore']],
+    head: [['Data', 'Progetto', 'Descrizione', 'Ore / Forfait']],
     body: body.length ? body : [['—', '—', 'Nessuna voce', '—']],
     theme: 'grid',
     headStyles: { fillColor: [245, 245, 247], textColor: ink, fontStyle: 'bold', fontSize: 8 },
@@ -718,7 +729,9 @@ function projectHours(projectId) {
 function projectCompensation(project) {
   if (project.billingType === 'flat') return Number(project.flatAmount) || 0;
   const rate = project.hourlyRate != null && project.hourlyRate !== '' ? Number(project.hourlyRate) : Number(state.settings.hourlyRate);
-  return projectHours(project.id) * rate;
+  // Le sessioni a forfait valgono il loro importo fisso, le altre ore × tariffa.
+  return entriesOf(project.id).reduce((sum, e) =>
+    sum + (e.billingType === 'flat' ? (Number(e.amount) || 0) : (Number(e.hours) || 0) * rate), 0);
 }
 
 // Toggle helper for the "A ore / A forfait" segmented control inside project modals.
@@ -1232,7 +1245,7 @@ function buildVisualAnalyticsChart() {
   const bars = state.projects.map((p, index) => {
     const comp = projectCompensation(p);
     const hr = projectHours(p.id);
-    if (hr === 0) return '';
+    if (hr === 0 && comp === 0) return ''; // un progetto di soli forfait ha 0 ore ma un valore
 
     const percentage = (comp / maxCompensation) * 100;
     const colors = ['bg-accent', 'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-indigo-500'];
@@ -1268,7 +1281,7 @@ function projectCard(p) {
   const pHours = projectHours(p.id);
   const isFlat = p.billingType === 'flat';
   const pRate = p.hourlyRate != null && p.hourlyRate !== '' ? Number(p.hourlyRate) : Number(state.settings.hourlyRate);
-  const pComp = isFlat ? (Number(p.flatAmount) || 0) : pHours * pRate;
+  const pComp = projectCompensation(p);
   const editable = canEdit();
 
   const client = state.clients.find(c => c.id === p.clientId);
@@ -1279,9 +1292,9 @@ function projectCard(p) {
         <div class="group flex items-center gap-3 px-4 py-3 border-t border-black/5 dark:border-white/5 hover:bg-black/[0.01] dark:hover:bg-white/[0.005]">
           <div class="flex-1 min-w-0">
             <div class="text-[14px] text-ink dark:text-zinc-200 truncate font-semibold">${esc(e.spec)}</div>
-            <div class="text-[11px] text-ink-faint dark:text-zinc-500 mt-0.5 font-medium">${esc(dateIt(e.date))}${e.paid ? ` · <span class="inline-block text-[10px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">✓ Pagata</span>` : ''}</div>
+            <div class="text-[11px] text-ink-faint dark:text-zinc-500 mt-0.5 font-medium">${esc(dateIt(e.date))}${e.billingType === 'flat' ? ` · <span class="inline-block text-[10px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30">Forfait</span>` : ''}${e.paid ? ` · <span class="inline-block text-[10px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">✓ Pagata</span>` : ''}</div>
           </div>
-          <div class="text-[13px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0 mr-1">${esc(hrs(e.hours))}</div>
+          <div class="text-[13px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0 mr-1">${e.billingType === 'flat' ? esc(eur(e.amount)) : esc(hrs(e.hours))}</div>
           ${editable ? `          <div class="flex items-center gap-1 shrink-0">
             <button data-action="edit-entry" data-id="${e.id}" title="Modifica" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
@@ -1878,19 +1891,43 @@ function renameProject(id) {
 /* ---------------------------------------------------------------------
    SESSIONI: aggiunta manuale, modifica, eliminazione
 --------------------------------------------------------------------- */
-const entryFieldsHTML = (e) => `
+// Toggle "A ore / A forfait" nel modale sessione (stesso pattern di projBilling).
+function entryBilling(btn, bt) {
+  const card = btn.closest('.modal-card');
+  if (!card) return;
+  $$('#f-ebilling button', card).forEach(b => b.setAttribute('aria-selected', String(b.dataset.bt === bt)));
+  const hw = $('#f-hours-wrap', card), aw = $('#f-amount-wrap', card);
+  if (hw) hw.classList.toggle('hidden', bt === 'flat');
+  if (aw) aw.classList.toggle('hidden', bt !== 'flat');
+}
+
+const entryFieldsHTML = (e) => {
+  const isFlat = !!(e && e.billingType === 'flat');
+  return `
   <label for="f-spec" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Descrizione attività</label>
   <input id="f-spec" class="field mb-3" placeholder="Es. Sviluppo modulo pagamenti" value="${e ? esc(e.spec || '') : ''}" />
   <label for="f-date" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
   <input id="f-date" type="date" class="field mb-3" value="${e && e.date ? esc(e.date) : todayIso()}" />
-  <label for="f-hours" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore lavorate</label>
-  <input id="f-hours" type="number" min="0" step="0.25" class="field" placeholder="Es. 2.5" value="${e && e.hours != null ? e.hours : ''}" />
+  <label class="block text-[13px] font-semibold text-ink-soft mb-1.5">Tipo di compenso</label>
+  <div class="seg gap-0 text-[13px] font-semibold mb-3" id="f-ebilling">
+    <button type="button" data-bt="hourly" aria-selected="${!isFlat}" onclick="entryBilling(this,'hourly')" class="flex-1 py-2">A ore</button>
+    <button type="button" data-bt="flat" aria-selected="${isFlat}" onclick="entryBilling(this,'flat')" class="flex-1 py-2">A forfait</button>
+  </div>
+  <div id="f-hours-wrap" class="${isFlat ? 'hidden' : ''}">
+    <label for="f-hours" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore lavorate</label>
+    <input id="f-hours" type="number" min="0" step="0.25" class="field" placeholder="Es. 2.5" value="${e && e.hours != null ? e.hours : ''}" />
+  </div>
+  <div id="f-amount-wrap" class="${isFlat ? '' : 'hidden'}">
+    <label for="f-amount" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Importo forfait (€)</label>
+    <input id="f-amount" type="number" min="0" step="0.01" class="field" placeholder="Es. 150" value="${e && e.amount != null ? e.amount : ''}" />
+  </div>
   <label for="f-paid" class="mt-3 flex items-start gap-2.5 cursor-pointer select-none">
     <input id="f-paid" type="checkbox" class="w-4 h-4 mt-0.5 shrink-0" style="accent-color:#FF9500" ${e && e.paid ? 'checked' : ''} />
     <span class="text-[13px] font-semibold text-ink-soft dark:text-zinc-400">Già pagata
       <span class="block text-[11px] font-medium text-ink-faint dark:text-zinc-500 mt-0.5">Sessione passata già saldata: conta nelle ore e nei report, ma non entra nella Nota di Pagamento.</span>
     </span>
   </label>`;
+};
 
 function addEntry(projectId) {
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
@@ -1901,14 +1938,19 @@ function addEntry(projectId) {
     bodyHTML: `<p class="text-[12px] text-ink-faint mb-3">Progetto: <span class="font-bold text-ink dark:text-zinc-200">${esc(p.name)}</span></p>${entryFieldsHTML(null)}`,
     confirmText: 'Aggiungi Sessione',
     onConfirm: async (card) => {
+      const isFlat = $('#f-ebilling button[data-bt="flat"]', card).getAttribute('aria-selected') === 'true';
       const hours = Number($('#f-hours', card).value);
-      if (hours <= 0 || isNaN(hours)) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
+      const amount = Number($('#f-amount', card).value);
+      if (isFlat && (!(amount > 0))) { showError(card, 'Specificare un importo forfait maggiore di 0.'); return false; }
+      if (!isFlat && (hours <= 0 || isNaN(hours))) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
       const entry = {
         id: genId(),
         projectId,
         spec: $('#f-spec', card).value.trim() || 'Attività generica',
         date: $('#f-date', card).value || todayIso(),
-        hours,
+        hours: isFlat ? 0 : hours,
+        billingType: isFlat ? 'flat' : 'hourly',
+        amount: isFlat ? round2(amount) : 0,
         paid: $('#f-paid', card).checked
       };
       await dbPut('entries', entry);
@@ -1932,11 +1974,16 @@ function editEntry(id) {
     bodyHTML: `${p ? `<p class="text-[12px] text-ink-faint mb-3">Progetto: <span class="font-bold text-ink dark:text-zinc-200">${esc(p.name)}</span></p>` : ''}${entryFieldsHTML(e)}`,
     confirmText: 'Salva Modifiche',
     onConfirm: async (card) => {
+      const isFlat = $('#f-ebilling button[data-bt="flat"]', card).getAttribute('aria-selected') === 'true';
       const hours = Number($('#f-hours', card).value);
-      if (hours <= 0 || isNaN(hours)) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
+      const amount = Number($('#f-amount', card).value);
+      if (isFlat && (!(amount > 0))) { showError(card, 'Specificare un importo forfait maggiore di 0.'); return false; }
+      if (!isFlat && (hours <= 0 || isNaN(hours))) { showError(card, 'Specificare un valore di ore maggiore di 0.'); return false; }
       e.spec = $('#f-spec', card).value.trim() || 'Attività generica';
       e.date = $('#f-date', card).value || todayIso();
-      e.hours = hours;
+      e.hours = isFlat ? 0 : hours;
+      e.billingType = isFlat ? 'flat' : 'hourly';
+      e.amount = isFlat ? round2(amount) : 0;
       e.paid = $('#f-paid', card).checked;
       await dbPut('entries', e); // updatedAt ritimbrato automaticamente
       state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -1954,7 +2001,7 @@ function deleteEntry(id) {
   openModal({
     title: 'Eliminare la sessione?',
     danger: true,
-    bodyHTML: `<p class="text-[14px]">Rimuovere la sessione <span class="font-bold">${esc(e.spec || 'senza descrizione')}</span> del ${esc(dateIt(e.date))} (${esc(hrs(e.hours))})? L'operazione non è reversibile.</p>`,
+    bodyHTML: `<p class="text-[14px]">Rimuovere la sessione <span class="font-bold">${esc(e.spec || 'senza descrizione')}</span> del ${esc(dateIt(e.date))} (${e.billingType === 'flat' ? esc(eur(e.amount)) + ' a forfait' : esc(hrs(e.hours))})? L'operazione non è reversibile.</p>`,
     confirmText: 'Elimina Sessione',
     onConfirm: async () => {
       await dbDel('entries', id);
@@ -2530,9 +2577,9 @@ function renderPayment() {
     ? flat.map(e => `
         <tr class="border-b border-black/5 dark:border-white/5">
           <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400 whitespace-nowrap font-medium">${esc(dateIt(e.date))}</td>
-          <td class="py-2.5 pr-3 text-ink dark:text-zinc-200 font-semibold">${esc(e.project)} <span class="text-[10px] text-ink-faint tabular-nums">(${eur(e.rate)}/h)</span></td>
+          <td class="py-2.5 pr-3 text-ink dark:text-zinc-200 font-semibold">${esc(e.project)} <span class="text-[10px] text-ink-faint tabular-nums">${e.billingType === 'flat' ? '(forfait)' : `(${eur(e.rate)}/h)`}</span></td>
           <td class="py-2.5 pr-3 text-ink-soft dark:text-zinc-400 font-medium">${esc(e.spec)}</td>
-          <td class="py-2.5 text-right tabular-nums text-ink dark:text-zinc-200 font-bold">${esc(hrs(e.hours))}</td>
+          <td class="py-2.5 text-right tabular-nums text-ink dark:text-zinc-200 font-bold">${e.billingType === 'flat' ? esc(eur(e.amount)) : esc(hrs(e.hours))}</td>
         </tr>`).join('')
     : `<tr><td colspan="4" class="py-6 text-center text-ink-faint font-medium">Nessuna voce corrisponde ai filtri di ricerca impostati.</td></tr>`;
 
@@ -2600,7 +2647,7 @@ function renderPayment() {
               <th class="py-2 pr-3 font-bold">Data</th>
               <th class="py-2 pr-3 font-bold">Dettagli Tariffa</th>
               <th class="py-2 pr-3 font-bold">Descrizione Attività</th>
-              <th class="py-2 font-bold text-right">Ore</th>
+              <th class="py-2 font-bold text-right">Ore / Forfait</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -3117,9 +3164,9 @@ function exportCSV() {
   const sep = ';';
   const flat = allEntriesFlat();
   const lines = [];
-  lines.push(['Progetto', 'Descrizione Attività', 'Data', 'Ore', 'Tariffa applicata', 'Già pagata'].map(csvCell).join(sep));
+  lines.push(['Progetto', 'Descrizione Attività', 'Data', 'Ore', 'Tariffa applicata', 'Forfait (€)', 'Già pagata'].map(csvCell).join(sep));
   for (const e of flat) {
-    lines.push([e.project, e.spec, dateIt(e.date), String(e.hours).replace('.', ','), String(e.rate).replace('.', ','), e.paid ? 'Sì' : 'No'].map(csvCell).join(sep));
+    lines.push([e.project, e.spec, dateIt(e.date), String(e.hours).replace('.', ','), String(e.rate).replace('.', ','), e.billingType === 'flat' ? String(e.amount).replace('.', ',') : '', e.paid ? 'Sì' : 'No'].map(csvCell).join(sep));
   }
   lines.push('');
   lines.push([csvCell('Ore Totali Filtrate'), '', '', csvCell(String(totalHours()).replace('.', ','))].join(sep));
@@ -3779,7 +3826,7 @@ function monthlyAggregate() {
     if (!map.has(key)) map.set(key, { hours: 0, comp: 0, count: 0 });
     const m = map.get(key);
     m.hours += Number(e.hours) || 0;
-    m.comp += (Number(e.hours) || 0) * (Number(e.rate) || 0);
+    m.comp += entryValue(e);
     m.count += 1;
   }
   for (const p of state.projects) {
@@ -3801,7 +3848,7 @@ function yearlyAggregate() {
     if (!map.has(key)) map.set(key, { hours: 0, comp: 0, count: 0 });
     const m = map.get(key);
     m.hours += Number(e.hours) || 0;
-    m.comp += (Number(e.hours) || 0) * (Number(e.rate) || 0);
+    m.comp += entryValue(e);
     m.count += 1;
   }
   for (const p of state.projects) {
