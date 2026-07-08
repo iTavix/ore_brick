@@ -1062,11 +1062,58 @@ function setView(view) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// Banner fisso per account con email non verificata: senza verifica un Cliente
+// non può leggere i dati condivisi (regole Firestore) e il solo toast sparisce.
+function renderVerifyBanner() {
+  const root = $('#verify-banner-root');
+  if (!root) return;
+  const show = !!(sync.enabled && sync.user && !sync.user.emailVerified);
+  if (!show) { root.innerHTML = ''; return; }
+  root.innerHTML = `
+    <div class="mb-5 rounded-xl2 border border-amber-500/40 bg-amber-500/10 px-4 py-3.5">
+      <div class="flex items-start gap-2.5">
+        <span class="text-[15px]">⚠️</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-[13px] font-bold text-amber-700 dark:text-amber-400">Email non verificata</div>
+          <p class="text-[12px] text-ink-soft dark:text-zinc-400 mt-0.5">Verifica <span class="font-semibold">${esc(sync.user.email || '')}</span> per usare i dati condivisi: invia l'email, clicca il link che ricevi, poi torna qui e premi "Ho verificato".</p>
+          <div class="mt-2.5 flex flex-wrap gap-2">
+            <button id="vb-send" class="px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white text-[12px] font-bold transition-soft">Invia email di verifica</button>
+            <button id="vb-recheck" class="px-3.5 py-1.5 rounded-full border border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 text-[12px] font-bold transition-soft">Ho verificato</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  const send = $('#vb-send');
+  if (send) send.addEventListener('click', doSendVerification);
+  const re = $('#vb-recheck');
+  if (re) re.addEventListener('click', recheckVerification);
+}
+
+// "Ho verificato": rilegge lo stato utente, rinnova il token (claim
+// email_verified) e riparte nel ruolo giusto senza logout/login.
+async function recheckVerification() {
+  if (!sync.user) return;
+  try { await sync.user.reload(); } catch (_) {}
+  if (!sync.user.emailVerified) {
+    toast('Email non ancora verificata: clicca il link ricevuto e riprova', 'warning');
+    return;
+  }
+  try { await sync.user.getIdToken(true); } catch (_) {}
+  toast('Email verificata ✓');
+  if (isClient()) {
+    attachClientStatementByEmail();
+  } else if (await probeClientByLinks()) {
+    await adoptClientRole(); // account cliente rimasto col ruolo sbagliato
+  }
+  render();
+}
+
 function render() {
   // Se il ruolo Cliente arriva mentre si è su una vista riservata, si reindirizza.
   if (isClient() && OWNER_ONLY_VIEWS.indexOf(state.view) !== -1) { setView('dashboard'); return; }
   applyRoleVisibility();
   updateUserBadge();
+  renderVerifyBanner();
   ensureTimerTicking(); // riattiva il ciclo orologio se un timer è stato ripristinato
 
   try {
@@ -4555,14 +4602,42 @@ function maybeRecoverWedgedFirestore(err) {
   } catch (_) { return false; }
 }
 
+// Account senza documento utente (creato dalla console o dalla fabbrica
+// account): se esiste uno statement indirizzato alla sua email, è un Cliente.
+// La query links richiede email verificata (regole Firestore).
+async function probeClientByLinks() {
+  try {
+    if (!(sync.user && sync.user.email && sync.user.emailVerified)) return false;
+    const qs = await sync.db.collection('links')
+      .where('viewerEmail', '==', String(sync.user.email).toLowerCase())
+      .limit(1).get();
+    return !qs.empty;
+  } catch (_) { return false; }
+}
+
+// Corregge un account cliente finito per errore con ruolo Proprietario (o senza
+// ruolo): scrive accountRole=client sul documento e riparte come Cliente.
+async function adoptClientRole() {
+  sync.role = 'client';
+  try {
+    await userDocRef().set({ accountRole: 'client', schema: CLOUD_SCHEMA,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  } catch (_) {}
+  startCloudListener(); // ri-aggancia i listener nel flusso Cliente
+}
+
 async function initialHydrate() {
   syncStage('hydrate:parent-get');
   const snap = await getWithTimeout(userDocRef());
 
   if (!snap.exists) {
+    // Prima di presumere "Proprietario" (e caricare i dati locali sul cloud),
+    // verifica se questo account è il destinatario di uno statement: in quel
+    // caso è un Cliente e i dati locali NON vanno pubblicati.
+    if (!sync.role && await probeClientByLinks()) sync.role = 'client';
     for (const s of SYNC_STORES) sync.hydrated[s] = true; // niente sul cloud da leggere
     syncStage('hydrate:push-new');
-    await pushNow();                                       // carica lo stato locale
+    await pushNow();  // Proprietario: carica lo stato locale; Cliente: solo il proprio profilo
     return;
   }
 
@@ -4964,6 +5039,15 @@ async function createClientAuthAccount(email, password) {
   try {
     const cred = await sec.auth().createUserWithEmailAndPassword(email, password);
     try { await cred.user.sendEmailVerification(); } catch (_) {}
+    // Documento utente con ruolo Cliente scritto SUBITO (con la sessione
+    // temporanea): al primo login l'app lo riconosce come Cliente e non
+    // pubblica i dati locali del dispositivo come se fosse un Proprietario.
+    try {
+      await sec.firestore().collection('users').doc(cred.user.uid).set({
+        accountRole: 'client', schema: CLOUD_SCHEMA,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (_) {}
     await sec.auth().signOut();
     return { created: true };
   } catch (err) {
