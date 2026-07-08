@@ -53,7 +53,8 @@ service cloud.firestore {
       allow update: if signedIn() && request.auth.uid == resource.data.ownerUid
                     && request.auth.uid == request.resource.data.ownerUid;
       allow delete: if signedIn() && request.auth.uid == resource.data.ownerUid;
-      allow read:   if verified() && myEmail() == resource.data.viewerEmail;
+      allow read:   if (verified() && myEmail() == resource.data.viewerEmail)
+                    || (signedIn() && request.auth.uid == resource.data.ownerUid);
     }
   }
 }

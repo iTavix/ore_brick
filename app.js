@@ -4896,21 +4896,78 @@ function schedulePublish() {
   sync.share.pubTimer = setTimeout(publishAllStatements, 600);
 }
 
-// Proprietario: associa l'account del cliente indicandone l'email di accesso.
+// Password provvisoria leggibile per i nuovi account cliente.
+function genTempPassword() {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s = '';
+  const b = new Uint8Array(10);
+  crypto.getRandomValues(b);
+  for (const x of b) s += chars[x % chars.length];
+  return 'Hf-' + s;
+}
+
+// Crea l'account Firebase del cliente SENZA toccare la sessione del
+// Proprietario: usa un'app secondaria usa-e-getta, invia subito l'email di
+// verifica (richiesta dalle regole Firestore per leggere i dati condivisi)
+// e chiude la sessione temporanea.
+async function createClientAuthAccount(email, password) {
+  const sec = firebase.initializeApp(window.FIREBASE_CONFIG, 'account-factory-' + Date.now());
+  try {
+    const cred = await sec.auth().createUserWithEmailAndPassword(email, password);
+    try { await cred.user.sendEmailVerification(); } catch (_) {}
+    await sec.auth().signOut();
+    return { created: true };
+  } catch (err) {
+    if (err && err.code === 'auth/email-already-in-use') return { created: false, exists: true };
+    throw err;
+  } finally {
+    try { await sec.delete(); } catch (_) {}
+  }
+}
+
+// Proprietario: associa l'account del cliente indicandone l'email di accesso,
+// con possibilità di creare l'account di login direttamente da qui.
 async function associateClientAccount(clientId) {
   if (isClient()) { toast('Solo il Proprietario puo\u0027 associare gli account', 'error'); return; }
   const c = state.clients.find(x => x.id === clientId);
   if (!c) return;
+  const tempPass = genTempPassword();
   openModal({
     title: 'Associa account cliente',
     bodyHTML: `
-      <p class="text-[14px] text-ink-soft dark:text-zinc-300 mb-3">Inserisci l'<span class="font-bold">email con cui il cliente accede</span> a HourFlow. Da quel momento, accedendo, vedra\u0027 in automatico i dati che lo riguardano \u2014 senza codici ne\u0027 file.</p>
-      <input id="assoc-email" type="email" autocomplete="off" class="field" value="${esc(c.accountEmail || c.email || '')}" placeholder="email@cliente.it" />`,
+      <p class="text-[14px] text-ink-soft dark:text-zinc-300 mb-3">Inserisci l'<span class="font-bold">email con cui il cliente accede</span> a HourFlow. Da quel momento, accedendo, vedra' in automatico i dati che lo riguardano — senza codici ne' file.</p>
+      <input id="assoc-email" type="email" autocomplete="off" class="field" value="${esc(c.accountEmail || c.email || '')}" placeholder="email@cliente.it" />
+      <label for="assoc-create" class="mt-3 flex items-start gap-2.5 cursor-pointer select-none">
+        <input id="assoc-create" type="checkbox" class="w-4 h-4 mt-0.5 shrink-0" style="accent-color:#FF9500" checked />
+        <span class="text-[13px] font-semibold text-ink-soft dark:text-zinc-400">Crea anche l'account di accesso
+          <span class="block text-[11px] font-medium text-ink-faint dark:text-zinc-500 mt-0.5">Se il cliente non si è ancora registrato, l'account viene creato ora con la password qui sotto (da comunicargli). Riceverà l'email per verificare l'indirizzo. La tua sessione non viene toccata.</span>
+        </span>
+      </label>
+      <div class="mt-3">
+        <label for="assoc-pass" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Password provvisoria del cliente</label>
+        <input id="assoc-pass" type="text" autocomplete="off" spellcheck="false" class="field" value="${esc(tempPass)}" />
+      </div>`,
     confirmText: 'Associa',
     onConfirm: async (card) => {
       const el = $('#assoc-email', card);
       const email = (el ? el.value : '').trim().toLowerCase();
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showError(card, 'Inserisci un\u0027email valida'); return false; }
+      const wantCreate = $('#assoc-create', card).checked;
+      const pass = ($('#assoc-pass', card).value || '').trim();
+      if (wantCreate && pass.length < 8) { showError(card, 'La password provvisoria deve avere almeno 8 caratteri.'); return false; }
+
+      let createdNow = false;
+      if (wantCreate) {
+        try {
+          const res = await createClientAuthAccount(email, pass);
+          createdNow = res.created;
+          if (!res.created) toast('Account già esistente: completo solo l\u0027associazione');
+        } catch (err) {
+          showError(card, 'Creazione account non riuscita: ' + authError(err.code || ''));
+          return false;
+        }
+      }
+
       const updated = { ...c, accountEmail: email, updatedAt: Date.now() };
       await dbPut('clients', updated);
       state.clients = state.clients.map(x => x.id === clientId ? updated : x);
@@ -4922,6 +4979,29 @@ async function associateClientAccount(clientId) {
         toast('Associazione NON riuscita: ' + syncErrorMsg(err) + ' — pubblica le regole Firestore aggiornate', 'error');
       }
       renderClients();
+      if (createdNow) showClientCredentials(email, pass);
+    }
+  });
+}
+
+// Riepilogo credenziali da consegnare al cliente appena creato.
+function showClientCredentials(email, pass) {
+  openModal({
+    title: 'Credenziali del cliente',
+    bodyHTML: `
+      <p class="text-[14px] text-ink-soft dark:text-zinc-300 mb-3">Account creato. Comunica queste credenziali al cliente: <span class="font-bold">prima del primo accesso deve cliccare il link di verifica</span> che ha ricevuto via email.</p>
+      <div class="rounded-xl border border-black/10 dark:border-white/10 p-3 text-[13px]">
+        <div>Email: <span class="font-bold">${esc(email)}</span></div>
+        <div class="mt-1">Password provvisoria: <span class="font-bold">${esc(pass)}</span></div>
+      </div>
+      <button id="cred-copy" type="button" class="mt-3 px-4 py-2 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/[.03] dark:hover:bg-white/[.03] text-[13px] font-bold transition-soft">Copia credenziali</button>`,
+    confirmText: 'Fatto',
+    onMount: (card) => {
+      const btn = $('#cred-copy', card);
+      if (btn) btn.addEventListener('click', () => {
+        copyText(`HourFlow — accesso cliente\nEmail: ${email}\nPassword provvisoria: ${pass}\nPrima di accedere clicca il link di verifica ricevuto via email.`)
+          .then(() => toast('Credenziali copiate negli appunti'));
+      });
     }
   });
 }
@@ -4952,7 +5032,7 @@ function removeClientAssociation(clientId) {
 
 // Cliente: trova (in tempo reale) lo statement indirizzato alla propria email e
 // lo legge. Se l'associazione arriva dopo il login, compare comunque da sola.
-function attachClientStatementByEmail() {
+async function attachClientStatementByEmail() {
   if (sync.share.linksUnsub) { try { sync.share.linksUnsub(); } catch (_) {} sync.share.linksUnsub = null; }
   if (sync.share.unsub) { try { sync.share.unsub(); } catch (_) {} sync.share.unsub = null; }
   clearInterval(sync.share.pollTimer); sync.share.pollTimer = null;
@@ -4964,8 +5044,17 @@ function attachClientStatementByEmail() {
   // registrare account con email altrui non confermate, che altrimenti
   // combacerebbero con viewerEmail. (La barriera server è nelle regole
   // Firestore: request.auth.token.email_verified — vedi FIRESTORE_RULES.md.)
+  // Se il cliente ha appena cliccato il link di verifica, reload() vede il
+  // nuovo stato e getIdToken(true) rinnova il token con il claim aggiornato:
+  // niente logout/login, niente "permission denied" da token vecchio.
   if (!sync.user.emailVerified) {
-    toast('Verifica la tua email per consultare i dati condivisi: Impostazioni → "Verifica ora", poi accedi di nuovo.', 'warning');
+    try { await sync.user.reload(); } catch (_) {}
+    if (sync.user.emailVerified) {
+      try { await sync.user.getIdToken(true); } catch (_) {}
+    }
+  }
+  if (!sync.user.emailVerified) {
+    toast('Verifica la tua email per consultare i dati condivisi: Impostazioni → "Verifica ora", poi ricarica HourFlow.', 'warning');
     if (state.view === 'settings') renderSettings();
     return;
   }
@@ -5071,7 +5160,10 @@ async function doSignUp(email, password, role) {
     sync.pendingRole = (role === 'client') ? 'client' : 'owner';
     sync.role = sync.pendingRole;
     await sync.auth.createUserWithEmailAndPassword(email, password);
-    toast('Registrazione completata');
+    // La verifica parte subito: serve al ruolo Cliente per leggere i dati
+    // condivisi (regole Firestore) e in generale a confermare l'indirizzo.
+    try { await sync.auth.currentUser.sendEmailVerification(); } catch (_) {}
+    toast("Registrazione completata: controlla l'email per il link di verifica");
   } catch (err) {
     sync.pendingRole = null;
     showAuthError(authError(err.code));
