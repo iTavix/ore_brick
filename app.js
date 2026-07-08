@@ -1187,7 +1187,6 @@ function renderDashboard() {
   // sessioni "già pagata" e scalano gli acconti registrati, così dashboard
   // e Nota di Pagamento mostrano sempre gli stessi numeri.
   const m = buildNoteModel();
-  const baseRate = Number(state.settings.hourlyRate) || 0;
 
   const filterWidget = buildFilterWidgetHTML();
   const chartHtml = buildVisualAnalyticsChart();
@@ -1197,7 +1196,7 @@ function renderDashboard() {
   const summary = `
     <div class="grid grid-cols-3 gap-3 mb-6">
       ${summaryCard(client ? 'Ore da pagare' : 'Ore da incassare', hrs(m.tH), 'text-ink dark:text-white')}
-      ${summaryCard('Tariffa base', eur(baseRate) + '/h', 'text-ink dark:text-white')}
+      ${summaryCard('Ore totali', hrs(totalHours()), 'text-ink dark:text-white')}
       ${summaryCard('Residuo', eur(Math.max(0, m.residual)), 'text-accent', m.paid > 0 ? `${client ? 'già pagato' : 'già incassato'} ${eur(m.paid)}` : '')}
     </div>
     ${filterWidget}
@@ -1230,7 +1229,7 @@ function renderDashboard() {
   const searchHTML = state.projects.length ? `
     <div class="relative mb-3">
       <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-      <input id="dash-search" type="text" value="${esc(state.search || '')}" placeholder="Cerca progetti o attività…" autocomplete="off" class="field pl-9 py-2 text-[13px]" />
+      <input id="dash-search" type="text" value="${esc(state.search || '')}" placeholder="Cerca progetti o attività…" autocomplete="off" class="field py-2 text-[13px]" style="padding-left:2.5rem" />
     </div>` : '';
 
   root.innerHTML = `
@@ -3989,6 +3988,9 @@ function exportAnnualCSV() {
   toast('Riepilogo annuale esportato');
 }
 
+// Mesi espansi nel Report (persistono tra i re-render della sessione).
+const _repExpanded = new Set();
+
 function renderReports() {
   const root = $('#view-report');
   if (!root) return;
@@ -4010,23 +4012,56 @@ function renderReports() {
   const maxComp = Math.max(...months.map(k => map.get(k).comp), 1);
   const avgComp = totComp / months.length;
 
+  // Dettaglio del mese: sessioni svolte + eventuali forfait di progetto contati
+  // da monthlyAggregate nel mese di creazione dell'incarico.
+  const monthDetailHTML = (k) => {
+    const sessions = allEntriesFlat().filter(e => String(e.date || '').slice(0, 7) === k);
+    const flatProjs = state.projects.filter(p => p.billingType === 'flat' && String(p.createdAt || '').slice(0, 7) === k);
+    if (!sessions.length && !flatProjs.length) {
+      return '<div class="mt-3 pt-3 border-t border-black/5 dark:border-white/5 text-[12px] text-ink-faint font-medium">Nessuna sessione registrata in questo mese.</div>';
+    }
+    const sRows = sessions.map(e => `
+      <div class="flex items-center gap-3 py-2 border-b border-black/5 dark:border-white/5 last:border-b-0">
+        <div class="text-[11px] text-ink-faint whitespace-nowrap tabular-nums">${esc(dateIt(e.date))}</div>
+        <div class="flex-1 min-w-0">
+          <div class="text-[13px] font-semibold text-ink dark:text-zinc-200 truncate">${esc(e.spec)}</div>
+          <div class="text-[11px] text-ink-faint dark:text-zinc-500 truncate">${esc(e.project)}${e.billingType === 'flat' ? ' · forfait' : ''}${e.paid ? ' · <span class="text-emerald-600 dark:text-emerald-400 font-bold">✓ pagata</span>' : ''}</div>
+        </div>
+        <div class="text-[12px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0">${e.billingType === 'flat' ? esc(eur(e.amount)) : esc(hrs(e.hours))}</div>
+      </div>`).join('');
+    const pRows = flatProjs.map(p => `
+      <div class="flex items-center gap-3 py-2 border-b border-black/5 dark:border-white/5 last:border-b-0">
+        <div class="text-[11px] text-ink-faint whitespace-nowrap tabular-nums">${esc(dateIt(p.createdAt))}</div>
+        <div class="flex-1 min-w-0">
+          <div class="text-[13px] font-semibold text-ink dark:text-zinc-200 truncate">${esc(p.name)}</div>
+          <div class="text-[11px] text-ink-faint dark:text-zinc-500">Forfait di progetto</div>
+        </div>
+        <div class="text-[12px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0">${esc(eur(p.flatAmount))}</div>
+      </div>`).join('');
+    return `<div class="mt-3 pt-1 border-t border-black/5 dark:border-white/5">${sRows}${pRows}</div>`;
+  };
+
   const rows = months.map(k => {
     const m = map.get(k);
     const pct = Math.max(2, Math.round((m.comp / maxComp) * 100));
+    const open = _repExpanded.has(k);
     return `
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm">
-        <div class="flex items-baseline justify-between gap-3">
-          <div class="text-[15px] font-bold tracking-tight dark:text-white">${esc(monthLabel(k))}</div>
-          <div class="text-[15px] font-extrabold text-accent tabular-nums">${esc(eur(m.comp))}</div>
+        <div class="rep-month cursor-pointer select-none" data-month="${k}" role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(monthLabel(k))} — espandi o comprimi le sessioni del mese">
+          <div class="flex items-baseline justify-between gap-3">
+            <div class="text-[15px] font-bold tracking-tight dark:text-white flex items-center gap-2"><span class="chev ${open ? 'open' : ''} text-ink-faint dark:text-zinc-600 text-[10px]">▶</span>${esc(monthLabel(k))}</div>
+            <div class="text-[15px] font-extrabold text-accent tabular-nums">${esc(eur(m.comp))}</div>
+          </div>
+          <div class="mt-2 h-2 rounded-full bg-black/[0.05] dark:bg-white/[0.06] overflow-hidden">
+            <div class="h-full rounded-full bg-accent" style="width:${pct}%"></div>
+          </div>
+          <div class="mt-2 text-[11px] text-ink-faint dark:text-zinc-500 font-medium flex items-center gap-2 flex-wrap">
+            <span>${m.count} session${m.count === 1 ? 'e' : 'i'}</span><span>·</span>
+            <span class="font-bold text-ink-soft dark:text-zinc-400">${esc(hrs(m.hours))}</span><span>·</span>
+            <span>media ${esc(eur(m.hours > 0 ? m.comp / m.hours : 0))}/h</span>
+          </div>
         </div>
-        <div class="mt-2 h-2 rounded-full bg-black/[0.05] dark:bg-white/[0.06] overflow-hidden">
-          <div class="h-full rounded-full bg-accent" style="width:${pct}%"></div>
-        </div>
-        <div class="mt-2 text-[11px] text-ink-faint dark:text-zinc-500 font-medium flex items-center gap-2 flex-wrap">
-          <span>${m.count} session${m.count === 1 ? 'e' : 'i'}</span><span>·</span>
-          <span class="font-bold text-ink-soft dark:text-zinc-400">${esc(hrs(m.hours))}</span><span>·</span>
-          <span>media ${esc(eur(m.hours > 0 ? m.comp / m.hours : 0))}/h</span>
-        </div>
+        ${open ? monthDetailHTML(k) : ''}
       </div>`;
   }).join('');
 
@@ -4058,6 +4093,19 @@ function renderReports() {
   if (exp) exp.addEventListener('click', exportMonthlyCSV);
   const annExp = $('#ann-export', root);
   if (annExp) annExp.addEventListener('click', exportAnnualCSV);
+
+  // Click (o Invio/Spazio) su un mese: mostra/nasconde le sessioni del mese.
+  $$('.rep-month', root).forEach(el => {
+    const toggle = () => {
+      const k = el.dataset.month;
+      if (_repExpanded.has(k)) _repExpanded.delete(k); else _repExpanded.add(k);
+      renderReports();
+    };
+    el.addEventListener('click', toggle);
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
 }
 
 function exportMonthlyCSV() {
