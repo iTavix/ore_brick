@@ -240,7 +240,11 @@ function effectiveFiscal(s) {
 function buildNoteModel() {
   const s = state.settings;
   const filteredIds = new Set(getFilteredEntries().map(e => e.id));
-  const flat = allEntriesFlat().filter(e => filteredIds.has(e.id));
+  const inScope = allEntriesFlat().filter(e => filteredIds.has(e.id));
+  // Le sessioni marcate "già pagata" restano nel progetto e nei report, ma non
+  // entrano nella nota: non devono generare importi da incassare.
+  const flat = inScope.filter(e => !e.paid);
+  const paidExcludedCount = inScope.length - flat.length;
   const tH = flat.reduce((a, e) => a + (Number(e.hours) || 0), 0);
   const baseCompensation = round2(flat.reduce((a, e) => a + (Number(e.hours) || 0) * (Number(e.rate) || 0), 0) + flatScopedTotal());
   const { taxP, vatP, wTaxP, forfettario } = effectiveFiscal(s);
@@ -261,7 +265,8 @@ function buildNoteModel() {
   const clientVats = [...new Set(flat.map(x => x.clientVat).filter(Boolean))];
   const clientForeignVats = [...new Set(flat.map(x => x.clientForeignVat).filter(Boolean))];
   return { s, flat, tH, baseCompensation, taxP, vatP, wTaxP, taxValue, subtotalWithTax, vatValue, wTaxValue,
-           grandTotal, stampDuty, payable, ctx, note, ctxPayments, paid, residual, forfettario, clientNames, clientAddresses, clientVats, clientForeignVats };
+           grandTotal, stampDuty, payable, ctx, note, ctxPayments, paid, residual, forfettario, paidExcludedCount,
+           clientNames, clientAddresses, clientVats, clientForeignVats };
 }
 
 // Esporta la nota come PDF nativo (jsPDF + autotable), senza dialogo di stampa.
@@ -1271,7 +1276,7 @@ function projectCard(p) {
         <div class="group flex items-center gap-3 px-4 py-3 border-t border-black/5 dark:border-white/5 hover:bg-black/[0.01] dark:hover:bg-white/[0.005]">
           <div class="flex-1 min-w-0">
             <div class="text-[14px] text-ink dark:text-zinc-200 truncate font-semibold">${esc(e.spec)}</div>
-            <div class="text-[11px] text-ink-faint dark:text-zinc-500 mt-0.5 font-medium">${esc(dateIt(e.date))}</div>
+            <div class="text-[11px] text-ink-faint dark:text-zinc-500 mt-0.5 font-medium">${esc(dateIt(e.date))}${e.paid ? ` · <span class="inline-block text-[10px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">✓ Pagata</span>` : ''}</div>
           </div>
           <div class="text-[13px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0 mr-1">${esc(hrs(e.hours))}</div>
           ${editable ? `          <div class="flex items-center gap-1 shrink-0">
@@ -1876,7 +1881,13 @@ const entryFieldsHTML = (e) => `
   <label for="f-date" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Data</label>
   <input id="f-date" type="date" class="field mb-3" value="${e && e.date ? esc(e.date) : todayIso()}" />
   <label for="f-hours" class="block text-[13px] font-semibold text-ink-soft mb-1.5">Ore lavorate</label>
-  <input id="f-hours" type="number" min="0" step="0.25" class="field" placeholder="Es. 2.5" value="${e && e.hours != null ? e.hours : ''}" />`;
+  <input id="f-hours" type="number" min="0" step="0.25" class="field" placeholder="Es. 2.5" value="${e && e.hours != null ? e.hours : ''}" />
+  <label for="f-paid" class="mt-3 flex items-start gap-2.5 cursor-pointer select-none">
+    <input id="f-paid" type="checkbox" class="w-4 h-4 mt-0.5 shrink-0" style="accent-color:#FF9500" ${e && e.paid ? 'checked' : ''} />
+    <span class="text-[13px] font-semibold text-ink-soft dark:text-zinc-400">Già pagata
+      <span class="block text-[11px] font-medium text-ink-faint dark:text-zinc-500 mt-0.5">Sessione passata già saldata: conta nelle ore e nei report, ma non entra nella Nota di Pagamento.</span>
+    </span>
+  </label>`;
 
 function addEntry(projectId) {
   if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
@@ -1894,7 +1905,8 @@ function addEntry(projectId) {
         projectId,
         spec: $('#f-spec', card).value.trim() || 'Attività generica',
         date: $('#f-date', card).value || todayIso(),
-        hours
+        hours,
+        paid: $('#f-paid', card).checked
       };
       await dbPut('entries', entry);
       state.entries.push(entry);
@@ -1922,6 +1934,7 @@ function editEntry(id) {
       e.spec = $('#f-spec', card).value.trim() || 'Attività generica';
       e.date = $('#f-date', card).value || todayIso();
       e.hours = hours;
+      e.paid = $('#f-paid', card).checked;
       await dbPut('entries', e); // updatedAt ritimbrato automaticamente
       state.entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
       renderDashboard();
@@ -2543,6 +2556,7 @@ function renderPayment() {
         <div>
           <h3 class="text-[13px] font-bold text-ink dark:text-zinc-200">Filtri di fatturazione attivi</h3>
           <p class="text-[11px] text-ink-soft dark:text-zinc-400 mt-0.5">La nota mostrerà solo le voci filtrate nella Dashboard.</p>
+          ${m.paidExcludedCount > 0 ? `<p class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 mt-1">✓ ${esc(plural(m.paidExcludedCount, 'sessione già pagata esclusa', 'sessioni già pagate escluse'))} dalla nota.</p>` : ''}
         </div>
         <div class="flex items-center gap-2 no-print">
           <button id="btn-sync-dashboard-filters" type="button" aria-label="Filtra le voci della nota" title="Filtra voci" class="w-9 h-9 rounded-full border border-black/10 dark:border-white/10 text-ink-soft dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/5 transition-soft flex items-center justify-center">
@@ -3100,9 +3114,9 @@ function exportCSV() {
   const sep = ';';
   const flat = allEntriesFlat();
   const lines = [];
-  lines.push(['Progetto', 'Descrizione Attività', 'Data', 'Ore', 'Tariffa applicata'].map(csvCell).join(sep));
+  lines.push(['Progetto', 'Descrizione Attività', 'Data', 'Ore', 'Tariffa applicata', 'Già pagata'].map(csvCell).join(sep));
   for (const e of flat) {
-    lines.push([e.project, e.spec, dateIt(e.date), String(e.hours).replace('.', ','), String(e.rate).replace('.', ',')].map(csvCell).join(sep));
+    lines.push([e.project, e.spec, dateIt(e.date), String(e.hours).replace('.', ','), String(e.rate).replace('.', ','), e.paid ? 'Sì' : 'No'].map(csvCell).join(sep));
   }
   lines.push('');
   lines.push([csvCell('Ore Totali Filtrate'), '', '', csvCell(String(totalHours()).replace('.', ','))].join(sep));
