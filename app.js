@@ -1123,19 +1123,20 @@ function renderDashboard() {
   const root = $('#view-dashboard');
   if (!root) return;
 
-  const tH = totalHours();
+  // I KPI usano lo stesso modello della Nota: ore e residuo escludono le
+  // sessioni "già pagata" e scalano gli acconti registrati, così dashboard
+  // e Nota di Pagamento mostrano sempre gli stessi numeri.
+  const m = buildNoteModel();
   const baseRate = Number(state.settings.hourlyRate) || 0;
-  const extra = Number(state.settings.extra) || 0;
-  const total = totalCompensation();
 
   const filterWidget = buildFilterWidgetHTML();
   const chartHtml = buildVisualAnalyticsChart();
 
   const summary = `
     <div class="grid grid-cols-3 gap-3 mb-6">
-      ${summaryCard('Ore filtrate', hrs(tH), 'text-ink dark:text-white')}
+      ${summaryCard('Ore da incassare', hrs(m.tH), 'text-ink dark:text-white')}
       ${summaryCard('Tariffa base', eur(baseRate) + '/h', 'text-ink dark:text-white')}
-      ${summaryCard('Compenso', eur(total), 'text-accent', extra && tH > 0 ? `incl. extra ${eur(extra)}` : '')}
+      ${summaryCard('Residuo', eur(Math.max(0, m.residual)), 'text-accent', m.paid > 0 ? `già incassato ${eur(m.paid)}` : '')}
     </div>
     ${filterWidget}
     ${buildStopwatchWidgetHTML()}
