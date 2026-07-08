@@ -1132,11 +1132,13 @@ function renderDashboard() {
   const filterWidget = buildFilterWidgetHTML();
   const chartHtml = buildVisualAnalyticsChart();
 
+  // Stesse cifre, prospettiva diversa: il Proprietario incassa, il Cliente paga.
+  const client = isClient();
   const summary = `
     <div class="grid grid-cols-3 gap-3 mb-6">
-      ${summaryCard('Ore da incassare', hrs(m.tH), 'text-ink dark:text-white')}
+      ${summaryCard(client ? 'Ore da pagare' : 'Ore da incassare', hrs(m.tH), 'text-ink dark:text-white')}
       ${summaryCard('Tariffa base', eur(baseRate) + '/h', 'text-ink dark:text-white')}
-      ${summaryCard('Residuo', eur(Math.max(0, m.residual)), 'text-accent', m.paid > 0 ? `già incassato ${eur(m.paid)}` : '')}
+      ${summaryCard('Residuo', eur(Math.max(0, m.residual)), 'text-accent', m.paid > 0 ? `${client ? 'già pagato' : 'già incassato'} ${eur(m.paid)}` : '')}
     </div>
     ${filterWidget}
     ${buildStopwatchWidgetHTML()}
