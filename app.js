@@ -245,7 +245,7 @@ function effectiveFiscal(s) {
 // Usato dall'export PDF (e riutilizzabile altrove) senza dipendere dal DOM.
 function buildNoteModel() {
   const s = state.settings;
-  const filteredIds = new Set(getFilteredEntries().map(e => e.id));
+  const filteredIds = new Set(getScopedEntries().map(e => e.id));
   const inScope = allEntriesFlat().filter(e => filteredIds.has(e.id));
   // Le sessioni marcate "già pagata" restano nel progetto e nei report, ma non
   // entrano nella nota: non devono generare importi da incassare.
@@ -598,7 +598,9 @@ const state = {
     period: 'all',
     startDate: '',
     endDate: '',
-    project: 'all'
+    project: 'all',
+    // 'all' | 'unpaid' | 'paid' — filtro di sola visualizzazione: non tocca la Nota.
+    payment: 'all'
   }
 };
 
@@ -676,7 +678,9 @@ async function loadState() {
 /* ---------------------------------------------------------------------
    Calcoli Fiscali Relazionali e Filtri
 --------------------------------------------------------------------- */
-function getFilteredEntries() {
+// Perimetro di fatturazione: progetto + finestra temporale. È la base della Nota
+// di pagamento, che NON deve cambiare al variare del filtro "Stato pagamento".
+function getScopedEntries() {
   let filtered = state.entries;
 
   if (state.filters.project !== 'all') {
@@ -715,6 +719,15 @@ function getFilteredEntries() {
   }
 
   return filtered;
+}
+
+// Voci mostrate a schermo: perimetro + filtro "Stato pagamento" della Dashboard.
+function getFilteredEntries() {
+  const scoped = getScopedEntries();
+  const status = (state.filters && state.filters.payment) || 'all';
+  if (status === 'unpaid') return scoped.filter(e => !e.paid);
+  if (status === 'paid') return scoped.filter(e => !!e.paid);
+  return scoped;
 }
 
 function entriesOf(projectId) {
@@ -1141,6 +1154,20 @@ function buildFilterWidgetHTML() {
     `<option value="${proj.id}" ${p.project === proj.id ? 'selected' : ''}>${esc(proj.name)}</option>`
   ).join('');
 
+  // Con il filtro "Stato pagamento" attivo, una riga riassume cosa si sta guardando.
+  let payHint = '';
+  if (p.payment === 'unpaid' || p.payment === 'paid') {
+    const shownIds = new Set(getFilteredEntries().map(e => e.id));
+    const rows = allEntriesFlat().filter(e => shownIds.has(e.id));
+    const h = rows.reduce((a, e) => a + (Number(e.hours) || 0), 0);
+    const v = rows.reduce((a, e) => a + entryValue(e), 0);
+    const label = p.payment === 'unpaid'
+      ? plural(rows.length, 'sessione ancora da pagare', 'sessioni ancora da pagare')
+      : plural(rows.length, 'sessione già pagata', 'sessioni già pagate');
+    const tone = p.payment === 'unpaid' ? 'text-accent' : 'text-emerald-600 dark:text-emerald-400';
+    payHint = `<p class="text-[11px] font-semibold ${tone} mt-3">${esc(label)} · ${esc(hrs(h))} · ${esc(eur(v))}</p>`;
+  }
+
   return `
     <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder p-4 shadow-sm mb-6">
       <div class="flex items-center justify-between mb-3">
@@ -1165,6 +1192,14 @@ function buildFilterWidgetHTML() {
             ${projectOptions}
           </select>
         </div>
+        <div>
+          <label for="filt-payment" class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Stato pagamento</label>
+          <select id="filt-payment" class="field py-1.5 px-2.5 text-[13px]">
+            <option value="all" ${(p.payment || 'all') === 'all' ? 'selected' : ''}>Tutte le sessioni</option>
+            <option value="unpaid" ${p.payment === 'unpaid' ? 'selected' : ''}>Solo da pagare</option>
+            <option value="paid" ${p.payment === 'paid' ? 'selected' : ''}>Solo già pagate</option>
+          </select>
+        </div>
         <div id="custom-date-container" class="${p.period === 'custom' ? '' : 'hidden'} col-span-1 grid grid-cols-2 gap-2">
           <div>
             <label for="filt-start" class="block text-[11px] font-semibold text-ink-soft dark:text-zinc-400 mb-1">Dal</label>
@@ -1176,6 +1211,7 @@ function buildFilterWidgetHTML() {
           </div>
         </div>
       </div>
+      ${payHint}
     </div>`;
 }
 
@@ -1209,6 +1245,14 @@ function renderDashboard() {
   let visibleProjects = state.filters.project === 'all'
     ? state.projects
     : state.projects.filter(p => p.id === state.filters.project);
+  // Con "Stato pagamento" attivo restano solo i progetti che hanno davvero
+  // qualcosa da mostrare. Eccezione sotto "Solo da pagare": i progetti a forfait
+  // restano in elenco perché il loro importo non ha il flag "pagata" ed è dovuto.
+  if (state.filters.payment === 'unpaid' || state.filters.payment === 'paid') {
+    const keepFlat = state.filters.payment === 'unpaid';
+    visibleProjects = visibleProjects.filter(p =>
+      entriesOf(p.id).length > 0 || (keepFlat && flatProjectInScope(p)));
+  }
   if (q) {
     visibleProjects = visibleProjects.filter(p =>
       String(p.name || '').toLowerCase().includes(q) ||
@@ -1220,7 +1264,7 @@ function renderDashboard() {
     projectsHTML = `
       <div class="bg-white dark:bg-darkCard rounded-xl2 border border-black/5 dark:border-darkBorder px-6 py-12 text-center shadow-sm">
         <div class="text-3xl mb-3">🗂️</div>
-        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">${q ? 'Nessun risultato per la ricerca.' : 'Nessun progetto corrispondente.'}</p>
+        <p class="text-ink-soft dark:text-ink-faint text-[15px] font-medium">${q ? 'Nessun risultato per la ricerca.' : (state.filters.payment === 'unpaid' ? 'Nessuna attività ancora da pagare con questi filtri.' : (state.filters.payment === 'paid' ? 'Nessuna attività già pagata con questi filtri.' : 'Nessun progetto corrispondente.'))}</p>
       </div>`;
   } else {
     projectsHTML = `<div class="space-y-3" id="projects-list-container">${visibleProjects.map(projectCard).join('')}</div>`;
@@ -1342,6 +1386,9 @@ function projectCard(p) {
           </div>
           <div class="text-[13px] font-bold tabular-nums text-ink-soft dark:text-zinc-400 shrink-0 mr-1">${e.billingType === 'flat' ? esc(eur(e.amount)) : esc(hrs(e.hours))}</div>
           ${editable ? `          <div class="flex items-center gap-1 shrink-0">
+            <button data-action="toggle-paid" data-id="${e.id}" title="${e.paid ? 'Segna come da pagare' : 'Segna come pagata'}" aria-pressed="${e.paid ? 'true' : 'false'}" class="w-8 h-8 rounded-full hover:bg-emerald-500/10 transition-soft ${e.paid ? 'text-emerald-600 dark:text-emerald-400' : 'text-ink-faint'} flex items-center justify-center">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75l2.25 2.25 4.5-4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </button>
             <button data-action="edit-entry" data-id="${e.id}" title="Modifica" class="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-soft text-ink-faint hover:text-ink dark:hover:text-white flex items-center justify-center">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
             </button>
@@ -1398,6 +1445,7 @@ function projectCard(p) {
 function bindDashboardEvents(root) {
   const filtPeriod = $('#filt-period', root);
   const filtProject = $('#filt-project', root);
+  const filtPayment = $('#filt-payment', root);
   const filtStart = $('#filt-start', root);
   const filtEnd = $('#filt-end', root);
   const btnReset = $('#btn-reset-filters', root);
@@ -1413,6 +1461,11 @@ function bindDashboardEvents(root) {
     renderDashboard();
   });
 
+  if (filtPayment) filtPayment.addEventListener('change', () => {
+    state.filters.payment = filtPayment.value;
+    renderDashboard();
+  });
+
   if (filtStart) filtStart.addEventListener('change', () => {
     state.filters.startDate = filtStart.value;
     renderDashboard();
@@ -1424,7 +1477,7 @@ function bindDashboardEvents(root) {
   });
 
   if (btnReset) btnReset.addEventListener('click', () => {
-    state.filters = { period: 'all', startDate: '', endDate: '', project: 'all' };
+    state.filters = { period: 'all', startDate: '', endDate: '', project: 'all', payment: 'all' };
     state.expanded.clear(); // "svuota" riporta anche i progetti allo stato compresso
     renderDashboard();
   });
@@ -1479,6 +1532,9 @@ function handleDashboardAction(action, id) {
       break;
     case 'add-entry-trigger':
       addEntry(id);
+      break;
+    case 'toggle-paid':
+      togglePaidEntry(id);
       break;
     case 'edit-entry':
       editEntry(id);
@@ -2038,6 +2094,18 @@ function editEntry(id) {
       toast('Sessione aggiornata');
     }
   });
+}
+
+// Segna/desegna al volo una sessione come "già pagata", senza aprire la modale.
+async function togglePaidEntry(id) {
+  if (!canEdit()) { toast('Account autorizzato in sola lettura', 'error'); return; }
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  e.paid = !e.paid;
+  await dbPut('entries', e); // updatedAt ritimbrato automaticamente
+  renderDashboard();
+  cloudPush();
+  toast(e.paid ? 'Sessione segnata come pagata' : 'Sessione di nuovo da pagare');
 }
 
 function deleteEntry(id) {
@@ -4170,8 +4238,9 @@ function ownerGuideSections() {
         <ul class="list-disc pl-5 space-y-1">
           <li>**Periodo Temporale:** Visualizza solo le ore del mese in corso, del mese precedente, dell'anno corrente o imposta un intervallo di date "dal / al" personalizzato.</li>
           <li>**Filtro Progetto:** Isola un singolo progetto per analizzarne i guadagni e la ripartizione finanziaria.</li>
+          <li>**Stato pagamento:** Mostra **solo le sessioni ancora da pagare** (o, al contrario, solo quelle già saldate). Sotto ai filtri compare il riepilogo di quanto stai guardando: numero di sessioni, ore e importo.</li>
         </ul>
-        <p>Usa la **barra di ricerca** per trovare al volo un progetto o un'attività per nome. Tutti gli indicatori, il grafico analitico e la Nota di pagamento si aggiornano in tempo reale rispettando fedelmente i filtri impostati.</p>`)}
+        <p>Usa la **barra di ricerca** per trovare al volo un progetto o un'attività per nome. Indicatori, grafico analitico e Nota di pagamento seguono in tempo reale **periodo e progetto**; il filtro **Stato pagamento** agisce solo sulla vista, perché la Nota esclude comunque sempre le sessioni già pagate.</p>`)}
 
       ${guideSection(gIcon('bg-orange-500', '<circle cx="12" cy="13" r="8"/><path d="M12 13V9"/><path d="M9 2h6"/><path d="M18.5 6.5l1.2-1.2"/>'), 'Cronometro di precisione real-time', `
         <p>Avvia una sessione di lavoro in tempo reale toccando il pulsante **cronometro** situato su qualsiasi riga di progetto.</p>
@@ -4190,6 +4259,7 @@ function ownerGuideSections() {
           <li>**Aggiungere sessioni** manualmente — data, descrizione dell'attività e ore — oltre che tramite il cronometro.</li>
           <li>**Modificare** nome e tariffa con l'icona matita, oppure **eliminare** il progetto e le singole sessioni con l'icona cestino.</li>
           <li>**Espandere** la riga del progetto per consultare l'elenco completo delle sessioni registrate, con ore e importi.</li>
+          <li>**Segnare una sessione come pagata** con l'icona ✓ sulla riga: diventa verde, esce dalla Nota di pagamento e la ritrovi con il filtro **Stato pagamento**. Ripremendola torna tra quelle da pagare.</li>
         </ul>`)}
 
       ${guideSection(gIcon('bg-emerald-500', '<path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/>'), 'Nota Pro, Rivalsa, IVA e Ritenuta', `
@@ -4269,7 +4339,7 @@ function clientGuideSections() {
 
       ${guideSection(gIcon('bg-blue-500', '<path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="0.5"/><rect x="12.5" y="7" width="3" height="9" rx="0.5"/>'), 'Dashboard & Filtri', `
         <p>La **Dashboard** riepiloga le ore registrate, la tariffa applicata e il compenso complessivo.</p>
-        <p>Con i **Filtri** puoi consultare il lavoro per **periodo** (mese corrente, mese precedente, anno o intervallo personalizzato) o isolare un singolo **progetto**. La **ricerca** ti aiuta a trovare rapidamente un progetto o un'attività. Indicatori e grafico si aggiornano in tempo reale.</p>`)}
+        <p>Con i **Filtri** puoi consultare il lavoro per **periodo** (mese corrente, mese precedente, anno o intervallo personalizzato), isolare un singolo **progetto** oppure vedere con **Stato pagamento** le sole attività **ancora da pagare**. La **ricerca** ti aiuta a trovare rapidamente un progetto o un'attività. Indicatori e grafico si aggiornano in tempo reale.</p>`)}
 
       ${guideSection(gIcon('bg-emerald-500', '<path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/>'), 'Leggere la Nota di Pagamento', `
         <p>La sezione **Nota Pro** mostra la nota a te intestata, con il dettaglio delle prestazioni, le eventuali voci fiscali (rivalsa, IVA, ritenuta, marca da bollo) e il **Netto a pagare**.</p>
