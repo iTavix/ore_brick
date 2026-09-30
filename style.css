@@ -130,3 +130,37 @@
     .print-table tr, .print-table thead { break-inside: avoid; }
     .print-keep { break-inside: avoid; }
   }
+
+/* Selezione multipla in Dashboard: i toast salgono sopra la barra fissa delle azioni. */
+body.has-selbar #toast-root { bottom: 9.5rem; }
+
+/* Selettore lingua nell'header: pillola compatta IT / EN. */
+.lang-toggle { min-width: 2rem; font-size: 11px; font-weight: 800; letter-spacing: .04em; }
+
+/* Barra delle azioni di massa (selezione multipla). */
+.sel-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+.sel-bar-card {
+  pointer-events: auto; max-width: 48rem; margin: 0 auto;
+  background: #1d1d1f; color: #fff; border: 1px solid rgba(255,255,255,.1);
+  border-radius: 1rem; padding: 12px 16px;
+  box-shadow: 0 20px 40px -12px rgba(0,0,0,.45);
+}
+body.dark .sel-bar-card { background: #27272a; }
+.sel-btn {
+  padding: 8px 12px; border-radius: 9999px; font-size: 13px; font-weight: 700;
+  color: #fff; transition: background-color .15s ease, opacity .15s ease;
+}
+.sel-btn:disabled, .sel-link:disabled { opacity: .4; cursor: not-allowed; }
+.sel-btn-paid { background: #10b981; }
+.sel-btn-paid:not(:disabled):hover { background: #059669; }
+.sel-btn-ghost { border: 1px solid rgba(255,255,255,.22); }
+.sel-btn-ghost:not(:disabled):hover { background: rgba(255,255,255,.1); }
+.sel-link:not(:disabled):hover { text-decoration: underline; }
+
+/* Riga selezionata */
+.sel-row-on { background: rgba(255,149,0,.07); }
+body.dark .sel-row-on { background: rgba(255,149,0,.10); }

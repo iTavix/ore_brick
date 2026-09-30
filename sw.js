@@ -8,12 +8,12 @@
                                                         app boots & exports offline too.
    - Firebase *data* (Firestore/Auth/Installations)  -> always network; Firestore keeps
                                                         its own IndexedDB persistence. */
-const PRECACHE = 'hourflow-precache-v8';
-const RUNTIME  = 'hourflow-runtime-v8';
+const PRECACHE = 'hourflow-precache-v9';
+const RUNTIME  = 'hourflow-runtime-v9';
 
 const SHELL = [
   './', './index.html', './welcome.html', './manifest.json',
-  './app.js', './style.css', './tailwind.css',
+  './i18n.js', './app.js', './style.css', './tailwind.css',
   './apple-touch-icon.png', './favicon.ico', './favicon-32.png', './favicon-16.png',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png'
 ];
